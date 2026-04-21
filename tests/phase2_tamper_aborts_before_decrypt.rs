@@ -59,7 +59,7 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
 
     // Now run_receive; the corrupt signature must fail verify inside resolve()
     let mut sink = OutputSink::InMemory(Vec::new());
-    let err = run_receive(&id, &transport, &uri, &mut sink, &AutoConfirmPrompter).unwrap_err();
+    let err = run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter).unwrap_err();
     assert!(
         matches!(
             err,

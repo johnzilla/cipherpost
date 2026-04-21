@@ -47,7 +47,7 @@ fn self_round_trip_recovers_plaintext() {
     let uri = ShareUri::parse(&uri_str).expect("run_send must return a valid URI");
 
     let mut sink = OutputSink::InMemory(Vec::new());
-    run_receive(&id, &transport, &uri, &mut sink, &AutoConfirmPrompter)
+    run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter)
         .expect("run_receive self-mode");
 
     match sink {

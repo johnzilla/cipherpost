@@ -36,7 +36,7 @@ fn state_permissions_are_0700_and_0600_after_receive() {
     let uri = ShareUri::parse(&uri_str).unwrap();
 
     let mut sink = OutputSink::InMemory(Vec::new());
-    run_receive(&id, &transport, &uri, &mut sink, &AutoConfirmPrompter).unwrap();
+    run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter).unwrap();
 
     let state = dir.path().join("state");
     let accepted = state.join("accepted");
