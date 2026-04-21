@@ -128,6 +128,14 @@ required-features = ["mock"]
 name = "phase2_cli_not_tty_aborts"
 path = "tests/phase2_cli_not_tty_aborts.rs"
 
+[[test]]
+name = "phase3_receipt_sign_verify"
+path = "tests/phase3_receipt_sign_verify.rs"
+
+[[test]]
+name = "phase3_receipt_canonical_form"
+path = "tests/phase3_receipt_canonical_form.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
