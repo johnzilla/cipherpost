@@ -26,7 +26,7 @@ pub const PROTOCOL_VERSION: u16 = 1;
 /// Enforced by tests/hkdf_info_enum.rs (Plan 02).
 pub const HKDF_INFO_PREFIX: &str = "cipherpost/v1/";
 
-/// Envelope magic (on-disk identity file — CIPHPOSK wraps the passphrase-encrypted seed).
+/// Envelope magic bytes for on-disk identity file (passphrase-encrypted seed wrapper).
 /// Locked wire/disk constant per D-04.
 pub const ENVELOPE_MAGIC: &[u8; 8] = b"CIPHPOSK";
 
