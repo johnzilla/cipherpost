@@ -141,6 +141,26 @@ name = "phase3_mock_publish_receipt_coexistence"
 path = "tests/phase3_mock_publish_receipt_coexistence.rs"
 required-features = ["mock"]
 
+[[test]]
+name = "phase3_end_to_end_a_sends_b_receipt"
+path = "tests/phase3_end_to_end_a_sends_b_receipt.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase3_coexistence_b_self_share_and_receipt"
+path = "tests/phase3_coexistence_b_self_share_and_receipt.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase3_share_ref_filter"
+path = "tests/phase3_share_ref_filter.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase3_tamper_zero_receipts"
+path = "tests/phase3_tamper_zero_receipts.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
