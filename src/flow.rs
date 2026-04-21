@@ -431,6 +431,15 @@ pub fn run_receive(
 
     // STEP 6: age-decrypt into Zeroizing (wrong recipient → DecryptFailed exit 4)
     use base64::Engine;
+    // D-16 oracle-hygiene: base64 decode failure maps to a Signature* variant so
+    // the user-facing message is the unified "signature verification failed"
+    // string. Rationale: the inner sig (verified in step 2-3) covers the base64
+    // *string* in record.blob, not the decoded bytes, so a malformed blob
+    // reaching here was either introduced by a (valid-signing) sender or by
+    // tampering between resolve() and this point. Either path must not leak a
+    // distinguishable error class vs. a true signature failure. No test
+    // discriminates base64-decode from sig-canonical-mismatch (both funnel
+    // through Display → D-16 unified string).
     let ciphertext = base64::engine::general_purpose::STANDARD
         .decode(&record.blob)
         .map_err(|_| Error::SignatureCanonicalMismatch)?;
