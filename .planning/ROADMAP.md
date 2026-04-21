@@ -49,7 +49,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Payload schema (Envelope + Material + URI + Error variants + HKDF constants + identity signing_seed accessor) (Wave 1)
+- [x] 02-01-PLAN.md — Payload schema (Envelope + Material + URI + Error variants + HKDF constants + identity signing_seed accessor) (Wave 1)
 - [ ] 02-02-PLAN.md — Flow orchestration (run_send + run_receive + state ledger + Prompter trait + MockTransport integration tests) (Wave 2)
 - [ ] 02-03-PLAN.md — CLI wiring (main.rs dispatch + TtyPrompter + CLI integration tests for help/version/stderr-scan + HUMAN-UAT) (Wave 3)
 
@@ -83,7 +83,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4. Decimal insertions (e.g., 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — scaffold, vendored primitives, and transport seam | 3/3 | Complete    | 2026-04-21 |
-| 2. Send, receive, and explicit acceptance | 0/3 | Not started | - |
+| 2. Send, receive, and explicit acceptance | 1/3 | In progress | - |
 | 3. Signed receipt — the cipherpost delta | 0/TBD | Not started | - |
 | 4. Protocol documentation drafts | 0/TBD | Not started | - |
 

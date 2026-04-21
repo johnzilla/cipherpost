@@ -63,11 +63,11 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### Payload schema
 
-- [ ] **PAYL-01**: `Envelope` struct carries `purpose: String`, `material: Material`, `created_at: i64` (unix seconds, inner signed timestamp), `protocol_version: u16`; canonicalized with JCS before signing
-- [ ] **PAYL-02**: `Material` is a Rust enum with `GenericSecret { bytes: Vec<u8> }` implemented; `X509Cert`, `PgpKey`, `SshKey` variants are defined but return `unimplemented` on encode/decode (reserved for v1.0)
-- [ ] **PAYL-03**: Plaintext payload is rejected if it exceeds 64 KB; error message names the actual size and the cap
-- [ ] **PAYL-04**: Purpose text is stripped of ASCII control characters (C0/C1) before canonicalization and acceptance display; purpose is documented as sender-attested (not independently verified) in SPEC.md
-- [ ] **PAYL-05**: `share_ref` is a 128-bit value derived as `sha256(ciphertext || created_at)[..16]`, hex-encoded (32 chars) in record fields and DHT labels
+- [x] **PAYL-01**: `Envelope` struct carries `purpose: String`, `material: Material`, `created_at: i64` (unix seconds, inner signed timestamp), `protocol_version: u16`; canonicalized with JCS before signing
+- [x] **PAYL-02**: `Material` is a Rust enum with `GenericSecret { bytes: Vec<u8> }` implemented; `X509Cert`, `PgpKey`, `SshKey` variants are defined but return `unimplemented` on encode/decode (reserved for v1.0)
+- [x] **PAYL-03**: Plaintext payload is rejected if it exceeds 64 KB; error message names the actual size and the cap
+- [x] **PAYL-04**: Purpose text is stripped of ASCII control characters (C0/C1) before canonicalization and acceptance display; purpose is documented as sender-attested (not independently verified) in SPEC.md
+- [x] **PAYL-05**: `share_ref` is a 128-bit value derived as `sha256(ciphertext || created_at)[..16]`, hex-encoded (32 chars) in record fields and DHT labels
 
 ### Send
 

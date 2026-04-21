@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 2 context gathered
-last_updated: "2026-04-21T11:49:58.724Z"
-last_activity: 2026-04-21
+status: executing
+stopped_at: Phase 2 Plan 01 complete; Plans 02 and 03 pending
+last_updated: "2026-04-21T16:30:00.000Z"
+last_activity: 2026-04-21 -- Completed 02-01-PLAN.md
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_plans: 6
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-20)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase --phase — 1
+**Current focus:** Phase --phase — 2
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-04-21
+Phase: 2 (send-receive-and-explicit-acceptance) — EXECUTING
+Plan: 2 of 3 (02-01 complete; 02-02 next)
+Status: Executing Phase 2
+Last activity: 2026-04-21 -- Completed 02-01-PLAN.md (payload schema + URI + error variants)
 
 Progress: [███████░░░] 67%
 
@@ -36,7 +36,7 @@ Progress: [███████░░░] 67%
 
 **Velocity:**
 
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: — (no data yet)
 - Total execution time: 0 hours
 
@@ -44,21 +44,21 @@ Progress: [███████░░░] 67%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Foundation | 0/TBD | — | — |
-| 2. Send/receive/acceptance | 0/TBD | — | — |
+| 1. Foundation | 3/3 | — | — |
+| 2. Send/receive/acceptance | 1/3 | — | — |
 | 3. Signed receipt | 0/TBD | — | — |
 | 4. Protocol docs | 0/TBD | — | — |
-| 1 | 3 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: none yet
+- Last 5 plans: 01-01, 01-02, 01-03, 02-01
 - Trend: — (no data)
 
 *Updated after each plan completion*
 | Phase 01 P01 | 11 | 3 tasks | 20 files |
 | Phase 01 P02 | 13 | 2 tasks | 14 files |
 | Phase 01 P03 | 8 | 2 tasks | 8 files |
+| Phase 02 P01 | ~20 | 4 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -81,6 +81,12 @@ Recent decisions affecting current work:
 - cfg(test) cross-crate: MockTransport requires --features mock for integration tests; [[test]] required-features in Cargo.toml
 - 550-byte blob is BEP44 budget limit for worst-case OuterRecord; 600 exceeds dns_packet 1000-byte limit
 - pkarr PublishError uses typed QueryError::Timeout enum (not string matching); resolve_most_recent returns Option, not Result
+- Plan 02-01: Envelope JCS fixture locked at 119 bytes sha256 8a8ea877f1bce53bede8d721ccab0eee850080a4f173002adc538ae844ef1a8b
+- Plan 02-01: Material serde tag='type' rename_all='snake_case'; wire = {"type":"generic_secret","bytes":"<b64-std-padded>"}
+- Plan 02-01: Envelope::from_jcs_bytes maps parse failure to SignatureCanonicalMismatch (D-RECV-01 step 7; inherits exit 3)
+- Plan 02-01: Rust string literals reject \x80..\xFF escapes; use \u{80}..\u{9F} for C1 controls in test strings
+- Plan 02-01: ShareUri parser is hand-rolled (strip_prefix + split_once), no url crate; strict form per D-URI-03
+- Plan 02-01: Identity::signing_seed() added as clean accessor; secret_key_bytes_for_leak_test preserved for debug_leak_scan.rs
 
 ### Pending Todos
 
@@ -96,12 +102,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none — pre-implementation)* | | | |
+| Tooling | Pre-existing Phase 1 `cargo fmt --check` deviations (see .planning/phases/02-send-receive-and-explicit-acceptance/deferred-items.md) | Deferred to chore(fmt) pass | 2026-04-21 Plan 02-01 |
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 2 context gathered
-Resume file: --resume-file
+Last session: 2026-04-21T16:30:00.000Z
+Stopped at: Phase 2 Plan 01 complete; Plan 02 pending (flow orchestration)
+Resume file: .planning/phases/02-send-receive-and-explicit-acceptance/02-02-PLAN.md
 
-**Planned Phase:** 1 (Foundation — scaffold, vendored primitives, and transport seam) — 3 plans — 2026-04-21T01:26:11.185Z
+**Planned Phase:** 2 (send-receive-and-explicit-acceptance) — 3 plans — 2026-04-21T13:09:57.004Z
