@@ -48,8 +48,17 @@ pub enum Error {
     #[error("user declined acceptance")]
     Declined,
 
-    #[error("payload exceeds 64 KB limit")]
+    #[error("payload exceeds 64 KB limit: actual={actual}, cap={limit}")]
     PayloadTooLarge { actual: usize, limit: usize },
+
+    #[error("share_ref in URI does not match resolved record")]
+    ShareRefMismatch,
+
+    #[error("share too large for PKARR packet: encoded={encoded} bytes, budget={budget} bytes (plaintext was {plaintext} bytes)")]
+    WireBudgetExceeded { encoded: usize, budget: usize, plaintext: usize },
+
+    #[error("invalid share URI: {0}")]
+    InvalidShareUri(String),
 
     #[error("invalid passphrase input method (inline argv rejected)")]
     PassphraseInvalidInput,
@@ -80,6 +89,9 @@ pub fn exit_code(err: &Error) -> i32 {
         Error::NotFound => 5,
         Error::Network => 6,
         Error::Declined => 7,
+        Error::ShareRefMismatch
+        | Error::WireBudgetExceeded { .. }
+        | Error::InvalidShareUri(_) => 1,
         _ => 1,
     }
 }
