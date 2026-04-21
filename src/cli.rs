@@ -77,7 +77,8 @@ pub enum Command {
     /// Fetch signed receipts for shares you sent (phase 3)
     #[command(long_about = "List and verify signed receipts.\n\nEXAMPLES:\n  \
               cipherpost receipts --from <recipient-z32>\n  \
-              cipherpost receipts --from <recipient-z32> --share-ref <32-hex>")]
+              cipherpost receipts --from <recipient-z32> --share-ref <32-hex>\n  \
+              cipherpost receipts --from <recipient-z32> --json")]
     Receipts {
         /// Recipient pubkey (z-base-32) to query
         #[arg(long)]
@@ -86,6 +87,10 @@ pub enum Command {
         /// Filter by share_ref (32-char hex)
         #[arg(long)]
         share_ref: Option<String>,
+
+        /// Emit machine-readable JSON to stdout (status stays on stderr).
+        #[arg(long)]
+        json: bool,
     },
 
     /// Print crate version, git commit, and crypto primitives

@@ -188,6 +188,12 @@ fn dispatch(cli: Cli) -> Result<()> {
             )?;
             let id = cipherpost::identity::load(pw.as_secret())?;
 
+            // Reconstruct the pkarr::Keypair from the identity's signing seed so we can
+            // sign the Receipt in run_receive step 13 and publish it under this key (D-SEQ-07).
+            let seed = id.signing_seed();
+            let seed_bytes: [u8; 32] = *seed;
+            let kp = pkarr::Keypair::from_secret_key(&seed_bytes);
+
             let mut sink = match output.as_deref() {
                 None | Some("-") => cipherpost::flow::OutputSink::Stdout,
                 Some(p) => cipherpost::flow::OutputSink::File(std::path::PathBuf::from(p)),
@@ -210,12 +216,34 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             };
 
-            cipherpost::flow::run_receive(&id, transport.as_ref(), &uri, &mut sink, &prompter)?;
+            cipherpost::flow::run_receive(&id, transport.as_ref(), &kp, &uri, &mut sink, &prompter)?;
             Ok(())
         }
-        Command::Receipts { .. } => {
-            eprintln!("not implemented yet (phase 3)");
-            std::process::exit(1);
+        Command::Receipts { from, share_ref, json } => {
+            // D-OUT-04: no passphrase prompt, no Identity load. Receipts listing
+            // requires only a public PKARR key for the DHT resolve and the
+            // Receipt's own recipient_pubkey for verify.
+            let transport: Box<dyn cipherpost::transport::Transport> = {
+                #[cfg(feature = "mock")]
+                {
+                    if std::env::var("CIPHERPOST_USE_MOCK_TRANSPORT").is_ok() {
+                        Box::new(cipherpost::transport::MockTransport::new())
+                    } else {
+                        Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                    }
+                }
+                #[cfg(not(feature = "mock"))]
+                {
+                    Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                }
+            };
+            cipherpost::flow::run_receipts(
+                transport.as_ref(),
+                &from,
+                share_ref.as_deref(),
+                json,
+            )?;
+            Ok(())
         }
         Command::Version => {
             // Plan 02 replaces with real version printer per D-13
