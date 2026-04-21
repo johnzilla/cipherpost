@@ -29,7 +29,7 @@ fn identity_debug_does_not_leak_bytes() {
     // Must not contain any 8-byte window of the secret key in hex.
     let secret_bytes = id.secret_key_bytes_for_leak_test();
     for win in secret_bytes.windows(8) {
-        let hex: String = win.iter().map(|b| format!("{:02x}", b)).collect();
+        let hex: String = win.iter().fold(String::new(), |mut s, b| { use std::fmt::Write; let _ = write!(s, "{:02x}", b); s });
         assert!(
             !debug_str.contains(&hex),
             "Debug leak: seed bytes {:?} found in format!({{:?}}, identity). Full debug: {:?}",

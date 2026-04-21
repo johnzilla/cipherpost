@@ -156,6 +156,11 @@ name = "phase3_share_ref_filter"
 path = "tests/phase3_share_ref_filter.rs"
 required-features = ["mock"]
 
+[[test]]
+name = "phase3_tamper_zero_receipts"
+path = "tests/phase3_tamper_zero_receipts.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

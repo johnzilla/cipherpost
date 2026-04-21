@@ -52,7 +52,7 @@ fn second_receive_on_same_share_ref_short_circuits() {
     let ledger_after_first = std::fs::read_to_string(&ledger_path).unwrap();
     let lines_after_first = ledger_after_first.lines().count();
     assert!(
-        lines_after_first >= 1 && lines_after_first <= 2,
+        (1..=2).contains(&lines_after_first),
         "ledger must have 1–2 lines after first receive (step 12 null + optional step 13 with receipt_published_at), got {}",
         lines_after_first
     );
