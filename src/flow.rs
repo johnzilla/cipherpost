@@ -738,8 +738,7 @@ fn format_ttl_remaining(seconds: u64) -> String {
 }
 
 /// Format a unix-seconds timestamp as `YYYY-MM-DD HH:MM UTC`. Reuses the
-/// civil-from-days helper already in this file (Plan 02). Local-time rendering
-/// is deferred (no chrono dep; `UTC` suffix is the attestation — see SUMMARY).
+/// civil-from-days helper already in this file (Plan 02).
 fn format_unix_as_iso_utc(unix: i64) -> String {
     let days = unix.div_euclid(86400);
     let rem = unix.rem_euclid(86400);
@@ -747,6 +746,18 @@ fn format_unix_as_iso_utc(unix: i64) -> String {
     let hour = rem / 3600;
     let minute = (rem % 3600) / 60;
     format!("{:04}-{:02}-{:02} {:02}:{:02} UTC", y, m, d, hour, minute)
+}
+
+/// Format a unix-seconds timestamp in the user's local timezone as
+/// `YYYY-MM-DD HH:MM` (D-ACCEPT-02 / RECV-04). chrono reads the system
+/// timezone at call time; if lookup fails we fall back to "?" rather than
+/// surfacing the error through the acceptance path.
+fn format_unix_as_iso_local(unix: i64) -> String {
+    use chrono::{Local, TimeZone};
+    match Local.timestamp_opt(unix, 0).single() {
+        Some(dt) => dt.format("%Y-%m-%d %H:%M").to_string(),
+        None => "?".to_string(),
+    }
 }
 
 impl Prompter for TtyPrompter {
@@ -776,6 +787,7 @@ impl Prompter for TtyPrompter {
         // (sender should have stripped at send time, but belt-and-suspenders).
         let safe_purpose: String = purpose.chars().filter(|c| !c.is_control()).collect();
         let expires_utc = format_unix_as_iso_utc(expires_unix_seconds);
+        let expires_local = format_unix_as_iso_local(expires_unix_seconds);
         let ttl_str = format_ttl_remaining(ttl_remaining_seconds);
 
         eprintln!("=== CIPHERPOST ACCEPTANCE ===============================");
@@ -786,8 +798,8 @@ impl Prompter for TtyPrompter {
         eprintln!("Type:        {}", material_type);
         eprintln!("Size:        {} bytes", size_bytes);
         eprintln!(
-            "TTL:         {} remaining (expires {})",
-            ttl_str, expires_utc
+            "TTL:         {} remaining (expires {} / {} local)",
+            ttl_str, expires_utc, expires_local
         );
         eprintln!("=========================================================");
         eprintln!("To accept, paste the sender's z32 pubkey and press Enter:");
@@ -851,6 +863,27 @@ mod tests {
         let days = epoch_ts.div_euclid(86400);
         let (y, m, d) = civil_from_days(days);
         assert_eq!((y, m, d), (1970, 1, 1));
+    }
+
+    #[test]
+    fn format_unix_as_iso_utc_epoch() {
+        assert_eq!(format_unix_as_iso_utc(0), "1970-01-01 00:00 UTC");
+    }
+
+    #[test]
+    fn format_unix_as_iso_local_renders_tz_aware_string() {
+        // D-ACCEPT-02 / RECV-04: local time must render alongside UTC in the
+        // acceptance banner. This test does NOT assert a specific timezone
+        // offset (it's machine-dependent) — it asserts the formatter returns
+        // a parseable `YYYY-MM-DD HH:MM` shape, not the "?" fallback, for a
+        // valid unix timestamp. Any TZ that chrono can resolve produces this.
+        let s = format_unix_as_iso_local(0);
+        assert_ne!(s, "?", "chrono should resolve local TZ on a healthy host");
+        assert_eq!(s.len(), 16, "expected `YYYY-MM-DD HH:MM` (16 chars), got {:?}", s);
+        assert_eq!(&s[4..5], "-");
+        assert_eq!(&s[7..8], "-");
+        assert_eq!(&s[10..11], " ");
+        assert_eq!(&s[13..14], ":");
     }
 
     #[test]

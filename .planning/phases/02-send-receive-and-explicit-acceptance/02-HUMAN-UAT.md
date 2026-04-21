@@ -3,12 +3,12 @@ status: partial
 phase: 02-send-receive-and-explicit-acceptance
 source: [02-VERIFICATION.md]
 started: 2026-04-21T00:00:00Z
-updated: 2026-04-21T00:00:00Z
+updated: 2026-04-21T16:50:00Z
 ---
 
 ## Current Test
 
-[awaiting human testing]
+Test 1 needs re-run on a real TTY after the TTL-local-time fix (see "Findings during UAT" below).
 
 ## Tests
 
@@ -80,3 +80,32 @@ skipped: 0
 blocked: 0
 
 ## Gaps
+
+## Findings during UAT
+
+### 2026-04-21 — TTL line missing local time (FIXED)
+
+**Finding:** First UAT run of Test 1 produced this TTL row on the acceptance banner:
+
+```
+TTL:         23h 57m remaining (expires 2026-04-22 16:41 UTC)
+```
+
+**Problem:** D-ACCEPT-02 (in `02-CONTEXT.md`) and REQ RECV-04 both specify *local AND UTC* — the format contract is `(expires <ISO UTC> / <local>)`. The shipped code rendered UTC only.
+
+**Root cause:** `src/flow.rs::format_unix_as_iso_utc` existed from Plan 02-03 but no local-time sibling was written. Comment in the source explicitly deferred it: `"Local-time rendering is deferred (no chrono dep; UTC suffix is the attestation — see SUMMARY)"`. That was a scope reduction RECV-04 did not authorize.
+
+**Fix:**
+- Added `chrono = { version = "0.4", default-features = false, features = ["clock"] }` to `Cargo.toml` (dual MIT/Apache-2.0, passes `cargo deny`).
+- Added `format_unix_as_iso_local` in `src/flow.rs` using `chrono::Local.timestamp_opt(...)` + `%Y-%m-%d %H:%M` format.
+- Updated `TtyPrompter::render_and_confirm` to emit `(expires <UTC> / <local> local)` per D-ACCEPT-02.
+- Added two unit tests (`format_unix_as_iso_utc_epoch`, `format_unix_as_iso_local_renders_tz_aware_string`).
+- Test suite now 72 passing / 0 failing / 3 platform-skipped.
+
+**Re-verify on real TTY:** re-run Test 1 above; the TTL row should now look like:
+
+```
+TTL:         23h 57m remaining (expires 2026-04-22 16:41 UTC / 12:41 local)
+```
+
+(Exact local hour depends on `$TZ` / `/etc/localtime`.)
