@@ -682,6 +682,147 @@ pub mod test_helpers {
     }
 }
 
+// ============================================================================
+// TtyPrompter — production Prompter used by main.rs::dispatch.
+//
+// Renders the D-ACCEPT-02 bordered banner to stderr, reads typed z32 via
+// dialoguer::Input, byte-compares to the sender's z32 (after trim()).
+// Pre-check: stdin AND stderr MUST both be TTYs. The cfg-gated
+// CIPHERPOST_SKIP_TTY_CHECK env var allows the assert_cmd subprocess tests to
+// drive stdin via a pipe — production builds (no `mock` feature and no test
+// cfg) cannot honor the override.
+// ============================================================================
+
+/// Production Prompter backed by a real TTY.
+///
+/// Renders the D-ACCEPT-02 bordered banner to stderr and reads the sender's
+/// z-base-32 pubkey via `dialoguer::Input` (or a plain stdin line-read in test
+/// mode). Returns `Err(Error::Declined)` on any mismatch (D-ACCEPT-01).
+///
+/// The TTY pre-check (D-ACCEPT-03) requires BOTH stdin AND stderr to be TTYs.
+/// Production builds cannot bypass it; only builds compiled with `cfg(test)`
+/// or `--features mock` honor the `CIPHERPOST_SKIP_TTY_CHECK` env var.
+pub struct TtyPrompter;
+
+impl TtyPrompter {
+    pub fn new() -> Self {
+        TtyPrompter
+    }
+}
+
+impl Default for TtyPrompter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Returns `true` iff the process is running under `cfg(test)` or the `mock`
+/// feature AND `CIPHERPOST_SKIP_TTY_CHECK` is set. Always `false` in production
+/// builds so the TTY pre-check cannot be bypassed.
+fn tty_check_skipped() -> bool {
+    #[cfg(any(test, feature = "mock"))]
+    {
+        std::env::var("CIPHERPOST_SKIP_TTY_CHECK").is_ok()
+    }
+    #[cfg(not(any(test, feature = "mock")))]
+    {
+        false
+    }
+}
+
+/// Format `<Xh YYm>` for TTL remaining. Hand-rolled — no chrono dep.
+fn format_ttl_remaining(seconds: u64) -> String {
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    format!("{}h {:02}m", h, m)
+}
+
+/// Format a unix-seconds timestamp as `YYYY-MM-DD HH:MM UTC`. Reuses the
+/// civil-from-days helper already in this file (Plan 02). Local-time rendering
+/// is deferred (no chrono dep; `UTC` suffix is the attestation — see SUMMARY).
+fn format_unix_as_iso_utc(unix: i64) -> String {
+    let days = unix.div_euclid(86400);
+    let rem = unix.rem_euclid(86400);
+    let (y, m, d) = civil_from_days(days);
+    let hour = rem / 3600;
+    let minute = (rem % 3600) / 60;
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02} UTC",
+        y, m, d, hour, minute
+    )
+}
+
+impl Prompter for TtyPrompter {
+    fn render_and_confirm(
+        &self,
+        purpose: &str,
+        sender_openssh_fp: &str,
+        sender_z32: &str,
+        share_ref_hex: &str,
+        material_type: &str,
+        size_bytes: usize,
+        ttl_remaining_seconds: u64,
+        expires_unix_seconds: i64,
+    ) -> Result<(), Error> {
+        // D-ACCEPT-03: TTY required on stdin AND stderr (unless skipped under
+        // cfg(test) / feature=mock). Production builds cannot honor the skip.
+        if !tty_check_skipped()
+            && (!std::io::stderr().is_terminal() || !std::io::stdin().is_terminal())
+        {
+            return Err(Error::Config(
+                "acceptance requires a TTY; non-interactive receive is deferred".into(),
+            ));
+        }
+
+        // D-ACCEPT-02: render the bordered banner to stderr. No ANSI colors.
+        // Purpose is defensively re-stripped of control chars at render time
+        // (sender should have stripped at send time, but belt-and-suspenders).
+        let safe_purpose: String = purpose.chars().filter(|c| !c.is_control()).collect();
+        let expires_utc = format_unix_as_iso_utc(expires_unix_seconds);
+        let ttl_str = format_ttl_remaining(ttl_remaining_seconds);
+
+        eprintln!("=== CIPHERPOST ACCEPTANCE ===============================");
+        eprintln!("Purpose:     \"{}\"", safe_purpose);
+        eprintln!("Sender:      {}", sender_openssh_fp);
+        eprintln!("             {}", sender_z32);
+        eprintln!("Share ref:   {}", share_ref_hex);
+        eprintln!("Type:        {}", material_type);
+        eprintln!("Size:        {} bytes", size_bytes);
+        eprintln!(
+            "TTL:         {} remaining (expires {})",
+            ttl_str, expires_utc
+        );
+        eprintln!("=========================================================");
+        eprintln!("To accept, paste the sender's z32 pubkey and press Enter:");
+
+        // D-ACCEPT-01: read the typed z32 from the user. In test-mode with
+        // the TTY check skipped, dialoguer::Input cannot prompt on a pipe;
+        // fall back to a direct stdin line-read so assert_cmd tests can drive
+        // this path via a piped stdin.
+        let typed: String = if tty_check_skipped() {
+            let mut s = String::new();
+            std::io::stdin()
+                .read_line(&mut s)
+                .map_err(|_| Error::Config("stdin read failed".into()))?;
+            s
+        } else {
+            dialoguer::Input::<String>::new()
+                .with_prompt(">")
+                .interact_text()
+                .map_err(|_| Error::Config("TTY not available for acceptance prompt".into()))?
+        };
+
+        if typed.trim() == sender_z32 {
+            Ok(())
+        } else {
+            Err(Error::Declined)
+        }
+    }
+}
+
+// ---- std::io::IsTerminal: required by TtyPrompter (Rust 1.70+; MSRV 1.85) --
+use std::io::IsTerminal;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,5 +854,47 @@ mod tests {
         let days = epoch_ts.div_euclid(86400);
         let (y, m, d) = civil_from_days(days);
         assert_eq!((y, m, d), (1970, 1, 1));
+    }
+
+    #[test]
+    fn tty_prompter_rejects_non_tty_env() {
+        // D-ACCEPT-03: when stdin or stderr is not a TTY AND CIPHERPOST_SKIP_TTY_CHECK
+        // is unset, TtyPrompter::render_and_confirm must return
+        // Error::Config("acceptance requires a TTY; non-interactive receive is deferred")
+        // WITHOUT reading any bytes from stdin and without rendering the banner.
+        //
+        // Under `cargo test` the harness redirects stdin/stderr to pipes, so the
+        // IsTerminal check naturally fails. We defensively ensure the override is
+        // absent.
+        let saved = std::env::var("CIPHERPOST_SKIP_TTY_CHECK").ok();
+        std::env::remove_var("CIPHERPOST_SKIP_TTY_CHECK");
+
+        let result = TtyPrompter::new().render_and_confirm(
+            "test purpose",     // purpose
+            "SHA256:dummy",     // sender_openssh_fp
+            "sender_z32_dummy", // sender_z32
+            "deadbeef",         // share_ref_hex
+            "generic_blob",     // material_type
+            42,                 // size_bytes
+            3600,               // ttl_remaining_seconds
+            0,                  // expires_unix_seconds
+        );
+
+        // Restore env before asserting so a panic does not leak state.
+        if let Some(v) = saved {
+            std::env::set_var("CIPHERPOST_SKIP_TTY_CHECK", v);
+        }
+
+        match result {
+            Err(Error::Config(msg)) => {
+                assert_eq!(
+                    msg,
+                    "acceptance requires a TTY; non-interactive receive is deferred",
+                    "D-ACCEPT-03 error message must be exact"
+                );
+            }
+            Err(other) => panic!("expected Error::Config, got {:?}", other),
+            Ok(()) => panic!("expected TTY pre-check to refuse in non-TTY cargo-test env"),
+        }
     }
 }
