@@ -23,20 +23,31 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### Crypto primitives (vendored from cclink)
 
-- [ ] **CRYPTO-01**: Ed25519 keypair generation and X25519 derivation reproduces byte-identical outputs to cclink's reference vectors (test fixture committed)
-- [ ] **CRYPTO-02**: Argon2id key derivation uses params stored in the identity file header as a PHC-format string (no hardcoded params in code)
-- [ ] **CRYPTO-03**: HKDF-SHA256 info strings are domain-separated and versioned as `cipherpost/v1/<context>` (never empty, never `None`)
-- [ ] **CRYPTO-04**: Canonical JSON for signed payloads uses RFC 8785 (JCS) via `serde_canonical_json`; a property test asserts determinism across re-serializations; floats in signed payloads are rejected with a compile-time-or-test-enforced guard
-- [ ] **CRYPTO-05**: age encryption is used exclusively for payload encryption (no direct `chacha20poly1305` calls anywhere in `src/`)
-- [ ] **CRYPTO-06**: Every key-holding struct (passphrase, secret key bytes, decrypted material) uses `Zeroize` / `secrecy::SecretBox`; `format!("{:?}", ...)` on any such struct in a test redacts the content
+- [x] **CRYPTO-01
+**: Ed25519 keypair generation and X25519 derivation reproduces byte-identical outputs to cclink's reference vectors (test fixture committed)
+- [x] **CRYPTO-02
+**: Argon2id key derivation uses params stored in the identity file header as a PHC-format string (no hardcoded params in code)
+- [x] **CRYPTO-03
+**: HKDF-SHA256 info strings are domain-separated and versioned as `cipherpost/v1/<context>` (never empty, never `None`)
+- [x] **CRYPTO-04
+**: Canonical JSON for signed payloads uses RFC 8785 (JCS) via `serde_canonical_json`; a property test asserts determinism across re-serializations; floats in signed payloads are rejected with a compile-time-or-test-enforced guard
+- [x] **CRYPTO-05
+**: age encryption is used exclusively for payload encryption (no direct `chacha20poly1305` calls anywhere in `src/`)
+- [x] **CRYPTO-06
+**: Every key-holding struct (passphrase, secret key bytes, decrypted material) uses `Zeroize` / `secrecy::SecretBox`; `format!("{:?}", ...)` on any such struct in a test redacts the content
 
 ### Identity
 
-- [ ] **IDENT-01**: User can generate a new Ed25519/PKARR identity with `cipherpost identity generate` and a TTY passphrase prompt; file is written to `~/.cipherpost/secret_key` with mode `0600`
-- [ ] **IDENT-02**: User can unlock an existing identity with `cipherpost identity show` (or any command requiring identity) and a TTY passphrase prompt; wrong passphrase returns exit code 4 with no key-material hint in the error
-- [ ] **IDENT-03**: Identity file refuses to open if permissions are wider than `0600` (surfaces a clear error and exit code)
-- [ ] **IDENT-04**: Identity commands support non-interactive passphrase via `CIPHERPOST_PASSPHRASE` env var, `--passphrase-file <path>`, or `--passphrase-fd <n>`; inline `--passphrase <value>` is refused
-- [ ] **IDENT-05**: `cipherpost identity show` prints both fingerprints: OpenSSH-style `ed25519:SHA256:<base64>` and z-base-32 PKARR pubkey
+- [x] **IDENT-01
+**: User can generate a new Ed25519/PKARR identity with `cipherpost identity generate` and a TTY passphrase prompt; file is written to `~/.cipherpost/secret_key` with mode `0600`
+- [x] **IDENT-02
+**: User can unlock an existing identity with `cipherpost identity show` (or any command requiring identity) and a TTY passphrase prompt; wrong passphrase returns exit code 4 with no key-material hint in the error
+- [x] **IDENT-03
+**: Identity file refuses to open if permissions are wider than `0600` (surfaces a clear error and exit code)
+- [x] **IDENT-04
+**: Identity commands support non-interactive passphrase via `CIPHERPOST_PASSPHRASE` env var, `--passphrase-file <path>`, or `--passphrase-fd <n>`; inline `--passphrase <value>` is refused
+- [x] **IDENT-05
+**: `cipherpost identity show` prints both fingerprints: OpenSSH-style `ed25519:SHA256:<base64>` and z-base-32 PKARR pubkey
 
 ### Transport (DHT)
 

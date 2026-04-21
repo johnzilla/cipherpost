@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md — Cargo scaffold, CLI skeleton, CI gates
-last_updated: "2026-04-21T02:03:25.616Z"
+stopped_at: Completed 01-02-PLAN.md — crypto primitives, identity generate/load/show, 14 prevention tests
+last_updated: "2026-04-21T02:22:26.440Z"
 last_activity: 2026-04-21 -- Phase --phase execution started
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -30,7 +30,7 @@ Plan: 1 of --name
 Status: Executing Phase --phase
 Last activity: 2026-04-21 -- Phase --phase execution started
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [███░░░░░░░] 33%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 11 | 3 tasks | 20 files |
+| Phase 01 P02 | 13 | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - serde_canonical_json upgraded to 1.0.0 (0.2 unavailable on crates.io — same CanonicalFormatter API)
 - deny.toml tokio wrapper is async-compat (pkarr direct parent), chacha20poly1305 wrapper is age-core
 - build.rs hand-rolled with git rev-parse — no vergen/built crate added
+- cfg(test) does not propagate to integration tests — functions needed by integration tests must be unconditionally pub
+- hkdf_info_enumeration filters bare prefix by requiring cap.len() > prefix.len()
+- age Encryptor::with_recipients takes Iterator — use std::iter::once not Vec
 
 ### Pending Todos
 
@@ -91,8 +95,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-21T02:03:25.609Z
-Stopped at: Completed 01-01-PLAN.md — Cargo scaffold, CLI skeleton, CI gates
+Last session: 2026-04-21T02:22:26.434Z
+Stopped at: Completed 01-02-PLAN.md — crypto primitives, identity generate/load/show, 14 prevention tests
 Resume file: None
 
 **Planned Phase:** 1 (Foundation — scaffold, vendored primitives, and transport seam) — 3 plans — 2026-04-21T01:26:11.185Z
