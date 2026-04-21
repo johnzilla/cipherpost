@@ -90,7 +90,8 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 **: TTL is enforced against the inner signed `created_at + ttl_seconds`; expired shares abort with exit code 2 (distinct from sig failure)
 - [x] **RECV-03
 **: After signature + TTL pass, the payload is age-decrypted into a `Zeroizing` buffer but not surfaced; the envelope inner signature is verified against the signed fields; any inner-sig failure aborts with exit code 3
-- [ ] **RECV-04**: An acceptance prompt displays: purpose (with control chars stripped), sender's OpenSSH fingerprint, sender's z-base-32, TTL remaining (local + UTC), payload type, and payload size; user must type a full-word confirmation (not just `y`); declining returns exit code 7
+- [x] **RECV-04
+**: An acceptance prompt displays: purpose (with control chars stripped), sender's OpenSSH fingerprint, sender's z-base-32, TTL remaining (local + UTC), payload type, and payload size; user must type a full-word confirmation (not just `y`); declining returns exit code 7
 - [x] **RECV-05
 **: On acceptance, the decrypted payload is written to `--output <path>` or `-` (stdout) — default is stdout if a file is not specified
 - [x] **RECV-06
@@ -106,10 +107,14 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 - [x] **CLI-01
 **: All `send` and `receive` payload I/O supports `-` for stdin/stdout; status output is written to stderr so stdout stays pipeable
-- [ ] **CLI-02**: Exit codes follow a documented taxonomy: `0` success, `2` expired, `3` signature verification failure, `4` decryption / passphrase failure, `5` not found on DHT, `6` network / timeout, `7` user declined, `1` generic error
-- [ ] **CLI-03**: `cipherpost --help` and every subcommand `--help` prints at least one worked example (`EXAMPLES` section)
-- [ ] **CLI-04**: `cipherpost version` prints the crate version, the git commit hash (built in), and a one-line list of crypto primitives in use (age, Ed25519, Argon2id, HKDF-SHA256, JCS)
-- [ ] **CLI-05**: Error messages never include passphrase bytes, key bytes, or raw payload bytes; a test asserts this by fuzzing bad inputs and grepping stderr for any secret marker
+- [x] **CLI-02
+**: Exit codes follow a documented taxonomy: `0` success, `2` expired, `3` signature verification failure, `4` decryption / passphrase failure, `5` not found on DHT, `6` network / timeout, `7` user declined, `1` generic error
+- [x] **CLI-03
+**: `cipherpost --help` and every subcommand `--help` prints at least one worked example (`EXAMPLES` section)
+- [x] **CLI-04
+**: `cipherpost version` prints the crate version, the git commit hash (built in), and a one-line list of crypto primitives in use (age, Ed25519, Argon2id, HKDF-SHA256, JCS)
+- [x] **CLI-05
+**: Error messages never include passphrase bytes, key bytes, or raw payload bytes; a test asserts this by fuzzing bad inputs and grepping stderr for any secret marker
 
 ### Protocol documentation (drafts)
 

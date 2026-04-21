@@ -934,37 +934,37 @@ fn check_wire_budget(
 
 **Table is NOT empty.** The assumptions above are deliberate calls where this research defaults to one answer but the planner may choose another. Items A1, A2, A7 warrant planner explicit confirmation.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `Identity` gain a `decrypt_from_self()` convenience method to avoid exposing the raw Ed25519 seed to flow code?**
    - What we know: `Identity::secret_key_bytes_for_leak_test` is Phase 1's public accessor (production-accessible despite the name). Phase 2 needs the seed to derive X25519. Exposing raw bytes is a Pitfall #7-adjacent risk.
    - What's unclear: whether planner wants a minimal Phase 2 API change (rename + docstring warning) or a fully-encapsulated `Identity::decrypt(&self, ciphertext)` wrapper.
-   - Recommendation: **Add `Identity::decrypt_for_self(&self, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error>`** that internally derives X25519 and calls `age_decrypt`. Keeps seed in identity.rs. Similarly add `Identity::encrypt_to_self(&self, plaintext: &[u8]) -> Result<Vec<u8>, Error>` for `send --self`. Plan Wave 2 owns these additions.
+   - RESOLVED: Recommendation: **Add `Identity::decrypt_for_self(&self, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error>`** that internally derives X25519 and calls `age_decrypt`. Keeps seed in identity.rs. Similarly add `Identity::encrypt_to_self(&self, plaintext: &[u8]) -> Result<Vec<u8>, Error>` for `send --self`. Plan Wave 2 owns these additions.
 
 2. **How does the acceptance-screen integration test simulate a TTY?**
    - What we know: Phase 1's `01-HUMAN-UAT.md` captures one pending TTY item (`identity generate` passphrase prompt). `assert_cmd` + `predicates` are in dev-deps.
    - What's unclear: whether `assert_cmd` can attach a PTY to child processes, or whether testing is restricted to (a) hand-scripted inputs via stdin pipe (which will fail TTY check → expected tested path) and (b) human UAT via `02-HUMAN-UAT.md`.
-   - Recommendation: **Accept that D-ACCEPT-03 compliance is tested via the non-TTY rejection path (pipe stdin → assert exit 1).** The happy-path acceptance screen + typed z32 goes in `02-HUMAN-UAT.md` per Phase 1's pattern. Planner allocates a human-verification item. An alternative — use `portable-pty` or `pty_closure` — adds complexity for a one-off.
+   - RESOLVED: Recommendation: **Accept that D-ACCEPT-03 compliance is tested via the non-TTY rejection path (pipe stdin → assert exit 1).** The happy-path acceptance screen + typed z32 goes in `02-HUMAN-UAT.md` per Phase 1's pattern. Planner allocates a human-verification item. An alternative — use `portable-pty` or `pty_closure` — adds complexity for a one-off.
 
 3. **Should the wire-budget check use `MockTransport`'s JSON-length check or the real SignedPacket build?**
    - What we know: Phase 1's `tests/signed_packet_budget.rs` uses real `SignedPacket.encoded_packet().len()`. `MockTransport::publish` uses `rdata.len()`. These differ: the real packet adds ~50 bytes of DNS framing + packet overhead.
    - What's unclear: which measurement Phase 2's production path should trigger on.
-   - Recommendation: **Use the real `SignedPacket.encoded_packet().len()`** in `flow::run_send`'s wire-budget check (Code Example §11). It is the authoritative limit and makes the error message accurate. Keep the MockTransport's JSON-length approximation as a belt-and-suspenders in tests; real and mock budgets differ but both reject the right cases.
+   - RESOLVED: Recommendation: **Use the real `SignedPacket.encoded_packet().len()`** in `flow::run_send`'s wire-budget check (Code Example §11). It is the authoritative limit and makes the error message accurate. Keep the MockTransport's JSON-length approximation as a belt-and-suspenders in tests; real and mock budgets differ but both reject the right cases.
 
 4. **How should `cipherpost version` verify its git SHA in Phase 2?**
    - What we know: Phase 1's VERIFICATION.md confirmed `cipherpost 0.1.0 (d8fb2028d2f2)` renders correctly. `build.rs` emits `CIPHERPOST_GIT_SHA` via `git rev-parse --short=12 HEAD`. The `option_env!` fallback is `"unknown"`.
    - What's unclear: whether Phase 2 needs any additional CLI-04 work or can mark it satisfied.
-   - Recommendation: **Add a Phase 2 integration test `phase2_version_git_sha_present.rs`** that runs `cipherpost version` and greps stdout for a 12-char lowercase-hex SHA (regex `\([0-9a-f]{12}\)`). If CI runs against a repo without a git dir (unlikely; CI checks out source), the fallback `"unknown"` causes the test to fail loudly — which is what we want.
+   - RESOLVED: Recommendation: **Add a Phase 2 integration test `phase2_version_git_sha_present.rs`** that runs `cipherpost version` and greps stdout for a 12-char lowercase-hex SHA (regex `\([0-9a-f]{12}\)`). If CI runs against a repo without a git dir (unlikely; CI checks out source), the fallback `"unknown"` causes the test to fail loudly — which is what we want.
 
 5. **Is a `--json` or `--quiet` global flag worth adding in Phase 2 (discretion space)?**
    - What we know: CLI-04 locks `version` output format; CLI-01 locks stderr-vs-stdout discipline. Nothing else mandates JSON.
    - What's unclear: whether share URI emission to stdout should be `println!` (human) or structured JSON (machine).
-   - Recommendation: **Plain stdout `println!` for the URI.** `--json` is a planner-deferred v1.0 feature. Emitting structured JSON now would be speculative and add complexity. CLI-01 is satisfied: payload I/O + status-to-stderr. The URI is status (stdout per PROJECT.md L43 "print the share URI on stdout") — status on stdout for `send`, status on stderr for `receive`. Both are pipeable.
+   - RESOLVED: Recommendation: **Plain stdout `println!` for the URI.** `--json` is a planner-deferred v1.0 feature. Emitting structured JSON now would be speculative and add complexity. CLI-01 is satisfied: payload I/O + status-to-stderr. The URI is status (stdout per PROJECT.md L43 "print the share URI on stdout") — status on stdout for `send`, status on stderr for `receive`. Both are pipeable.
 
 6. **What's the plan coordination between wave-1 and wave-2?**
    - What we know: Plan 2 (flow) depends on Plan 1 (payload + URI). Tests live in Plan 3.
    - What's unclear: whether to pre-author Plan 2's struct signatures in Plan 1, or let Plan 2 define them first and refactor if needed.
-   - Recommendation: **Plan 1 defines a clean `Envelope`/`Material` module with Phase-1-style tests** (JCS round-trip, size cap, strip, material variants error). Plan 2 imports and composes; no upstream changes needed. Plan 3 writes CLI integration tests. Planner retains latitude to merge 1+2 if parallelism is not needed.
+   - RESOLVED: Recommendation: **Plan 1 defines a clean `Envelope`/`Material` module with Phase-1-style tests** (JCS round-trip, size cap, strip, material variants error). Plan 2 imports and composes; no upstream changes needed. Plan 3 writes CLI integration tests. Planner retains latitude to merge 1+2 if parallelism is not needed.
 
 ## Environment Availability
 
