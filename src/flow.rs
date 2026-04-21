@@ -42,6 +42,19 @@ pub const WIRE_BUDGET_BYTES: usize = 1000;
 /// PRD's 4h after Mainline DHT latency research).
 pub const DEFAULT_TTL_SECONDS: u64 = 86400;
 
+/// Number of attempts `run_send` makes to fit a payload in the wire budget.
+///
+/// Rationale: age intentionally adds a random-length "grease" stanza on every
+/// encryption (`age-core::format::grease_the_joint` — a 0..=265-byte random
+/// stanza) to thwart ciphertext-size fingerprinting. For payloads near the
+/// 1000-byte PKARR budget, an unlucky grease draw can push the encoded
+/// SignedPacket over the limit even when the plaintext would fit comfortably
+/// with a different draw. Retrying re-samples the grease. At ~50% fit
+/// probability per attempt, 20 attempts reduces the false-reject probability
+/// to ~1e-6. The check in step 2 still guarantees we are in the serviceable
+/// plaintext range; retries only paper over grease-size variance.
+pub const WIRE_BUDGET_RETRY_ATTEMPTS: usize = 20;
+
 // ---- SendMode ---------------------------------------------------------------
 
 /// Send target: encrypt to self OR encrypt to a recipient's PKARR pubkey (z-base-32).
@@ -251,46 +264,76 @@ pub fn run_send(
         }
     };
 
-    // 6. age_encrypt
-    let ciphertext = crypto::age_encrypt(&jcs_bytes, &recipient)?;
+    // Steps 6-12 are retried up to WIRE_BUDGET_RETRY_ATTEMPTS times. The age
+    // format intentionally adds a random-length "grease" stanza on every
+    // encryption (age-core `grease_the_joint` — a 0..=265-byte random stanza)
+    // to prevent ciphertext-size fingerprinting. For payloads near the
+    // 1000-byte PKARR wire budget, a single unlucky grease draw can push the
+    // encoded SignedPacket over the limit even though a slightly different
+    // draw would fit. Retrying re-samples the grease; the plaintext bound
+    // check in step 2 already guarantees we're in the serviceable range.
+    //
+    // If we still fail after N attempts we emit a single WireBudgetExceeded
+    // with the last-seen encoded size, so the caller sees a concrete number
+    // and can decide whether to split the payload.
+    let mut last_err: Option<(usize, usize)> = None;
+    for _attempt in 0..WIRE_BUDGET_RETRY_ATTEMPTS {
+        // 6. age_encrypt (grease stanza re-sampled each call)
+        let ciphertext = crypto::age_encrypt(&jcs_bytes, &recipient)?;
 
-    // 7. share_ref — hash raw ciphertext bytes per PAYL-05.
-    let share_ref = record::share_ref_from_bytes(&ciphertext, created_at);
+        // 7. share_ref — hash raw ciphertext bytes per PAYL-05.
+        let share_ref = record::share_ref_from_bytes(&ciphertext, created_at);
 
-    // 8. blob (base64 STANDARD)
-    use base64::Engine;
-    let blob = base64::engine::general_purpose::STANDARD.encode(&ciphertext);
+        // 8. blob (base64 STANDARD)
+        use base64::Engine;
+        let blob = base64::engine::general_purpose::STANDARD.encode(&ciphertext);
 
-    // 9 + 10 + 11. signable → sign → record
-    let signable = OuterRecordSignable {
-        blob: blob.clone(),
-        created_at,
-        protocol_version: PROTOCOL_VERSION,
-        pubkey: identity.z32_pubkey(),
-        recipient: recipient_z32_option.clone(),
-        share_ref: share_ref.clone(),
-        ttl_seconds,
-    };
-    let signature = record::sign_record(&signable, keypair)?;
-    let record = OuterRecord {
-        blob,
-        created_at,
-        protocol_version: PROTOCOL_VERSION,
-        pubkey: identity.z32_pubkey(),
-        recipient: recipient_z32_option,
-        share_ref: share_ref.clone(),
-        signature,
-        ttl_seconds,
-    };
+        // 9 + 10 + 11. signable → sign → record
+        let signable = OuterRecordSignable {
+            blob: blob.clone(),
+            created_at,
+            protocol_version: PROTOCOL_VERSION,
+            pubkey: identity.z32_pubkey(),
+            recipient: recipient_z32_option.clone(),
+            share_ref: share_ref.clone(),
+            ttl_seconds,
+        };
+        let signature = record::sign_record(&signable, keypair)?;
+        let record = OuterRecord {
+            blob,
+            created_at,
+            protocol_version: PROTOCOL_VERSION,
+            pubkey: identity.z32_pubkey(),
+            recipient: recipient_z32_option.clone(),
+            share_ref: share_ref.clone(),
+            signature,
+            ttl_seconds,
+        };
 
-    // 12. wire-budget pre-check (REAL SignedPacket build, NOT mock's rdata.len())
-    check_wire_budget(&record, keypair, jcs_bytes.len())?;
+        // 12. wire-budget pre-check (REAL SignedPacket build, NOT mock's
+        // rdata.len()).
+        match check_wire_budget(&record, keypair, jcs_bytes.len()) {
+            Ok(()) => {
+                // 13. publish
+                transport.publish(keypair, &record)?;
+                // 14. return URI
+                return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref));
+            }
+            Err(Error::WireBudgetExceeded { encoded, .. }) => {
+                last_err = Some((encoded, jcs_bytes.len()));
+                continue;
+            }
+            Err(other) => return Err(other),
+        }
+    }
 
-    // 13. publish
-    transport.publish(keypair, &record)?;
-
-    // 14. return URI
-    Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref))
+    // Exhausted retries — surface the last-seen encoded size.
+    let (encoded, plaintext) = last_err.unwrap_or((WIRE_BUDGET_BYTES + 1, jcs_bytes.len()));
+    Err(Error::WireBudgetExceeded {
+        encoded,
+        budget: WIRE_BUDGET_BYTES,
+        plaintext,
+    })
 }
 
 /// Wire-budget pre-flight: build the actual `SignedPacket` and measure its
@@ -314,10 +357,25 @@ fn check_wire_budget(
         .as_str()
         .try_into()
         .map_err(|_| Error::Config("txt encode".into()))?;
-    let packet = pkarr::SignedPacket::builder()
+    // pkarr::SignedPacketBuilder::sign returns Err(PacketTooLarge(len)) when
+    // encoded_packet.len() > 1000 (pkarr-5.0.4 signed_packet.rs:276). We
+    // translate that to Error::WireBudgetExceeded so the cipherpost-layer
+    // error is taxonomically correct (Error::Transport would mask a
+    // deterministic pre-flight failure as a generic network-ish error).
+    let packet = match pkarr::SignedPacket::builder()
         .txt(name, txt, 300)
         .sign(keypair)
-        .map_err(|e| Error::Transport(Box::new(e)))?;
+    {
+        Ok(p) => p,
+        Err(pkarr::errors::SignedPacketBuildError::PacketTooLarge(encoded)) => {
+            return Err(Error::WireBudgetExceeded {
+                encoded,
+                budget: WIRE_BUDGET_BYTES,
+                plaintext: plaintext_len,
+            });
+        }
+        Err(other) => return Err(Error::Transport(Box::new(other))),
+    };
     let encoded = packet.encoded_packet().len();
     if encoded > WIRE_BUDGET_BYTES {
         return Err(Error::WireBudgetExceeded {
