@@ -6,11 +6,13 @@
 
 use argon2::Params;
 use secrecy::SecretBox;
+use serial_test::serial;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 use zeroize::Zeroizing;
 
 #[test]
+#[serial]
 fn unlock_uses_header_params_not_code_constants() {
     let dir = TempDir::new().unwrap();
     std::env::set_var("CIPHERPOST_HOME", dir.path());

@@ -4,10 +4,12 @@
 //! `load` must refuse any file not at exactly 0600 (chmod 0644 → IdentityPermissions, exit 4).
 
 use secrecy::SecretBox;
+use serial_test::serial;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 #[test]
+#[serial]
 fn load_refuses_0644_identity_file() {
     let dir = TempDir::new().unwrap();
     std::env::set_var("CIPHERPOST_HOME", dir.path());
@@ -34,6 +36,7 @@ fn load_refuses_0644_identity_file() {
 }
 
 #[test]
+#[serial]
 fn generate_writes_0600() {
     let dir = TempDir::new().unwrap();
     std::env::set_var("CIPHERPOST_HOME", dir.path());

@@ -6,9 +6,11 @@
 //! `format!("{:?}", passphrase)` must not contain the passphrase string.
 
 use secrecy::SecretBox;
+use serial_test::serial;
 use tempfile::TempDir;
 
 #[test]
+#[serial]
 fn identity_debug_does_not_leak_bytes() {
     let dir = TempDir::new().unwrap();
     std::env::set_var("CIPHERPOST_HOME", dir.path());

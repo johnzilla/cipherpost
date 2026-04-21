@@ -65,6 +65,11 @@ proptest = "1"
 # allowed by deny.toml's license allowlist.
 assert_cmd = "2"
 predicates = "3"
+# Serializes tests that mutate the CIPHERPOST_HOME env var (integration tests in
+# identity_perms_0600.rs, identity_phc_header.rs, debug_leak_scan.rs). Rust's
+# default parallel test runner races on process-global env; #[serial] forces
+# these tests to run one at a time within their crate.
+serial_test = "3"
 
 [profile.release]
 panic = "abort"      # prevents panic backtrace from leaking stack contents (Security Mistakes table, PITFALLS.md)
