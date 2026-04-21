@@ -3,19 +3,19 @@ status: partial
 phase: 02-send-receive-and-explicit-acceptance
 source: [02-VERIFICATION.md]
 started: 2026-04-21T00:00:00Z
-updated: 2026-04-21T16:50:00Z
+updated: 2026-04-21T16:55:00Z
 ---
 
 ## Current Test
 
-Test 1 needs re-run on a real TTY after the TTL-local-time fix (see "Findings during UAT" below).
+Test 1 passed after TTL-local-time fix (commit 84e09a8). Test 2 (optional two-identity real-DHT round trip) still pending.
 
 ## Tests
 
 ### 1. Interactive TTY acceptance-screen happy path (RECV-04 + D-ACCEPT-01/02/03)
 
-expected: On a real terminal, `cipherpost send --self` publishes a share to Mainline DHT and prints a `cipherpost://...` URI. In the same terminal (so stdin/stderr are TTYs), `cipherpost receive <URI>` renders the D-ACCEPT-02 bordered banner on stderr with all rows present (Purpose, Sender OpenSSH+z32, Share ref, Type, Size, TTL with UTC expiry). Pasting the sender's z-base-32 pubkey and pressing Enter writes the decrypted `secret bytes` to stdout and the process exits 0. A sentinel file appears at `$CIPHERPOST_HOME/.cipherpost/state/accepted/<share_ref>` mode 0600 and a JSONL ledger line is appended to `$CIPHERPOST_HOME/.cipherpost/state/accepted.jsonl`.
-result: [pending]
+expected: On a real terminal, `cipherpost send --self` publishes a share to Mainline DHT and prints a `cipherpost://...` URI. In the same terminal (so stdin/stderr are TTYs), `cipherpost receive <URI>` renders the D-ACCEPT-02 bordered banner on stderr with all rows present (Purpose, Sender OpenSSH+z32, Share ref, Type, Size, TTL with BOTH UTC and local time). Pasting the sender's z-base-32 pubkey and pressing Enter writes the decrypted payload to stdout and the process exits 0. A sentinel file appears at `$CIPHERPOST_HOME/state/accepted/<share_ref>` mode 0600 and a JSONL ledger line is appended to `$CIPHERPOST_HOME/state/accepted.jsonl`.
+result: passed (2026-04-21, commit 84e09a8; banner observed showing `TTL: 23h 57m remaining (expires 2026-04-22 16:54 UTC / 2026-04-22 12:54 local)` on UTC-4 host, round trip produced `test` on stdout matching `test` on stdin)
 
 **How to run:**
 ```
@@ -73,9 +73,9 @@ echo "URI: $URI"
 ## Summary
 
 total: 2
-passed: 0
-issues: 0
-pending: 2
+passed: 1
+issues: 1 (fixed; commit 84e09a8)
+pending: 1 (Test 2 optional — two-identity real-DHT round trip)
 skipped: 0
 blocked: 0
 
