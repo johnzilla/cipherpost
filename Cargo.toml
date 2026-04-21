@@ -68,6 +68,41 @@ path = "tests/phase2_material_variants_unimplemented.rs"
 name = "phase2_share_uri_parse"
 path = "tests/phase2_share_uri_parse.rs"
 
+[[test]]
+name = "phase2_self_round_trip"
+path = "tests/phase2_self_round_trip.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_share_round_trip"
+path = "tests/phase2_share_round_trip.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_tamper_aborts_before_decrypt"
+path = "tests/phase2_tamper_aborts_before_decrypt.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_expired_share"
+path = "tests/phase2_expired_share.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_size_cap"
+path = "tests/phase2_size_cap.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_idempotent_re_receive"
+path = "tests/phase2_idempotent_re_receive.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_state_perms"
+path = "tests/phase2_state_perms.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
