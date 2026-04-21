@@ -103,6 +103,27 @@ name = "phase2_state_perms"
 path = "tests/phase2_state_perms.rs"
 required-features = ["mock"]
 
+[[test]]
+name = "phase2_cli_version_git_sha"
+path = "tests/phase2_cli_version_git_sha.rs"
+
+[[test]]
+name = "phase2_cli_help_examples"
+path = "tests/phase2_cli_help_examples.rs"
+
+[[test]]
+name = "phase2_cli_stderr_no_secrets"
+path = "tests/phase2_cli_stderr_no_secrets.rs"
+
+[[test]]
+name = "phase2_cli_declined_exit_7"
+path = "tests/phase2_cli_declined_exit_7.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "phase2_cli_not_tty_aborts"
+path = "tests/phase2_cli_not_tty_aborts.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
