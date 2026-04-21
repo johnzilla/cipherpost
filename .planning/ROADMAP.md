@@ -62,7 +62,13 @@ Plans:
   2. `cipherpost receipts --from <recipient-pubkey>` resolves the recipient's SignedPacket, filters TXT records by the `_cprcpt-` prefix, verifies each receipt's Ed25519 signature against its canonical-JSON serialization, and prints a structured summary on stdout including share_ref, accepted_at in local+UTC, and the recipient's fingerprint; filtering with `--share-ref <ref>` returns only that specific receipt.
   3. When `publish_receipt` runs under a recipient PKARR key that already holds an outgoing share record, an integration test asserts both TXT records coexist after publish (the outgoing share is not clobbered and the receipt is findable), confirming the resolve-merge-republish pattern preserves existing packet contents.
   4. A two-identity end-to-end integration test (A sends to B via `MockTransport`, B accepts via an injected scripted-confirm `Prompter`, B publishes receipt) asserts A can fetch and cryptographically verify B's receipt using only B's public PKARR key; the same test asserts fetch works even if A simultaneously holds their own unrelated outgoing share under A's key.
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Receipt wire schema body (Receipt + ReceiptSignable + sign/verify + nonce_hex + committed JCS fixture) (Wave 1)
+- [ ] 03-02-PLAN.md — DhtTransport resolve-merge-republish + Transport::resolve_all_cprcpt trait method + ledger receipt_published_at field (Wave 2)
+- [ ] 03-03-PLAN.md — run_receive step 13 wiring + run_receipts + main.rs/cli.rs dispatch + --json flag (Wave 3)
+- [ ] 03-04-PLAN.md — 4 MockTransport integration tests (end-to-end, coexistence, share_ref filter, tamper-zero-receipts) + HUMAN-UAT script + checkpoint (Wave 4)
 
 ### Phase 4: Protocol documentation drafts
 **Goal**: Produce the three protocol documents that make cipherpost independently re-implementable (an explicit abandonment-resilience requirement from the research) and that make the security model legible — `SPEC.md` draft, `THREAT-MODEL.md` draft, and a working `SECURITY.md` with a real disclosure contact and embargo policy. These are drafts, not v1.0-final, but they must capture every wire-format and trust-model decision the skeleton locked in across Phases 1-3 before the knowledge goes stale in the code alone. Research explicitly flags this phase as parallelizable with Phases 8-9 in the 10-phase sequence; consolidated here it remains the final sequential phase because it depends on Phase 3 decisions being stable enough to document.
@@ -84,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4. Decimal insertions (e.g., 
 |-------|----------------|--------|-----------|
 | 1. Foundation — scaffold, vendored primitives, and transport seam | 3/3 | Complete    | 2026-04-21 |
 | 2. Send, receive, and explicit acceptance | 2/3 | In progress | - |
-| 3. Signed receipt — the cipherpost delta | 0/TBD | Not started | - |
+| 3. Signed receipt — the cipherpost delta | 0/4 | Not started | - |
 | 4. Protocol documentation drafts | 0/TBD | Not started | - |
 
 ---
