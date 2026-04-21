@@ -68,7 +68,7 @@ Plans:
 - [x] 03-01-PLAN.md — Receipt wire schema body (Receipt + ReceiptSignable + sign/verify + nonce_hex + committed JCS fixture) (Wave 1)
 - [x] 03-02-PLAN.md — DhtTransport resolve-merge-republish + Transport::resolve_all_cprcpt trait method + ledger receipt_published_at field (Wave 2)
 - [x] 03-03-PLAN.md — run_receive step 13 wiring + run_receipts + main.rs/cli.rs dispatch + --json flag (Wave 3)
-- [ ] 03-04-PLAN.md — 4 MockTransport integration tests (end-to-end, coexistence, share_ref filter, tamper-zero-receipts) + HUMAN-UAT script + checkpoint (Wave 4)
+- [x] 03-04-PLAN.md — 4 MockTransport integration tests (end-to-end, coexistence, share_ref filter, tamper-zero-receipts) + HUMAN-UAT script + checkpoint (Wave 4)
 
 ### Phase 4: Protocol documentation drafts
 **Goal**: Produce the three protocol documents that make cipherpost independently re-implementable (an explicit abandonment-resilience requirement from the research) and that make the security model legible — `SPEC.md` draft, `THREAT-MODEL.md` draft, and a working `SECURITY.md` with a real disclosure contact and embargo policy. These are drafts, not v1.0-final, but they must capture every wire-format and trust-model decision the skeleton locked in across Phases 1-3 before the knowledge goes stale in the code alone. Research explicitly flags this phase as parallelizable with Phases 8-9 in the 10-phase sequence; consolidated here it remains the final sequential phase because it depends on Phase 3 decisions being stable enough to document.
