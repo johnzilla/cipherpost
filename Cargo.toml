@@ -43,6 +43,19 @@ serde_json = "1"
 serde_canonical_json = "1"
 rand = "0.8"
 
+[[test]]
+name = "mock_transport_roundtrip"
+path = "tests/mock_transport_roundtrip.rs"
+required-features = ["mock"]
+
+[[test]]
+name = "signed_packet_budget"
+path = "tests/signed_packet_budget.rs"
+
+[[test]]
+name = "outer_record_canonical_form"
+path = "tests/outer_record_canonical_form.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
