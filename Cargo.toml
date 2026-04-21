@@ -136,6 +136,11 @@ path = "tests/phase3_receipt_sign_verify.rs"
 name = "phase3_receipt_canonical_form"
 path = "tests/phase3_receipt_canonical_form.rs"
 
+[[test]]
+name = "phase3_mock_publish_receipt_coexistence"
+path = "tests/phase3_mock_publish_receipt_coexistence.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

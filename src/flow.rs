@@ -536,6 +536,8 @@ struct LedgerEntry<'a> {
     ciphertext_hash: String,
     cleartext_hash: String,
     purpose: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receipt_published_at: Option<&'a str>,
     sender: &'a str,
     share_ref: &'a str,
 }
@@ -557,6 +559,7 @@ fn append_ledger_entry(
         ciphertext_hash: ch,
         cleartext_hash: ph,
         purpose,
+        receipt_published_at: None,   // step 12 writes null; step 13 appends a success row
         sender: sender_z32,
         share_ref,
     };
@@ -573,6 +576,47 @@ fn append_ledger_entry(
         .map_err(Error::Io)?;
     f.write_all(&line).map_err(Error::Io)?;
     // Re-apply perms (defensive vs umask on first creation).
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(Error::Io)?;
+    Ok(())
+}
+
+/// D-SEQ-05: append a second ledger row with `receipt_published_at: Some(iso)`
+/// after a successful Plan-03 step-13 publish_receipt. Append-only; the earlier
+/// row (from step 12, with receipt_published_at: None) stays in the file.
+/// `check_already_accepted` linear-scan already returns last-match-wins.
+///
+/// Pitfall #4: ciphertext_hash / cleartext_hash are passed IN (pre-computed at
+/// step 12) rather than recomputed here — two hashing call-sites = two sources
+/// of truth; the receipt field values must match what step 12 wrote.
+fn append_ledger_entry_with_receipt(
+    share_ref: &str,
+    sender_z32: &str,
+    purpose: &str,
+    ciphertext_hash: &str,
+    cleartext_hash: &str,
+    receipt_published_at_iso: &str,
+) -> Result<(), Error> {
+    ensure_state_dirs()?;
+    let accepted_at = iso8601_utc_now()?;
+    let entry = LedgerEntry {
+        accepted_at: &accepted_at,
+        ciphertext_hash: ciphertext_hash.to_string(),
+        cleartext_hash: cleartext_hash.to_string(),
+        purpose,
+        receipt_published_at: Some(receipt_published_at_iso),
+        sender: sender_z32,
+        share_ref,
+    };
+    let mut line = crypto::jcs_serialize(&entry)?;
+    line.push(b'\n');
+    let path = ledger_path();
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(Error::Io)?;
+    f.write_all(&line).map_err(Error::Io)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(Error::Io)?;
     Ok(())
 }
