@@ -46,7 +46,12 @@ Plans:
   3. `cipherpost receive <share-uri>` on a valid share prints an acceptance screen on stderr containing sender's OpenSSH-style fingerprint, sender's z-base-32, control-char-stripped purpose, TTL remaining in local+UTC, payload type, and payload size; typing anything other than the full-word confirmation returns exit code 7 with no decrypted material written; repeating `receive` on an already-accepted share reports the prior acceptance timestamp from `~/.cipherpost/state/` and neither re-decrypts nor triggers a second receipt publication.
   4. A size-cap test feeds a 65537-byte plaintext to `cipherpost send` and asserts it is rejected with a clear error that names both the actual size and the 64 KB cap; a separate test asserts that any canonical-JSON encoding of `Envelope` re-serializes to byte-identical output across encode→decode→encode, and that `Material` variants `X509Cert`/`PgpKey`/`SshKey` return `unimplemented` on encode/decode.
   5. `cipherpost --help` and every subcommand `--help` print at least one complete example; `cipherpost version` prints crate version, embedded git commit hash, and a one-line list of crypto primitives; all payload I/O accepts `-` on stdin/stdout, status/progress go to stderr, exit codes follow the documented taxonomy {0, 2, 3, 4, 5, 6, 7, 1}, and a fuzz-driven stderr scan of bad inputs contains no passphrase bytes, key bytes, or raw payload bytes.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Payload schema (Envelope + Material + URI + Error variants + HKDF constants + identity signing_seed accessor) (Wave 1)
+- [ ] 02-02-PLAN.md — Flow orchestration (run_send + run_receive + state ledger + Prompter trait + MockTransport integration tests) (Wave 2)
+- [ ] 02-03-PLAN.md — CLI wiring (main.rs dispatch + TtyPrompter + CLI integration tests for help/version/stderr-scan + HUMAN-UAT) (Wave 3)
 
 ### Phase 3: Signed receipt — the cipherpost delta
 **Goal**: Deliver the feature that differentiates cipherpost from cclink — a signed receipt published to the DHT under the *recipient's* PKARR key (because only the recipient can sign under it) at a per-share label, referencing the original share by its 128-bit `share_ref`, and independently fetchable and verifiable by the sender via `cipherpost receipts`. This phase stands alone rather than merging into Phase 2 because the cipherpost thesis must be verifiable independent of self/share/accept mechanics; this is also where the only non-vendored transport extension lives (resolve-merge-republish `publish_receipt` without clobbering coexisting TXT records). Research flagged PKARR SignedPacket merge semantics as needing a small prototype; the phase owns that work.
@@ -78,7 +83,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4. Decimal insertions (e.g., 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation — scaffold, vendored primitives, and transport seam | 3/3 | Complete    | 2026-04-21 |
-| 2. Send, receive, and explicit acceptance | 0/TBD | Not started | - |
+| 2. Send, receive, and explicit acceptance | 0/3 | Not started | - |
 | 3. Signed receipt — the cipherpost delta | 0/TBD | Not started | - |
 | 4. Protocol documentation drafts | 0/TBD | Not started | - |
 
