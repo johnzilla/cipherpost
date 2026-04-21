@@ -141,6 +141,11 @@ name = "phase3_mock_publish_receipt_coexistence"
 path = "tests/phase3_mock_publish_receipt_coexistence.rs"
 required-features = ["mock"]
 
+[[test]]
+name = "phase3_end_to_end_a_sends_b_receipt"
+path = "tests/phase3_end_to_end_a_sends_b_receipt.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
