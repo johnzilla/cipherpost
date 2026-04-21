@@ -1,14 +1,14 @@
 ---
-status: partial
+status: passed
 phase: 02-send-receive-and-explicit-acceptance
 source: [02-VERIFICATION.md]
 started: 2026-04-21T00:00:00Z
-updated: 2026-04-21T16:55:00Z
+updated: 2026-04-21T17:05:00Z
 ---
 
 ## Current Test
 
-Test 1 passed after TTL-local-time fix (commit 84e09a8). Test 2 (optional two-identity real-DHT round trip) still pending.
+All tests passed. Test 1 (interactive TTY acceptance screen) verified after TTL-local-time fix (commit 84e09a8). Test 2 (two-identity real-DHT round trip) verified on live Mainline DHT with Alice→Bob cross-identity share + signature verification + age decrypt. Phase 2 ready for close.
 
 ## Tests
 
@@ -45,7 +45,7 @@ cat "$HOME/.cipherpost/state/accepted.jsonl"     # one JSONL line with sha256s a
 ### 2. Real-DHT round trip across two identities (optional)
 
 expected: Two shells (or two distinct `CIPHERPOST_HOME` directories) simulate sender A and recipient B. A generates identity A (prints z32_a). B generates identity B (prints z32_b). A runs `cipherpost send --share <z32_b> -p 'recipient test' --material-file -` with a payload on stdin; Mainline DHT publish succeeds; the printed URI is handed to B out-of-band. B runs `cipherpost receive <URI>`, the acceptance banner shows A's fingerprint, B pastes A's z32 to accept, and B's stdout receives the payload bytes. Both halves touch real Mainline DHT (no MockTransport).
-result: [pending]
+result: passed (2026-04-21; two-terminal UAT; Alice z32=9u6htzobbrcjnazkh5x1png9c3nup37otqxk5sxdxktj7wf3qqro, Bob z32=3w6u339iu98tewcge6uthdid1h7wzpkgp493kfh3ts4ojdk9arpy; share_ref=8518864b0b0325aaf7a2e0edd09d5269; 20-byte payload `alice-to-bob secret` decrypted byte-identical on Bob; acceptance banner correctly showed Alice's fingerprint (sender), not Bob's; no Pitfall #1 Ed25519→X25519 conversion errors; no Pitfall #2 pre-verification leakage; TTL rendering correct per fix commit 84e09a8)
 
 **How to run:**
 ```
@@ -73,9 +73,9 @@ echo "URI: $URI"
 ## Summary
 
 total: 2
-passed: 1
-issues: 1 (fixed; commit 84e09a8)
-pending: 1 (Test 2 optional — two-identity real-DHT round trip)
+passed: 2
+issues: 1 (fixed during UAT; commit 84e09a8)
+pending: 0
 skipped: 0
 blocked: 0
 
