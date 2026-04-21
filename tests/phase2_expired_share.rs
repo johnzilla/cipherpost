@@ -59,7 +59,7 @@ fn expired_share_aborts_with_error_expired_exit_2() {
         share_ref_hex: share_ref,
     };
     let mut sink = OutputSink::InMemory(Vec::new());
-    let err = run_receive(&id, &transport, &uri, &mut sink, &AutoConfirmPrompter).unwrap_err();
+    let err = run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter).unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::Expired),
         "expected Expired, got {:?}",

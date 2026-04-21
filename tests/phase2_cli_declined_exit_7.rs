@@ -46,7 +46,7 @@ fn receive_declined_returns_error_declined_exit_7() {
     let uri = ShareUri::parse(&uri_str).unwrap();
 
     let mut sink = OutputSink::InMemory(Vec::new());
-    let err = run_receive(&id, &transport, &uri, &mut sink, &DeclinePrompter)
+    let err = run_receive(&id, &transport, &kp, &uri, &mut sink, &DeclinePrompter)
         .expect_err("DeclinePrompter must cause run_receive to Err");
 
     // The error must be Error::Declined (not some other sig/decrypt failure).

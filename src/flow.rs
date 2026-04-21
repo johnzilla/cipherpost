@@ -398,6 +398,7 @@ fn check_wire_budget(
 pub fn run_receive(
     identity: &Identity,
     transport: &dyn Transport,
+    keypair: &pkarr::Keypair,
     uri: &ShareUri,
     output: &mut OutputSink,
     prompter: &dyn Prompter,
@@ -475,7 +476,214 @@ pub fn run_receive(
         &jcs_plain,
     )?;
 
+    // STEP 13: publish_receipt — best-effort, warn+degrade on failure (D-SEQ-01, D-SEQ-02).
+    //
+    // Pitfall #4 note: we recompute sha256(ciphertext) and sha256(jcs_plain) here.
+    // Sha256 is deterministic over the same input bytes, so the Receipt's hash fields
+    // are byte-identical to the row step 12 wrote. Both sources commit to the same
+    // byte slices (ciphertext = the age-encrypted blob; jcs_plain = the JCS-canonical
+    // Envelope bytes decrypted at step 6).
+    //
+    // Step 13 does NOT skip on self-mode (D-SEQ-06: sender_pubkey == recipient_pubkey
+    // is a valid Receipt state — personal audit log).
+    //
+    // Step 13 does NOT use `?`-propagation on transport.publish_receipt — failure
+    // must exit 0 (D-SEQ-02) because the material was already delivered (step 11)
+    // and locally recorded (step 12).
+    {
+        use sha2::{Digest, Sha256};
+        let ciphertext_hash = format!("{:x}", Sha256::digest(&ciphertext));
+        let cleartext_hash = format!("{:x}", Sha256::digest(&jcs_plain));
+        let accepted_at_unix = now_unix_seconds()?;
+        let recipient_z32 = keypair.public_key().to_z32();
+
+        let signable = crate::receipt::ReceiptSignable {
+            accepted_at: accepted_at_unix,
+            ciphertext_hash: ciphertext_hash.clone(),
+            cleartext_hash: cleartext_hash.clone(),
+            nonce: crate::receipt::nonce_hex(),
+            protocol_version: crate::PROTOCOL_VERSION,
+            purpose: envelope.purpose.clone(),
+            recipient_pubkey: recipient_z32.clone(),
+            sender_pubkey: record.pubkey.clone(),
+            share_ref: record.share_ref.clone(),
+        };
+        let signature = crate::receipt::sign_receipt(&signable, keypair)?;
+        let receipt = crate::receipt::Receipt {
+            accepted_at: signable.accepted_at,
+            ciphertext_hash: signable.ciphertext_hash.clone(),
+            cleartext_hash: signable.cleartext_hash.clone(),
+            nonce: signable.nonce.clone(),
+            protocol_version: signable.protocol_version,
+            purpose: signable.purpose.clone(),
+            recipient_pubkey: signable.recipient_pubkey.clone(),
+            sender_pubkey: signable.sender_pubkey.clone(),
+            share_ref: signable.share_ref.clone(),
+            signature,
+        };
+        let receipt_json = serde_json::to_string(&receipt)
+            .map_err(|e| Error::Config(format!("receipt encode: {}", e)))?;
+
+        match transport.publish_receipt(keypair, &record.share_ref, &receipt_json) {
+            Ok(()) => {
+                // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
+                // check_already_accepted linear-scan handles 2-rows-per-share (last-wins).
+                // Failure here is logged but non-fatal — the receipt is already on the DHT.
+                let iso = iso8601_utc_now()?;
+                if let Err(e) = append_ledger_entry_with_receipt(
+                    &record.share_ref,
+                    &record.pubkey,
+                    &envelope.purpose,
+                    &ciphertext_hash,
+                    &cleartext_hash,
+                    &iso,
+                ) {
+                    eprintln!("ledger update after receipt publish failed: {}", crate::error::user_message(&e));
+                }
+            }
+            Err(e) => {
+                // D-SEQ-02: warn + degrade; exit 0.
+                eprintln!("receipt publish failed: {}", crate::error::user_message(&e));
+            }
+        }
+    }
+
     Ok(())
+}
+
+// ---- run_receipts -----------------------------------------------------------
+
+/// Fetch, verify, filter, and render signed receipts from a recipient's PKARR key.
+///
+/// D-OUT-04: no Identity required — receipts listing is passphrase-free.
+///
+/// D-OUT-03 exit-code taxonomy applied via returned Error variants:
+///
+/// - valid.len() >= 1                              → Ok (exit 0)
+/// - valid empty, invalid_sig > 0                 → Err(Error::SignatureInner) (exit 3)
+/// - valid empty, malformed > 0, invalid_sig == 0  → Err(Error::Config(..)) (exit 1)
+/// - valid empty, all zero (or filter stripped)    → Err(Error::NotFound) (exit 5)
+///
+/// D-OUT-02: --share-ref filter is applied AFTER verify (Pitfall #6).
+pub fn run_receipts(
+    transport: &dyn Transport,
+    from_z32: &str,
+    share_ref_filter: Option<&str>,
+    json_mode: bool,
+) -> Result<(), Error> {
+    // Fetch all _cprcpt-* TXT bodies. NotFound if no packet OR no matching label.
+    let candidate_jsons = transport.resolve_all_cprcpt(from_z32)?;
+    // resolve_all_cprcpt already returns Err(NotFound) on empty; so candidate_jsons is non-empty here.
+
+    let mut valid: Vec<crate::receipt::Receipt> = Vec::new();
+    let mut malformed = 0usize;
+    let mut invalid_sig = 0usize;
+    for raw in &candidate_jsons {
+        let parsed: crate::receipt::Receipt = match serde_json::from_str(raw) {
+            Ok(r) => r,
+            Err(_) => {
+                malformed += 1;
+                continue;
+            }
+        };
+        if crate::receipt::verify_receipt(&parsed).is_err() {
+            invalid_sig += 1;
+            continue;
+        }
+        valid.push(parsed);
+    }
+
+    // Summary on stderr (CLI-01).
+    let mut summary = format!("fetched {} receipt(s); {} valid", candidate_jsons.len(), valid.len());
+    if malformed > 0 {
+        summary.push_str(&format!(", {} malformed", malformed));
+    }
+    if invalid_sig > 0 {
+        summary.push_str(&format!(", {} invalid-signature", invalid_sig));
+    }
+    eprintln!("{}", summary);
+
+    // D-OUT-02: filter after verify.
+    if let Some(filter) = share_ref_filter {
+        valid.retain(|r| r.share_ref == filter);
+    }
+
+    // Exit-code taxonomy.
+    if valid.is_empty() {
+        if invalid_sig > 0 {
+            return Err(Error::SignatureInner);
+        }
+        if malformed > 0 {
+            return Err(Error::Config("all receipts malformed".into()));
+        }
+        return Err(Error::NotFound);
+    }
+
+    // Render.
+    if json_mode {
+        // RESEARCH §"Open Questions" #4: pretty-print for UX (output is display-only,
+        // not signed). JCS stays on the signature path inside verify_receipt.
+        let out = serde_json::to_string_pretty(&valid)
+            .map_err(|e| Error::Config(format!("json encode: {}", e)))?;
+        println!("{}", out);
+    } else {
+        let audit_detail = share_ref_filter.is_some() && valid.len() == 1;
+        render_receipts_table(&valid, audit_detail)?;
+    }
+    Ok(())
+}
+
+/// D-OUT-01 multi-row table OR D-OUT-02 single-row audit-detail view.
+fn render_receipts_table(
+    receipts: &[crate::receipt::Receipt],
+    audit_detail: bool,
+) -> Result<(), Error> {
+    if audit_detail {
+        let r = &receipts[0];
+        println!("share_ref:          {}", r.share_ref);
+        println!("sender_pubkey:      {}", r.sender_pubkey);
+        println!("recipient_pubkey:   {}", r.recipient_pubkey);
+        println!(
+            "accepted_at:        {} UTC ({} local)",
+            format_unix_as_iso_utc(r.accepted_at),
+            format_unix_as_iso_local(r.accepted_at),
+        );
+        let safe_purpose: String = r.purpose.chars().filter(|c| !c.is_control()).collect();
+        println!("purpose:            \"{}\"", safe_purpose);
+        println!("ciphertext_hash:    {}", r.ciphertext_hash);
+        println!("cleartext_hash:     {}", r.cleartext_hash);
+        println!("nonce:              {}", r.nonce);
+        println!("protocol_version:   {}", r.protocol_version);
+        println!("signature:          {}", r.signature);
+        return Ok(());
+    }
+
+    // Multi-row table (D-OUT-01 columns).
+    println!("{:<16}  {:<20}  {:<40}  recipient_fp", "share_ref", "accepted_at (UTC)", "purpose");
+    for r in receipts {
+        let (fp, _) = sender_openssh_fingerprint_and_z32(&r.recipient_pubkey)?;
+        let purpose_display = truncate_purpose(&r.purpose, 40);
+        let utc = format_unix_as_iso_utc(r.accepted_at);
+        let share_ref_short: String = r.share_ref.chars().take(16).collect();
+        println!(
+            "{:<16}  {:<20}  {:<40}  {}",
+            share_ref_short, utc, purpose_display, fp,
+        );
+    }
+    Ok(())
+}
+
+/// Strip ASCII control chars (defense-in-depth over send-time strip per PAYL-04 /
+/// D-WIRE-05); truncate to `max` display chars, appending `…` if truncation applies.
+fn truncate_purpose(p: &str, max: usize) -> String {
+    let stripped: String = p.chars().filter(|c| !c.is_control()).collect();
+    if stripped.chars().count() <= max {
+        stripped
+    } else {
+        // Truncate by chars (not bytes) to avoid splitting a UTF-8 codepoint.
+        let prefix: String = stripped.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", prefix)
+    }
 }
 
 fn material_type_string(m: &Material) -> &'static str {
