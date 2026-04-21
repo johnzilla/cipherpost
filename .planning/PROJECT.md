@@ -43,7 +43,7 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 - [ ] Sender can fetch and verify the receipt via `cipherpost receipts`
 
 **TTL & operational**
-- [ ] Shares carry a short default TTL (4 hours) and honor a sender-supplied `--ttl`
+- [ ] Shares carry a default TTL of 24 hours and honor a sender-supplied `--ttl`
 - [ ] Payloads are capped at 64 KB; oversize inputs are rejected with a clear error
 - [ ] Both payload and metadata are encrypted on the wire — the DHT sees only opaque blobs
 
@@ -97,7 +97,7 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 - **Attestation first-class**: Receipt, destruction (v1.1), and purpose binding are core features, not afterthoughts.
 - **Ship narrow**: Primitive first, workflows second. Enterprise features only if demand is proven.
 - **Payload ceiling**: 64 KB.
-- **Default TTL**: short — 4 hours for keyshare (vs. 24h in cclink).
+- **Default TTL**: 24 hours (revised from PRD's 4h after research showed Mainline DHT p50 lookup ≈ 1 minute with a long tail).
 - **Crypto choices (locked, conservative)**: age (X25519 derived from Ed25519), Argon2id (64 MB, 3 iter), HKDF-SHA256 with domain separation, dual signatures. Do not substitute.
 - **Source of truth for primitives**: `johnzilla/cclink` on GitHub — fork code in, do not re-derive from scratch.
 - **This milestone is a walking skeleton, not v1.0**: Self + Share + Receipt on generic-secret payloads. `--pin`, `--burn`, other payload types, and the TUI are deliberately deferred.
@@ -112,6 +112,13 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 | Skeleton includes signed receipt, not just self/share | The receipt is the cipherpost delta from cclink. A skeleton without it just validates cclink, not cipherpost. | — Pending |
 | Skeleton uses generic-secret payload type only | Other typed payloads (X.509, PGP, SSH) add parsing complexity without changing protocol shape; schema reserves them for v1.0 | — Pending |
 | SPEC/THREAT-MODEL/SECURITY as drafts in skeleton | Writing them forces design clarity during skeleton work; final versions gate v1.0, not skeleton | — Pending |
+| Default TTL = 24h (PRD said 4h) | Research showed Mainline DHT p50 lookup ~1 min with long tail; 4h default would routinely expire before pickup | — Pending |
+| Canonical JSON = RFC 8785 (JCS) via serde_canonical_json | Future-proof for cross-language reimplementation; abandonment-resilience (independent re-implementers can produce byte-identical signatures); small adaptation of cclink's alphabetical-fields helper | — Pending |
+| Fingerprint display = OpenSSH-style + z-base-32 | OpenSSH `ed25519:SHA256:<base64>` matches security-engineer audience; z-base-32 is the DHT address; showing both eliminates ambiguity in acceptance screens | — Pending |
+| Identity path = `~/.cipherpost/` | cclink-style simple path; skeleton keeps config discovery trivial; XDG can be added later if users ask | — Pending |
+| HKDF info namespace = `cipherpost/v1/<context>` | Domain separation from cclink; versioned so v2 can rotate without ambiguity | — Pending |
+| share_ref width = 128 bits | 16 more bytes per receipt; avoids a future protocol bump if 64-bit collision surface ever matters | — Pending |
+| `Transport` trait in src/transport/ | Only architectural delta from cclink; lets integration tests use MockTransport instead of real DHT | — Pending |
 
 ## Evolution
 
