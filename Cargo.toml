@@ -1,0 +1,59 @@
+[package]
+name = "cipherpost"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Self-sovereign, serverless, accountless CLI for cryptographic-material handoff over Mainline DHT via PKARR."
+repository = "https://github.com/johnzilla/cipherpost"
+rust-version = "1.85"
+
+[lib]
+name = "cipherpost"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cipherpost"
+path = "src/main.rs"
+
+[features]
+mock = []
+
+[dependencies]
+# DHT transport — no_relays + dht feature only; inherits ed25519-dalek 3.x pre-release
+pkarr = { version = "5.0.3", default-features = false, features = ["dht"] }
+# HARD PIN: pkarr 5.0.3 depends on ^3.0.0-pre.1 and cargo won't auto-pick newer pre-releases without =.
+# Do NOT change until pkarr publishes on a stable ed25519-dalek 3.x.
+ed25519-dalek = "=3.0.0-pre.5"
+age = "0.11"
+argon2 = "0.5"
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+secrecy = "0.10"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1"
+thiserror = "2"
+base64 = "0.22"
+bech32 = "0.9"
+dirs = "5"
+dialoguer = "0.12"
+serde = { version = "1", features = ["derive"] }
+# NOTE: do NOT enable `preserve_order` — would break canonical-JSON invariants.
+serde_json = "1"
+serde_canonical_json = "1"
+rand = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+proptest = "1"
+# Plan 02 Task 2's tests/identity_passphrase_argv_rejected.rs uses these to spawn
+# the compiled binary and assert exit code + stderr substring. Declared here (not in
+# Plan 02) because Cargo.toml is owned by Plan 01. Both crates are MIT/Apache-2.0 —
+# allowed by deny.toml's license allowlist.
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+panic = "abort"      # prevents panic backtrace from leaking stack contents (Security Mistakes table, PITFALLS.md)
+lto = "thin"
+codegen-units = 1
