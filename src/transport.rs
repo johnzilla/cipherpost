@@ -51,6 +51,19 @@ pub trait Transport {
         share_ref_hex: &str,
         receipt_json: &str,
     ) -> Result<(), Error>;
+
+    /// Resolve all receipt TXT records (label prefix `_cprcpt-`) under the given pubkey.
+    ///
+    /// Returns the raw JSON bodies in iteration order. For `DhtTransport`, this
+    /// calls `resolve_most_recent` and iterates `all_resource_records()`, filtering
+    /// by `DHT_LABEL_RECEIPT_PREFIX` prefix (pkarr normalizes names to
+    /// `<label>.<origin-z32>`; both bare and suffixed forms start with the bare label).
+    /// For `MockTransport`, this filters the in-memory `resolve_all_txt` output.
+    ///
+    /// Returns `Error::NotFound` if the pubkey has no packet OR has a packet
+    /// with zero matching `_cprcpt-*` TXT records. Callers (`run_receipts` in
+    /// Plan 03) map this to exit code 5.
+    fn resolve_all_cprcpt(&self, pubkey_z32: &str) -> Result<Vec<String>, Error>;
 }
 
 // ---- DhtTransport -----------------------------------------------------------
@@ -131,26 +144,99 @@ impl Transport for DhtTransport {
         share_ref_hex: &str,
         receipt_json: &str,
     ) -> Result<(), Error> {
-        // Phase 1 simple implementation: publish a SignedPacket containing only the
-        // new receipt TXT. Phase 3 upgrades to resolve-merge-republish per TRANS-03.
+        // D-MRG-01: resolve → rebuild builder from existing RRs (replacing same-label
+        // duplicates) → add new receipt TXT → sign → publish with optional CAS.
+        // D-MRG-03: 300-second TXT TTL matches the outer-share TTL.
+        // D-MRG-06: SignedPacketBuildError::PacketTooLarge → WireBudgetExceeded{plaintext:0}.
         eprintln!("Publishing receipt to DHT..."); // TRANS-05
-        let label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, share_ref_hex);
-        let name: pkarr::dns::Name<'_> = label
+
+        let receipt_label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, share_ref_hex);
+        let new_name: pkarr::dns::Name<'_> = receipt_label
             .as_str()
             .try_into()
             .map_err(|e| Error::Transport(map_dns_err(e)))?;
-        let txt: pkarr::dns::rdata::TXT<'_> = receipt_json
+        let new_txt: pkarr::dns::rdata::TXT<'_> = receipt_json
             .try_into()
             .map_err(|e| Error::Transport(map_dns_err(e)))?;
-        let packet = pkarr::SignedPacket::builder()
-            .txt(name, txt, 300)
-            .sign(keypair)
-            .map_err(|e| Error::Transport(Box::new(e)))?;
+
+        // 1. Resolve most recent — may be None if recipient has never published.
+        let pk = keypair.public_key();
+        let existing = self.client.resolve_most_recent(&pk);
+
+        // 2. Rebuild builder from existing RRs, skipping any whose normalized name
+        //    matches this receipt's label (the new one supersedes it).
+        let mut builder = pkarr::SignedPacket::builder();
+        let mut cas: Option<pkarr::Timestamp> = None;
+        if let Some(ref packet) = existing {
+            cas = Some(packet.timestamp());
+            let origin_z32 = pk.to_z32();
+            for rr in packet.all_resource_records() {
+                let rr_name = rr.name.to_string();
+                if matches_receipt_label(&rr_name, &receipt_label, &origin_z32) {
+                    continue;
+                }
+                builder = builder.record(rr.clone());
+            }
+        }
+        builder = builder.txt(new_name, new_txt, 300);
+
+        // 3. Sign — D-MRG-06: PacketTooLarge → WireBudgetExceeded with plaintext=0
+        //    (marker that the overflow is a receipt, not a share).
+        let packet = match builder.sign(keypair) {
+            Ok(p) => p,
+            Err(pkarr::errors::SignedPacketBuildError::PacketTooLarge(encoded)) => {
+                return Err(Error::WireBudgetExceeded {
+                    encoded,
+                    budget: crate::flow::WIRE_BUDGET_BYTES,
+                    plaintext: 0,
+                });
+            }
+            Err(other) => return Err(Error::Transport(Box::new(other))),
+        };
+
+        // 4. Publish with optional CAS (D-MRG-02: no retry in skeleton).
         self.client
-            .publish(&packet, None)
+            .publish(&packet, cas)
             .map_err(map_pkarr_publish_error)?;
         Ok(())
     }
+
+    fn resolve_all_cprcpt(&self, pubkey_z32: &str) -> Result<Vec<String>, Error> {
+        eprintln!("Resolving receipts from DHT..."); // TRANS-05
+        let pk = pkarr::PublicKey::try_from(pubkey_z32).map_err(|_| Error::NotFound)?;
+        let packet = self
+            .client
+            .resolve_most_recent(&pk)
+            .ok_or(Error::NotFound)?;
+
+        let mut out = Vec::new();
+        for rr in packet.all_resource_records() {
+            let name = rr.name.to_string();
+            let trimmed = name.trim_end_matches('.');
+            // After pkarr normalization, labels are either bare "<label>" (at-origin)
+            // or "<label>.<origin-z32>". Both start with the bare prefix.
+            if trimmed.starts_with(DHT_LABEL_RECEIPT_PREFIX) {
+                if let Some(json) = extract_txt_string(&rr.rdata) {
+                    out.push(json);
+                }
+            }
+        }
+        if out.is_empty() {
+            return Err(Error::NotFound);
+        }
+        Ok(out)
+    }
+}
+
+// ---- Label matching --------------------------------------------------------
+
+/// Returns true if a DNS name (normalized to `<label>.<z32>.`) matches the given
+/// receipt label. pkarr 5.0.4 normalizes names to `<label>.<origin-z32>` relative
+/// to the keypair's pubkey (signed_packet.rs:256-271); either the bare label or
+/// the suffixed form may appear depending on pkarr's internal state.
+fn matches_receipt_label(rr_name: &str, receipt_label: &str, origin_z32: &str) -> bool {
+    let trimmed = rr_name.trim_end_matches('.');
+    trimmed == format!("{}.{}", receipt_label, origin_z32) || trimmed == receipt_label
 }
 
 // ---- RData TXT extraction --------------------------------------------------
@@ -285,6 +371,20 @@ mod mock {
             entry.retain(|(l, _)| l != &label);
             entry.push((label, receipt_json.to_string()));
             Ok(())
+        }
+
+        fn resolve_all_cprcpt(&self, pubkey_z32: &str) -> Result<Vec<String>, Error> {
+            let store = self.store.lock().unwrap();
+            let entries = store.get(pubkey_z32).ok_or(Error::NotFound)?;
+            let out: Vec<String> = entries
+                .iter()
+                .filter(|(label, _)| label.starts_with(DHT_LABEL_RECEIPT_PREFIX))
+                .map(|(_, json)| json.clone())
+                .collect();
+            if out.is_empty() {
+                return Err(Error::NotFound);
+            }
+            Ok(out)
         }
     }
 }
