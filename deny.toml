@@ -1,0 +1,46 @@
+# cargo-deny policy. Enforces supply-chain gates per PITFALLS #13.
+# License allowlist is conservative: MIT/Apache-2.0/BSD family only.
+
+[advisories]
+version = 2
+ignore = []
+# yanked = "deny" is default in v2
+# Note: pkarr 5.0.3 transitively pulls ed25519-dalek 3.0.0-pre.5 (pre-release).
+# If RUSTSEC flags this pre-release, add an explicit ignore with a TODO and PITFALLS-pin rationale.
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "Unlicense",
+    "BSL-1.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"  # age pulls curve25519-dalek v4, pkarr pulls v5 — expected
+wildcards = "deny"
+deny = [
+    # Hard-ban tokio as a direct cipherpost dependency (SCAF-05).
+    # Allowed only transitively via pkarr (which uses async-compat → tokio internally).
+    # Direct parents that may depend on tokio are pkarr and async-compat.
+    { name = "tokio", wrappers = ["pkarr", "async-compat"] },
+    # Hard-ban direct ChaCha20-Poly1305 imports (Pitfall #9 / CRYPTO-05).
+    # cipherpost must only use ChaCha via age's API.
+    { name = "chacha20poly1305", wrappers = ["age", "age-core"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
