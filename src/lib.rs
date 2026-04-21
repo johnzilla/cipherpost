@@ -21,8 +21,9 @@ pub use error::Error;
 /// Bumping this invalidates every previously issued share.
 pub const PROTOCOL_VERSION: u16 = 1;
 
-/// HKDF info namespace prefix. Every HKDF call-site must use an info string of the
-/// form `cipherpost/v1/<context>`. Enforced by tests/hkdf_info_enum.rs (Plan 02).
+/// HKDF info namespace prefix (D-08). Every HKDF call-site must use an info string of the
+/// form `<HKDF_INFO_PREFIX><context>` e.g. `{HKDF_INFO_PREFIX}identity-kek`.
+/// Enforced by tests/hkdf_info_enum.rs (Plan 02).
 pub const HKDF_INFO_PREFIX: &str = "cipherpost/v1/";
 
 /// Envelope magic (on-disk identity file — CIPHPOSK wraps the passphrase-encrypted seed).
