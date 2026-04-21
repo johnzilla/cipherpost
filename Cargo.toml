@@ -38,7 +38,7 @@ bech32 = "0.9"
 dirs = "5"
 dialoguer = "0.12"
 serde = { version = "1", features = ["derive"] }
-# NOTE: do NOT enable `preserve_order` — would break canonical-JSON invariants.
+# NOTE: no extra serde_json features — key-ordering features break canonical-JSON invariants.
 serde_json = "1"
 serde_canonical_json = "1"
 rand = "0.8"

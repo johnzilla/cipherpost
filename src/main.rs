@@ -1,4 +1,4 @@
-//! cipherpost — CLI entry point (plain fn main per SCAF-05, no #[tokio::main]).
+//! cipherpost — CLI entry point. Plain fn main per SCAF-05 (no async runtime attribute).
 //! D-17: anyhow in binary; thiserror in library. Explicit match-to-exit-code
 //! dispatcher prevents D-15 source-chain leakage.
 
