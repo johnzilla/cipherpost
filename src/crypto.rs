@@ -44,7 +44,18 @@ pub mod hkdf_infos {
     /// INVARIANT: this string appears in `tests/hkdf_info_enumeration.rs` scan.
     /// Never use a different string for the identity KEK derivation.
     pub const IDENTITY_KEK: &str = "cipherpost/v1/identity-kek";
-    // Phase 2 adds: SHARE_SENDER, SHARE_RECIPIENT, INNER_PAYLOAD
+
+    /// HKDF domain for sender-side share-key derivation (reserved in Phase 2).
+    /// Not currently referenced in code — age handles its own internal KDF — but
+    /// registered here so any future call site uses a versioned, unique info string.
+    pub const SHARE_SENDER: &str = "cipherpost/v1/share-sender";
+
+    /// HKDF domain for recipient-side share-key derivation (reserved in Phase 2).
+    pub const SHARE_RECIPIENT: &str = "cipherpost/v1/share-recipient";
+
+    /// HKDF domain for inner-payload key derivation (reserved in Phase 2).
+    pub const INNER_PAYLOAD: &str = "cipherpost/v1/inner-payload";
+
     // Phase 3 adds: RECEIPT_SIGN
 }
 

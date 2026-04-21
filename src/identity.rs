@@ -71,6 +71,18 @@ impl Identity {
         self.keypair.public_key().to_z32()
     }
 
+    /// Return the Ed25519 signing seed (32 bytes) in a Zeroizing wrapper.
+    ///
+    /// This is the clean accessor for downstream flow code (payload encrypt/decrypt
+    /// derives X25519 from this seed via `crypto::ed25519_to_x25519_secret`). The
+    /// Zeroizing wrapper drops the bytes from memory when the borrow ends.
+    ///
+    /// Use in preference to `secret_key_bytes_for_leak_test` — the latter name is
+    /// preserved only because Phase 1's `tests/debug_leak_scan.rs` calls it.
+    pub fn signing_seed(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.keypair.secret_key())
+    }
+
     /// Test-only accessor: returns the raw secret key seed bytes for the Debug-leak test.
     ///
     /// Only accessible when compiled with `cfg(any(test, feature = "mock"))`. Integration
