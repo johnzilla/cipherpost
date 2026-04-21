@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 status: planning
 stopped_at: Phase 1 context gathered
-last_updated: "2026-04-21T00:38:40.324Z"
+last_updated: "2026-04-21T01:26:11.189Z"
 last_activity: 2026-04-20 — Roadmap created; 49 v1 requirements mapped across 4 coarse phases
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
   percent: 0
 ---
@@ -90,3 +90,5 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: --stopped-at
 Stopped at: Phase 1 context gathered
 Resume file: --resume-file
+
+**Planned Phase:** 1 (Foundation — scaffold, vendored primitives, and transport seam) — 3 plans — 2026-04-21T01:26:11.185Z
