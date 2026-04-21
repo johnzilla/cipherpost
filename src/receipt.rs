@@ -31,6 +31,13 @@ pub struct Receipt {
     pub protocol_version: u16,
     pub purpose: String,
     pub recipient_pubkey: String,
+    /// Recipient's attestation of who they received from. NOT signed by the
+    /// sender — only the recipient signs the receipt. Provenance comes from
+    /// the receipt being found under `recipient_pubkey`'s DHT packet AND the
+    /// signature verifying with that pubkey (D-RS-07). An attacker controlling
+    /// their own z32 can publish a receipt claiming any `sender_pubkey` value;
+    /// only the composition "receipt found under z32 X + signed by X + claimed
+    /// sender = Y" provides provenance.
     pub sender_pubkey: String,
     pub share_ref: String,
     pub signature: String, // alphabetical insertion after share_ref
