@@ -145,65 +145,71 @@ Deferred to the skeleton→v1.0 milestone (the PRD's full v1.0).
 
 ## Traceability
 
-Empty initially. Populated during roadmap creation (Phase coverage filled by gsd-roadmapper).
+Populated by gsd-roadmapper on 2026-04-20. Every v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCAF-01 | TBD | Pending |
-| SCAF-02 | TBD | Pending |
-| SCAF-03 | TBD | Pending |
-| SCAF-04 | TBD | Pending |
-| SCAF-05 | TBD | Pending |
-| CRYPTO-01 | TBD | Pending |
-| CRYPTO-02 | TBD | Pending |
-| CRYPTO-03 | TBD | Pending |
-| CRYPTO-04 | TBD | Pending |
-| CRYPTO-05 | TBD | Pending |
-| CRYPTO-06 | TBD | Pending |
-| IDENT-01 | TBD | Pending |
-| IDENT-02 | TBD | Pending |
-| IDENT-03 | TBD | Pending |
-| IDENT-04 | TBD | Pending |
-| IDENT-05 | TBD | Pending |
-| TRANS-01 | TBD | Pending |
-| TRANS-02 | TBD | Pending |
-| TRANS-03 | TBD | Pending |
-| TRANS-04 | TBD | Pending |
-| TRANS-05 | TBD | Pending |
-| PAYL-01 | TBD | Pending |
-| PAYL-02 | TBD | Pending |
-| PAYL-03 | TBD | Pending |
-| PAYL-04 | TBD | Pending |
-| PAYL-05 | TBD | Pending |
-| SEND-01 | TBD | Pending |
-| SEND-02 | TBD | Pending |
-| SEND-03 | TBD | Pending |
-| SEND-04 | TBD | Pending |
-| SEND-05 | TBD | Pending |
-| RECV-01 | TBD | Pending |
-| RECV-02 | TBD | Pending |
-| RECV-03 | TBD | Pending |
-| RECV-04 | TBD | Pending |
-| RECV-05 | TBD | Pending |
-| RECV-06 | TBD | Pending |
-| RCPT-01 | TBD | Pending |
-| RCPT-02 | TBD | Pending |
-| RCPT-03 | TBD | Pending |
-| CLI-01 | TBD | Pending |
-| CLI-02 | TBD | Pending |
-| CLI-03 | TBD | Pending |
-| CLI-04 | TBD | Pending |
-| CLI-05 | TBD | Pending |
-| DOC-01 | TBD | Pending |
-| DOC-02 | TBD | Pending |
-| DOC-03 | TBD | Pending |
-| DOC-04 | TBD | Pending |
+| SCAF-01 | Phase 1 | Pending |
+| SCAF-02 | Phase 1 | Pending |
+| SCAF-03 | Phase 1 | Pending |
+| SCAF-04 | Phase 1 | Pending |
+| SCAF-05 | Phase 1 | Pending |
+| CRYPTO-01 | Phase 1 | Pending |
+| CRYPTO-02 | Phase 1 | Pending |
+| CRYPTO-03 | Phase 1 | Pending |
+| CRYPTO-04 | Phase 1 | Pending |
+| CRYPTO-05 | Phase 1 | Pending |
+| CRYPTO-06 | Phase 1 | Pending |
+| IDENT-01 | Phase 1 | Pending |
+| IDENT-02 | Phase 1 | Pending |
+| IDENT-03 | Phase 1 | Pending |
+| IDENT-04 | Phase 1 | Pending |
+| IDENT-05 | Phase 1 | Pending |
+| TRANS-01 | Phase 1 | Pending |
+| TRANS-02 | Phase 1 | Pending |
+| TRANS-03 | Phase 3 | Pending |
+| TRANS-04 | Phase 1 | Pending |
+| TRANS-05 | Phase 1 | Pending |
+| PAYL-01 | Phase 2 | Pending |
+| PAYL-02 | Phase 2 | Pending |
+| PAYL-03 | Phase 2 | Pending |
+| PAYL-04 | Phase 2 | Pending |
+| PAYL-05 | Phase 2 | Pending |
+| SEND-01 | Phase 2 | Pending |
+| SEND-02 | Phase 2 | Pending |
+| SEND-03 | Phase 2 | Pending |
+| SEND-04 | Phase 2 | Pending |
+| SEND-05 | Phase 2 | Pending |
+| RECV-01 | Phase 2 | Pending |
+| RECV-02 | Phase 2 | Pending |
+| RECV-03 | Phase 2 | Pending |
+| RECV-04 | Phase 2 | Pending |
+| RECV-05 | Phase 2 | Pending |
+| RECV-06 | Phase 2 | Pending |
+| RCPT-01 | Phase 3 | Pending |
+| RCPT-02 | Phase 3 | Pending |
+| RCPT-03 | Phase 3 | Pending |
+| CLI-01 | Phase 2 | Pending |
+| CLI-02 | Phase 2 | Pending |
+| CLI-03 | Phase 2 | Pending |
+| CLI-04 | Phase 2 | Pending |
+| CLI-05 | Phase 2 | Pending |
+| DOC-01 | Phase 4 | Pending |
+| DOC-02 | Phase 4 | Pending |
+| DOC-03 | Phase 4 | Pending |
+| DOC-04 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 46 total
-- Mapped to phases: 0 (populated by roadmap)
-- Unmapped: 46 ⚠️ (expected at this stage)
+- v1 requirements: 49 total (note: the header count of "46" in the prior draft was stale — the actual enumerated REQ-IDs total 49 across SCAF(5) + CRYPTO(6) + IDENT(5) + TRANS(5) + PAYL(5) + SEND(5) + RECV(6) + RCPT(3) + CLI(5) + DOC(4))
+- Mapped to phases: 49 (100%)
+- Unmapped: 0
+
+**Phase distribution:**
+- Phase 1 (Foundation): 20 requirements
+- Phase 2 (Send/receive/acceptance): 21 requirements
+- Phase 3 (Signed receipt): 4 requirements
+- Phase 4 (Protocol docs): 4 requirements
 
 ---
 *Requirements defined: 2026-04-20*
-*Last updated: 2026-04-20 after initial definition*
+*Last updated: 2026-04-20 after roadmap traceability population*
