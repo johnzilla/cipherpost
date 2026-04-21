@@ -51,11 +51,15 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### Transport (DHT)
 
-- [ ] **TRANS-01**: `src/transport/` defines a `Transport` trait with methods for `publish(packet)`, `resolve(pubkey)`, and `publish_receipt(share_ref, receipt)`; a `DhtTransport` impl wraps `pkarr::ClientBlocking`
-- [ ] **TRANS-02**: A `MockTransport` in `src/transport/mock.rs` (or tests) provides an in-memory map keyed by PKARR pubkey so integration tests do not hit real DHT
+- [x] **TRANS-01
+**: `src/transport/` defines a `Transport` trait with methods for `publish(packet)`, `resolve(pubkey)`, and `publish_receipt(share_ref, receipt)`; a `DhtTransport` impl wraps `pkarr::ClientBlocking`
+- [x] **TRANS-02
+**: A `MockTransport` in `src/transport/mock.rs` (or tests) provides an in-memory map keyed by PKARR pubkey so integration tests do not hit real DHT
 - [ ] **TRANS-03**: `publish_receipt` resolves the recipient's existing SignedPacket if any, merges the receipt TXT record under label `_cprcpt-<share_ref>`, re-signs with the recipient's key, and republishes
-- [ ] **TRANS-04**: A default DHT request timeout of 30 seconds is enforced; `--dht-timeout <seconds>` overrides it; timeouts return exit code 6 distinct from "not found" (exit 5) and "network error"
-- [ ] **TRANS-05**: DHT progress is written to stderr (so stdout can be piped); on success, the final stdout is the payload or a terse JSON status
+- [x] **TRANS-04
+**: A default DHT request timeout of 30 seconds is enforced; `--dht-timeout <seconds>` overrides it; timeouts return exit code 6 distinct from "not found" (exit 5) and "network error"
+- [x] **TRANS-05
+**: DHT progress is written to stderr (so stdout can be piped); on success, the final stdout is the payload or a terse JSON status
 
 ### Payload schema
 

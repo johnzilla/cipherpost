@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md — crypto primitives, identity generate/load/show, 14 prevention tests
-last_updated: "2026-04-21T02:22:26.440Z"
+stopped_at: Completed 01-03-PLAN.md — Transport trait, DhtTransport, MockTransport, OuterRecord JCS-signed wire format
+last_updated: "2026-04-21T02:34:49.426Z"
 last_activity: 2026-04-21 -- Phase --phase execution started
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -57,6 +57,7 @@ Progress: [███████░░░] 67%
 *Updated after each plan completion*
 | Phase 01 P01 | 11 | 3 tasks | 20 files |
 | Phase 01 P02 | 13 | 2 tasks | 14 files |
+| Phase 01 P03 | 8 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - cfg(test) does not propagate to integration tests — functions needed by integration tests must be unconditionally pub
 - hkdf_info_enumeration filters bare prefix by requiring cap.len() > prefix.len()
 - age Encryptor::with_recipients takes Iterator — use std::iter::once not Vec
+- cfg(test) cross-crate: MockTransport requires --features mock for integration tests; [[test]] required-features in Cargo.toml
+- 550-byte blob is BEP44 budget limit for worst-case OuterRecord; 600 exceeds dns_packet 1000-byte limit
+- pkarr PublishError uses typed QueryError::Timeout enum (not string matching); resolve_most_recent returns Option, not Result
 
 ### Pending Todos
 
@@ -95,8 +99,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-21T02:22:26.434Z
-Stopped at: Completed 01-02-PLAN.md — crypto primitives, identity generate/load/show, 14 prevention tests
+Last session: 2026-04-21T02:34:49.418Z
+Stopped at: Completed 01-03-PLAN.md — Transport trait, DhtTransport, MockTransport, OuterRecord JCS-signed wire format
 Resume file: None
 
 **Planned Phase:** 1 (Foundation — scaffold, vendored primitives, and transport seam) — 3 plans — 2026-04-21T01:26:11.185Z
