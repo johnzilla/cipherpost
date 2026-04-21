@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 Plan 01 complete; Plans 02 and 03 pending
-last_updated: "2026-04-21T16:30:00.000Z"
-last_activity: 2026-04-21 -- Completed 02-01-PLAN.md
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-04-21T14:20:01.531Z"
+last_activity: 2026-04-21
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-04-20)
 ## Current Position
 
 Phase: 2 (send-receive-and-explicit-acceptance) — EXECUTING
-Plan: 2 of 3 (02-01 complete; 02-02 next)
-Status: Executing Phase 2
-Last activity: 2026-04-21 -- Completed 02-01-PLAN.md (payload schema + URI + error variants)
+Plan: 3 of 3 (02-01 and 02-02 complete; 02-03 next — CLI dispatch wiring)
+Status: Ready to execute
+Last activity: 2026-04-21
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: — (no data yet)
 - Total execution time: 0 hours
 
@@ -45,13 +45,13 @@ Progress: [███████░░░] 67%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Foundation | 3/3 | — | — |
-| 2. Send/receive/acceptance | 1/3 | — | — |
+| 2. Send/receive/acceptance | 2/3 | — | — |
 | 3. Signed receipt | 0/TBD | — | — |
 | 4. Protocol docs | 0/TBD | — | — |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01, 01-02, 01-03, 02-01
+- Last 5 plans: 01-01, 01-02, 01-03, 02-01, 02-02
 - Trend: — (no data)
 
 *Updated after each plan completion*
@@ -59,6 +59,7 @@ Progress: [███████░░░] 67%
 | Phase 01 P02 | 13 | 2 tasks | 14 files |
 | Phase 01 P03 | 8 | 2 tasks | 8 files |
 | Phase 02 P01 | ~20 | 4 tasks | 11 files |
+| Phase 02 P02 | 40 | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,11 @@ Recent decisions affecting current work:
 - Plan 02-01: Rust string literals reject \x80..\xFF escapes; use \u{80}..\u{9F} for C1 controls in test strings
 - Plan 02-01: ShareUri parser is hand-rolled (strip_prefix + split_once), no url crate; strict form per D-URI-03
 - Plan 02-01: Identity::signing_seed() added as clean accessor; secret_key_bytes_for_leak_test preserved for debug_leak_scan.rs
+- Plan 02-02: run_send retries age_encrypt up to 20 times to absorb grease-stanza size variance near the 1000-byte wire budget
+- Plan 02-02: share_ref hashed over raw ciphertext per PAYL-05 (not base64 blob bytes)
+- Plan 02-02: sentinel-first-then-ledger write order for crash-safe idempotency
+- Plan 02-02: PacketTooLarge mapped directly to WireBudgetExceeded (preserves cipherpost-layer error taxonomy)
+- Plan 02-02: share_round_trip test uses deterministic identity seeds (0xAA/0xBB/0xCC) to stabilize wire-budget footprint
 
 ### Pending Todos
 
@@ -106,8 +112,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-21T16:30:00.000Z
-Stopped at: Phase 2 Plan 01 complete; Plan 02 pending (flow orchestration)
-Resume file: .planning/phases/02-send-receive-and-explicit-acceptance/02-02-PLAN.md
+Last session: 2026-04-21T14:19:50.535Z
+Stopped at: Completed 02-02-PLAN.md
+Resume file: None
 
 **Planned Phase:** 2 (send-receive-and-explicit-acceptance) — 3 plans — 2026-04-21T13:09:57.004Z

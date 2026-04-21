@@ -71,20 +71,30 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### Send
 
-- [ ] **SEND-01**: `cipherpost send --self` reads the payload from `<path>` or `-` (stdin), builds an envelope with a sender-supplied `--purpose`, encrypts with age to the sender's own X25519 key, wraps in a dual-signed outer record, publishes to the sender's PKARR key, and prints the share URI on stdout
-- [ ] **SEND-02**: `cipherpost send --share <pubkey>` does the same but encrypts to the recipient's X25519 key (derived from their Ed25519 PKARR pubkey); `<pubkey>` accepts z-base-32 or OpenSSH-style input
-- [ ] **SEND-03**: `--ttl <duration>` overrides the default 24-hour TTL; TTL is stored as the inner-signed `created_at + ttl_seconds`, not as a DHT packet TTL
-- [ ] **SEND-04**: Every outer record carries both signatures: outer PKARR SignedPacket signature and inner Ed25519 signature over JCS-canonical `OuterRecordSignable`
-- [ ] **SEND-05**: Outer SignedPacket size stays under the PKARR/BEP44 budget (~1000 bytes); a build-time test asserts this for a representative payload
+- [x] **SEND-01
+**: `cipherpost send --self` reads the payload from `<path>` or `-` (stdin), builds an envelope with a sender-supplied `--purpose`, encrypts with age to the sender's own X25519 key, wraps in a dual-signed outer record, publishes to the sender's PKARR key, and prints the share URI on stdout
+- [x] **SEND-02
+**: `cipherpost send --share <pubkey>` does the same but encrypts to the recipient's X25519 key (derived from their Ed25519 PKARR pubkey); `<pubkey>` accepts z-base-32 or OpenSSH-style input
+- [x] **SEND-03
+**: `--ttl <duration>` overrides the default 24-hour TTL; TTL is stored as the inner-signed `created_at + ttl_seconds`, not as a DHT packet TTL
+- [x] **SEND-04
+**: Every outer record carries both signatures: outer PKARR SignedPacket signature and inner Ed25519 signature over JCS-canonical `OuterRecordSignable`
+- [x] **SEND-05
+**: Outer SignedPacket size stays under the PKARR/BEP44 budget (~1000 bytes); a build-time test asserts this for a representative payload
 
 ### Receive
 
-- [ ] **RECV-01**: `cipherpost receive <share-uri>` resolves the share, verifies the outer PKARR signature, fetches and deserializes the outer record, then verifies the inner Ed25519 signature; any signature failure aborts before decryption with exit code 3 and a uniform error message
-- [ ] **RECV-02**: TTL is enforced against the inner signed `created_at + ttl_seconds`; expired shares abort with exit code 2 (distinct from sig failure)
-- [ ] **RECV-03**: After signature + TTL pass, the payload is age-decrypted into a `Zeroizing` buffer but not surfaced; the envelope inner signature is verified against the signed fields; any inner-sig failure aborts with exit code 3
+- [x] **RECV-01
+**: `cipherpost receive <share-uri>` resolves the share, verifies the outer PKARR signature, fetches and deserializes the outer record, then verifies the inner Ed25519 signature; any signature failure aborts before decryption with exit code 3 and a uniform error message
+- [x] **RECV-02
+**: TTL is enforced against the inner signed `created_at + ttl_seconds`; expired shares abort with exit code 2 (distinct from sig failure)
+- [x] **RECV-03
+**: After signature + TTL pass, the payload is age-decrypted into a `Zeroizing` buffer but not surfaced; the envelope inner signature is verified against the signed fields; any inner-sig failure aborts with exit code 3
 - [ ] **RECV-04**: An acceptance prompt displays: purpose (with control chars stripped), sender's OpenSSH fingerprint, sender's z-base-32, TTL remaining (local + UTC), payload type, and payload size; user must type a full-word confirmation (not just `y`); declining returns exit code 7
-- [ ] **RECV-05**: On acceptance, the decrypted payload is written to `--output <path>` or `-` (stdout) — default is stdout if a file is not specified
-- [ ] **RECV-06**: Second `receive` of the same accepted share reports the prior acceptance timestamp from local state (`~/.cipherpost/state/`) and does NOT re-decrypt or re-publish a receipt
+- [x] **RECV-05
+**: On acceptance, the decrypted payload is written to `--output <path>` or `-` (stdout) — default is stdout if a file is not specified
+- [x] **RECV-06
+**: Second `receive` of the same accepted share reports the prior acceptance timestamp from local state (`~/.cipherpost/state/`) and does NOT re-decrypt or re-publish a receipt
 
 ### Receipt (the cipherpost delta)
 
@@ -94,7 +104,8 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### CLI ergonomics
 
-- [ ] **CLI-01**: All `send` and `receive` payload I/O supports `-` for stdin/stdout; status output is written to stderr so stdout stays pipeable
+- [x] **CLI-01
+**: All `send` and `receive` payload I/O supports `-` for stdin/stdout; status output is written to stderr so stdout stays pipeable
 - [ ] **CLI-02**: Exit codes follow a documented taxonomy: `0` success, `2` expired, `3` signature verification failure, `4` decryption / passphrase failure, `5` not found on DHT, `6` network / timeout, `7` user declined, `1` generic error
 - [ ] **CLI-03**: `cipherpost --help` and every subcommand `--help` prints at least one worked example (`EXAMPLES` section)
 - [ ] **CLI-04**: `cipherpost version` prints the crate version, the git commit hash (built in), and a one-line list of crypto primitives in use (age, Ed25519, Argon2id, HKDF-SHA256, JCS)
