@@ -496,10 +496,15 @@ pub fn run_receive(
     // Step 13 does NOT skip on self-mode (D-SEQ-06: sender_pubkey == recipient_pubkey
     // is a valid Receipt state — personal audit log).
     //
-    // Step 13 does NOT use `?`-propagation on transport.publish_receipt — failure
-    // must exit 0 (D-SEQ-02) because the material was already delivered (step 11)
-    // and locally recorded (step 12).
-    {
+    // Step 13 is wrapped in a closure so EVERY Result-returning op inside
+    // honors D-SEQ-02 warn+degrade: if any pre-publish op fails
+    // (now_unix_seconds, sign_receipt's JCS serialize, serde_json::to_string)
+    // OR the publish itself OR the D-SEQ-05 ledger update, we warn to stderr
+    // and return Ok(()) from run_receive — the material was already delivered
+    // (step 11) and locally recorded (step 12), so core-value delivery is
+    // complete. Only the final warn is user-visible; the specific failure
+    // class is still surfaced via user_message(&e).
+    let publish_outcome: Result<(), Error> = (|| {
         use sha2::{Digest, Sha256};
         let ciphertext_hash = format!("{:x}", Sha256::digest(&ciphertext));
         let cleartext_hash = format!("{:x}", Sha256::digest(&jcs_plain));
@@ -533,28 +538,27 @@ pub fn run_receive(
         let receipt_json = serde_json::to_string(&receipt)
             .map_err(|e| Error::Config(format!("receipt encode: {}", e)))?;
 
-        match transport.publish_receipt(keypair, &record.share_ref, &receipt_json) {
-            Ok(()) => {
-                // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
-                // check_already_accepted linear-scan handles 2-rows-per-share (last-wins).
-                // Failure here is logged but non-fatal — the receipt is already on the DHT.
-                let iso = iso8601_utc_now()?;
-                if let Err(e) = append_ledger_entry_with_receipt(
-                    &record.share_ref,
-                    &record.pubkey,
-                    &envelope.purpose,
-                    &ciphertext_hash,
-                    &cleartext_hash,
-                    &iso,
-                ) {
-                    eprintln!("ledger update after receipt publish failed: {}", crate::error::user_message(&e));
-                }
-            }
-            Err(e) => {
-                // D-SEQ-02: warn + degrade; exit 0.
-                eprintln!("receipt publish failed: {}", crate::error::user_message(&e));
-            }
-        }
+        transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
+
+        // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
+        // check_already_accepted linear-scan handles 2-rows-per-share (last-wins).
+        // The receipt is already on the DHT — a ledger failure here is still
+        // non-fatal, and falls under the same warn+degrade path.
+        let iso = iso8601_utc_now()?;
+        append_ledger_entry_with_receipt(
+            &record.share_ref,
+            &record.pubkey,
+            &envelope.purpose,
+            &ciphertext_hash,
+            &cleartext_hash,
+            &iso,
+        )?;
+        Ok(())
+    })();
+
+    if let Err(e) = publish_outcome {
+        // D-SEQ-02: warn + degrade; exit 0.
+        eprintln!("receipt publish failed: {}", crate::error::user_message(&e));
     }
 
     Ok(())
