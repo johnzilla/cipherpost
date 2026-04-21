@@ -14,15 +14,18 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+**Foundation (Phase 1 — 2026-04-21)**
+- ✓ User can generate an Ed25519/PKARR keypair and store it on disk passphrase-wrapped (Argon2id + HKDF-SHA256 with `cipherpost/v1/<context>` domain separation; Argon2 params live in PHC-format identity-file header, not hardcoded)
+- ✓ User can unlock an existing identity with their passphrase; wrong passphrase returns exit 4; identity files at mode > 0600 are refused
+- ✓ Rust crate scaffold with exact cclink v1.3.0 crypto pins (`pkarr 5.0.3`, `ed25519-dalek =3.0.0-pre.5`, `age 0.11`), no `tokio` dep, plain `fn main()`, CI runs `fmt --check`, `clippy -D warnings`, `nextest`, `audit`, `deny check`
+- ✓ `Transport` trait with `publish` / `resolve` / `publish_receipt` method signatures; `DhtTransport` over `pkarr::ClientBlocking` + `MockTransport` gated by `#[cfg(any(test, feature = "mock"))]` for integration tests without real DHT
+- ✓ `OuterRecord` / `OuterRecordSignable` wire schema locked via committed JCS fixture (`tests/fixtures/outer_record_signable.bin`); 128-bit `share_ref`; protocol version 1
+- ✓ Error-oracle hygiene: single `thiserror` enum with `#[source]` chains preserved but never Displayed to stderr; all signature-failure variants share one identical user-facing message and exit code 3
+- ✓ 23 tests green in parallel (Pitfalls #1, #4, #7, #8, #9, #13, #15 each have a prevention test)
 
 ### Active
 
-<!-- Current milestone: walking skeleton. Each is a hypothesis until shipped. -->
-
-**Identity & at-rest**
-- [ ] User can generate an Ed25519/PKARR keypair and store it on disk passphrase-wrapped (Argon2id 64MB, 3 iter + HKDF-SHA256 with domain separation)
-- [ ] User can unlock an existing identity with their passphrase
+<!-- Current milestone: walking skeleton. Each remaining item is a hypothesis until shipped. -->
 
 **Self-mode round trip**
 - [ ] User can send a generic-secret payload to themselves via `cipherpost send --self`, publishing an encrypted PKARR SignedPacket to Mainline DHT
@@ -84,7 +87,7 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 
 **cclink is mothballed.** No further development. Treated as a reference / source repo only. The skeleton work will clone `johnzilla/cclink` from GitHub and vendor its crypto + DHT modules directly into this repo (fork-and-diverge), not depend on it as a live sibling.
 
-**Pre-implementation.** The only substantive file prior to this initialization was `cipherpost-prd.md`. No source tree, no build system, no tests yet.
+**Phase 1 complete (2026-04-21).** Rust crate scaffold + vendored crypto/identity/transport/record primitives shipped. Binary builds, 23 tests pass in parallel, `cipherpost identity generate/show/version` works end-to-end via env-var passphrase (interactive TTY flow captured as pending HUMAN-UAT). Foundation ready for Phase 2 (send/receive/acceptance).
 
 **Domain lineage.** The underlying protocol (E2E-encrypted payloads published to Mainline DHT via PKARR SignedPacket, age for payload encryption, Ed25519 for identity) is already implemented and exercised in `cclink`. Generalizing into keyshare is a small delta on existing code, not a new protocol.
 
@@ -107,18 +110,20 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Lock name as "Cipherpost" | PRD working name; cost of renaming compounds the later it slips; alternatives (keyshare, dropkey, sigpost) rejected for now | — Pending |
-| Fork-and-diverge from cclink, no shared core crate | cclink is mothballed — no active sibling to share a crate with; fork-and-diverge is lower overhead than extracting a library from a dead project | — Pending |
+| Fork-and-diverge from cclink, no shared core crate | cclink is mothballed — no active sibling to share a crate with; fork-and-diverge is lower overhead than extracting a library from a dead project | ✓ Good (Phase 1) |
 | Milestone target = walking skeleton, not full v1.0 | Validate the cclink extraction + the cipherpost-specific receipt flow end-to-end before committing to v1.0 breadth (TUI, all four modes, all payload types) | — Pending |
-| Skeleton includes signed receipt, not just self/share | The receipt is the cipherpost delta from cclink. A skeleton without it just validates cclink, not cipherpost. | — Pending |
-| Skeleton uses generic-secret payload type only | Other typed payloads (X.509, PGP, SSH) add parsing complexity without changing protocol shape; schema reserves them for v1.0 | — Pending |
-| SPEC/THREAT-MODEL/SECURITY as drafts in skeleton | Writing them forces design clarity during skeleton work; final versions gate v1.0, not skeleton | — Pending |
-| Default TTL = 24h (PRD said 4h) | Research showed Mainline DHT p50 lookup ~1 min with long tail; 4h default would routinely expire before pickup | — Pending |
-| Canonical JSON = RFC 8785 (JCS) via serde_canonical_json | Future-proof for cross-language reimplementation; abandonment-resilience (independent re-implementers can produce byte-identical signatures); small adaptation of cclink's alphabetical-fields helper | — Pending |
-| Fingerprint display = OpenSSH-style + z-base-32 | OpenSSH `ed25519:SHA256:<base64>` matches security-engineer audience; z-base-32 is the DHT address; showing both eliminates ambiguity in acceptance screens | — Pending |
-| Identity path = `~/.cipherpost/` | cclink-style simple path; skeleton keeps config discovery trivial; XDG can be added later if users ask | — Pending |
-| HKDF info namespace = `cipherpost/v1/<context>` | Domain separation from cclink; versioned so v2 can rotate without ambiguity | — Pending |
-| share_ref width = 128 bits | 16 more bytes per receipt; avoids a future protocol bump if 64-bit collision surface ever matters | — Pending |
-| `Transport` trait in src/transport/ | Only architectural delta from cclink; lets integration tests use MockTransport instead of real DHT | — Pending |
+| Skeleton includes signed receipt, not just self/share | The receipt is the cipherpost delta from cclink. A skeleton without it just validates cclink, not cipherpost. | — Pending (Phase 3) |
+| Skeleton uses generic-secret payload type only | Other typed payloads (X.509, PGP, SSH) add parsing complexity without changing protocol shape; schema reserves them for v1.0 | — Pending (Phase 2) |
+| SPEC/THREAT-MODEL/SECURITY as drafts in skeleton | Writing them forces design clarity during skeleton work; final versions gate v1.0, not skeleton | — Pending (Phase 4) |
+| Default TTL = 24h (PRD said 4h) | Research showed Mainline DHT p50 lookup ~1 min with long tail; 4h default would routinely expire before pickup | — Pending (Phase 2) |
+| Canonical JSON = RFC 8785 (JCS) via serde_canonical_json | Future-proof for cross-language reimplementation; abandonment-resilience (independent re-implementers can produce byte-identical signatures) | ✓ Good (Phase 1 — note: shipped version 1.0.0, not 0.2 as originally planned; `CanonicalFormatter` API matches) |
+| Fingerprint display = OpenSSH-style + z-base-32 | OpenSSH `ed25519:SHA256:<base64>` matches security-engineer audience; z-base-32 is the DHT address; showing both eliminates ambiguity in acceptance screens | ✓ Good (Phase 1 — `identity show` prints both) |
+| Identity path = `~/.cipherpost/` | cclink-style simple path; skeleton keeps config discovery trivial; XDG can be added later if users ask | ✓ Good (Phase 1 — `CIPHERPOST_HOME` env overrides for tests) |
+| HKDF info namespace = `cipherpost/v1/<context>` | Domain separation from cclink; versioned so v2 can rotate without ambiguity | ✓ Good (Phase 1 — enumeration test in CI enforces) |
+| share_ref width = 128 bits | 16 more bytes per receipt; avoids a future protocol bump if 64-bit collision surface ever matters | ✓ Good (Phase 1 — `OuterRecordSignable` JCS fixture locks it) |
+| `Transport` trait in src/transport/ | Only architectural delta from cclink; lets integration tests use MockTransport instead of real DHT | ✓ Good (Phase 1 — `MockTransport` is how Phase 2/3 integration tests will run without real DHT) |
+| Error-oracle hygiene: single thiserror enum with identical sig-fail Display | PITFALLS #16 flagged distinguishable-oracle attacks; making all sig-verification failures surface the same user-facing message prevents distinguishing which part of the verifier tripped | ✓ Good (Phase 1 — test `lib::error::tests::signature_failure_variants_share_display` enforces) |
+| serial_test for env-mutating tests | `CIPHERPOST_HOME` tests raced under Rust's default parallel test runner; `serial_test = "3"` + `#[serial]` on the 4 affected tests resolves cleanly | ✓ Good (Phase 1 — discovered during post-wave gate, fixed in commit d8fb202) |
 
 ## Evolution
 
@@ -138,4 +143,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-20 after initialization*
+*Last updated: 2026-04-21 after Phase 1 completion*
