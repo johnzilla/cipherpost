@@ -34,17 +34,34 @@ fn run() -> i32 {
 fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Identity { cmd } => match cmd {
-            IdentityCmd::Generate { passphrase_file: _, passphrase_fd: _, passphrase: _ } => {
-                // Plan 02 Task 2 replaces this body with identity::resolve_passphrase +
-                // identity::generate. The clap fields are destructured here (even though
-                // unused in Phase 1) so the pattern-match compiles against the final
-                // variant shape.
-                Err(Error::NotImplemented { phase: 1 }.into())
+            IdentityCmd::Generate { passphrase_file, passphrase_fd, passphrase } => {
+                // Reject argv-inline passphrase (IDENT-04 / Pitfall #14). The `passphrase`
+                // field is `hide = true` in src/cli.rs — exists only so this rejection fires.
+                let pw = cipherpost::identity::resolve_passphrase(
+                    passphrase.as_deref(),
+                    Some("CIPHERPOST_PASSPHRASE"),
+                    passphrase_file.as_deref(),
+                    passphrase_fd,
+                )?;
+                let id = cipherpost::identity::generate(pw.as_secret())?;
+                let (openssh, z32) = cipherpost::identity::show_fingerprints(&id);
+                eprintln!("Generated identity:");
+                eprintln!("  {}", openssh);
+                eprintln!("  {}", z32);
+                Ok(())
             }
-            IdentityCmd::Show { passphrase_file: _, passphrase_fd: _, passphrase: _ } => {
-                // Plan 02 Task 2 replaces this body with identity::resolve_passphrase +
-                // identity::load + identity::show_fingerprints.
-                Err(Error::NotImplemented { phase: 1 }.into())
+            IdentityCmd::Show { passphrase_file, passphrase_fd, passphrase } => {
+                let pw = cipherpost::identity::resolve_passphrase(
+                    passphrase.as_deref(),
+                    Some("CIPHERPOST_PASSPHRASE"),
+                    passphrase_file.as_deref(),
+                    passphrase_fd,
+                )?;
+                let id = cipherpost::identity::load(pw.as_secret())?;
+                let (openssh, z32) = cipherpost::identity::show_fingerprints(&id);
+                println!("{}", openssh);
+                println!("{}", z32);
+                Ok(())
             }
         },
         Command::Send { .. } => {

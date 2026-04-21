@@ -109,8 +109,8 @@ fn str_err(s: impl std::fmt::Display) -> Error {
 /// public recipients. This is the pattern from cclink v1.3.0.
 pub fn recipient_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Recipient, Error> {
     let encoded = bech32::encode("age", bytes.to_base32(), Variant::Bech32)
-        .map_err(|e| str_err(e))?;
-    x25519::Recipient::from_str(&encoded).map_err(|e| str_err(e))
+        .map_err(str_err)?;
+    x25519::Recipient::from_str(&encoded).map_err(str_err)
 }
 
 /// Convert raw X25519 secret-key bytes into an age::x25519::Identity.
@@ -119,8 +119,8 @@ pub fn recipient_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Recipient
 /// The secret is uppercased per age's canonical format.
 pub fn identity_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Identity, Error> {
     let encoded = bech32::encode("age-secret-key-", bytes.to_base32(), Variant::Bech32)
-        .map_err(|e| str_err(e))?;
-    x25519::Identity::from_str(&encoded.to_uppercase()).map_err(|e| str_err(e))
+        .map_err(str_err)?;
+    x25519::Identity::from_str(&encoded.to_uppercase()).map_err(str_err)
 }
 
 /// age-encrypt `plaintext` to a single X25519 recipient.
@@ -131,11 +131,11 @@ pub fn age_encrypt(plaintext: &[u8], recipient: &x25519::Recipient) -> Result<Ve
     let encryptor = age::Encryptor::with_recipients(
         std::iter::once(recipient as &dyn age::Recipient),
     )
-    .map_err(|e| str_err(e))?;
+    .map_err(str_err)?;
     let mut out = Vec::new();
-    let mut writer = encryptor.wrap_output(&mut out).map_err(|e| str_err(e))?;
+    let mut writer = encryptor.wrap_output(&mut out).map_err(str_err)?;
     writer.write_all(plaintext).map_err(Error::Io)?;
-    writer.finish().map_err(|e| str_err(e))?;
+    writer.finish().map_err(str_err)?;
     Ok(out)
 }
 
@@ -185,7 +185,7 @@ pub fn derive_kek(
     let mut argon_out = Zeroizing::new([0u8; 32]);
     argon
         .hash_password_into(passphrase.expose_secret().as_bytes(), salt, &mut argon_out[..])
-        .map_err(|e| str_err(e))?;
+        .map_err(str_err)?;
 
     // HKDF-SHA256 with domain-separated info string (Pitfall #4).
     // INVARIANT: info MUST come from `hkdf_infos` — do not inline a literal here.
@@ -218,12 +218,13 @@ pub fn encrypt_key_envelope(
 
 /// Encrypt a 32-byte seed into a CIPHPOSK envelope using explicit Argon2 params.
 ///
-/// Available under `test` or `mock` feature so that `tests/identity_phc_header.rs`
-/// can generate an identity with non-default (weaker) params and verify that
-/// `decrypt_key_envelope` reads them from the header rather than code constants.
+/// Intended for tests and tooling that need to generate identities with non-default
+/// Argon2 params (e.g., to prove `decrypt_key_envelope` reads params from the PHC
+/// header rather than code constants — Pitfall #8).
 ///
-/// Pitfall #8: only the file header params are ever used for decryption.
-#[cfg(any(test, feature = "mock"))]
+/// Safe to expose unconditionally: the caller must supply both a `Zeroizing<[u8;32]>`
+/// seed and a `SecretBox<String>` passphrase; neither is derivable without legitimate
+/// key material.
 pub fn encrypt_key_envelope_with_params(
     seed: &Zeroizing<[u8; 32]>,
     passphrase: &SecretBox<String>,
@@ -246,7 +247,7 @@ fn encrypt_key_envelope_impl(
 
     // 2. Produce a PHC-format PasswordHash string so params are stored in the envelope.
     let salt_str = SaltString::encode_b64(&salt_bytes)
-        .map_err(|e| str_err(e))?;
+        .map_err(str_err)?;
     let argon = Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::V0x13,
@@ -254,7 +255,7 @@ fn encrypt_key_envelope_impl(
     );
     let phc_hash = argon
         .hash_password(passphrase.expose_secret().as_bytes(), &salt_str)
-        .map_err(|e| str_err(e))?;
+        .map_err(str_err)?;
     let phc_string = phc_hash.to_string();
 
     // 3. Derive the KEK from the passphrase + salt + params.
@@ -351,7 +352,7 @@ fn argon2_params_from_phc(hash: &argon2::password_hash::PasswordHash) -> Result<
     let m_cost = get_param("m")?;
     let t_cost = get_param("t")?;
     let p_cost = get_param("p")?;
-    Params::new(m_cost, t_cost, p_cost, Some(32)).map_err(|e| str_err(e))
+    Params::new(m_cost, t_cost, p_cost, Some(32)).map_err(str_err)
 }
 
 // ---------------------------------------------------------------------------
