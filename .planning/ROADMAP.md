@@ -66,7 +66,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — Receipt wire schema body (Receipt + ReceiptSignable + sign/verify + nonce_hex + committed JCS fixture) (Wave 1)
-- [ ] 03-02-PLAN.md — DhtTransport resolve-merge-republish + Transport::resolve_all_cprcpt trait method + ledger receipt_published_at field (Wave 2)
+- [x] 03-02-PLAN.md — DhtTransport resolve-merge-republish + Transport::resolve_all_cprcpt trait method + ledger receipt_published_at field (Wave 2)
 - [ ] 03-03-PLAN.md — run_receive step 13 wiring + run_receipts + main.rs/cli.rs dispatch + --json flag (Wave 3)
 - [ ] 03-04-PLAN.md — 4 MockTransport integration tests (end-to-end, coexistence, share_ref filter, tamper-zero-receipts) + HUMAN-UAT script + checkpoint (Wave 4)
 
