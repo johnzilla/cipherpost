@@ -28,9 +28,10 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 3
-  info: 5
-  total: 8
+  info: 6
+  total: 9
 status: issues_found
+source_augmented_from: [03-HUMAN-UAT.md]
 ---
 
 # Phase 3: Code Review Report
@@ -202,6 +203,25 @@ Or use `hex::encode(&bytes)` if the `hex` crate is already in the dep tree. Skip
 **Issue:** Inside `render_receipts_table`, the call `sender_openssh_fingerprint_and_z32(&r.recipient_pubkey)?` can in principle fail (the function returns `Err(Error::SignatureInner)` on z32 parse failure), but `r` has already passed `verify_receipt`, which parsed the same z32 successfully (receipt.rs:105-106). The `?` is effectively unreachable, and if it were ever reached, returning `Error::SignatureInner` from the renderer would produce "signature verification failed" to the user during display — misleading.
 
 **Fix:** Either unwrap with a clarifying `.expect("verified receipt has parseable recipient_pubkey")`, or change `sender_openssh_fingerprint_and_z32` to take a `&[u8; 32]` (already-parsed pubkey bytes) to make the infallibility type-enforced.
+
+### IN-06: `--share-ref` audit-detail view emits double "UTC" suffix on `accepted_at` (surfaced by real-DHT UAT)
+
+**File:** `src/flow.rs` (render_receipts_detail / audit-detail block)
+**Issue:** Real-DHT UAT (2026-04-21, see `03-HUMAN-UAT.md` Test 1) observed the audit view rendering:
+
+```
+accepted_at:        2026-04-21 22:49 UTC UTC (2026-04-21 18:49 local)
+```
+
+The formatter `format_unix_as_iso_utc` already emits `... UTC` as part of its output (it's ISO-8601-with-UTC-suffix), and the audit-detail render path appends an additional `UTC` literal after it. The JSON view is unaffected (`"accepted_at": 1776811764` — integer unix seconds). The table view is unaffected (single `UTC` in the column header).
+
+**Fix:** In the audit-detail render path, either drop the trailing `UTC` literal OR call a helper that emits the timestamp without the inline suffix. Recommended form:
+
+```
+accepted_at:        2026-04-21 22:49 UTC (2026-04-21 18:49 local)
+```
+
+**Severity:** cosmetic — does not affect parseability, signature verification, or JSON output. Caught only by human UAT because MockTransport tests assert on structured fields, not rendered strings.
 
 ---
 
