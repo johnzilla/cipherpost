@@ -3,9 +3,9 @@
 //! dispatcher prevents D-15 source-chain leakage.
 
 use anyhow::Result;
-use clap::Parser;
 use cipherpost::cli::{Cli, Command, IdentityCmd};
 use cipherpost::error::{exit_code, user_message, Error};
+use clap::Parser;
 
 fn main() {
     let code = run();
@@ -34,7 +34,11 @@ fn run() -> i32 {
 fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Identity { cmd } => match cmd {
-            IdentityCmd::Generate { passphrase_file, passphrase_fd, passphrase } => {
+            IdentityCmd::Generate {
+                passphrase_file,
+                passphrase_fd,
+                passphrase,
+            } => {
                 // Reject argv-inline passphrase (IDENT-04 / Pitfall #14). The `passphrase`
                 // field is `hide = true` in src/cli.rs — exists only so this rejection fires.
                 let pw = cipherpost::identity::resolve_passphrase(
@@ -50,7 +54,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 eprintln!("  {}", z32);
                 Ok(())
             }
-            IdentityCmd::Show { passphrase_file, passphrase_fd, passphrase } => {
+            IdentityCmd::Show {
+                passphrase_file,
+                passphrase_fd,
+                passphrase,
+            } => {
                 let pw = cipherpost::identity::resolve_passphrase(
                     passphrase.as_deref(),
                     Some("CIPHERPOST_PASSPHRASE"),
@@ -64,13 +72,146 @@ fn dispatch(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
-        Command::Send { .. } => {
-            eprintln!("not implemented yet (phase 2)");
-            std::process::exit(1);
+        Command::Send {
+            self_,
+            share,
+            purpose,
+            material_file,
+            ttl,
+        } => {
+            // Phase 2 does not add passphrase flags to Send — pulls from env / TTY only.
+            // (cli.rs is locked per Phase 1 D-11; a future plan may add --passphrase-file / --fd.)
+            let pw = cipherpost::identity::resolve_passphrase(
+                None,
+                Some("CIPHERPOST_PASSPHRASE"),
+                None,
+                None,
+            )?;
+            let id = cipherpost::identity::load(pw.as_secret())?;
+
+            // Reconstruct the pkarr::Keypair from the identity's signing seed so we can
+            // sign the OuterRecord and build the SignedPacket.
+            let seed = id.signing_seed();
+            let seed_bytes: [u8; 32] = *seed;
+            let kp = pkarr::Keypair::from_secret_key(&seed_bytes);
+
+            // Resolve send mode from mutually-exclusive flags.
+            let mode = match (self_, share) {
+                (true, None) => cipherpost::flow::SendMode::SelfMode,
+                (false, Some(z32)) => cipherpost::flow::SendMode::Share { recipient_z32: z32 },
+                (true, Some(_)) => {
+                    return Err(cipherpost::Error::Config(
+                        "--self and --share are mutually exclusive".into(),
+                    )
+                    .into())
+                }
+                (false, None) => {
+                    return Err(cipherpost::Error::Config(
+                        "Send requires either --self or --share <pubkey>".into(),
+                    )
+                    .into())
+                }
+            };
+
+            // Material source: --material-file value ('-' = stdin; path = file; absent = error).
+            let material_source = match material_file.as_deref() {
+                None => {
+                    return Err(cipherpost::Error::Config(
+                        "--material-file <path> or - required (Phase 2: stdin only, no prompt)"
+                            .into(),
+                    )
+                    .into())
+                }
+                Some("-") => cipherpost::flow::MaterialSource::Stdin,
+                Some(p) => cipherpost::flow::MaterialSource::File(std::path::PathBuf::from(p)),
+            };
+
+            let ttl_seconds = ttl.unwrap_or(cipherpost::flow::DEFAULT_TTL_SECONDS);
+            let purpose_str = purpose.as_deref().unwrap_or("");
+
+            // Production transport is DhtTransport. Under `--features mock`, the
+            // CIPHERPOST_USE_MOCK_TRANSPORT env var switches to the in-process
+            // MockTransport so CLI tests can publish and receive without touching
+            // the real DHT. Cross-process sharing is NOT supported (MockTransport's
+            // HashMap is per-process); see Plan 02-03 SUMMARY for details.
+            let transport: Box<dyn cipherpost::transport::Transport> = {
+                #[cfg(feature = "mock")]
+                {
+                    if std::env::var("CIPHERPOST_USE_MOCK_TRANSPORT").is_ok() {
+                        Box::new(cipherpost::transport::MockTransport::new())
+                    } else {
+                        Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                    }
+                }
+                #[cfg(not(feature = "mock"))]
+                {
+                    Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                }
+            };
+
+            let uri = cipherpost::flow::run_send(
+                &id,
+                transport.as_ref(),
+                &kp,
+                mode,
+                purpose_str,
+                material_source,
+                ttl_seconds,
+            )?;
+
+            println!("{}", uri);
+            Ok(())
         }
-        Command::Receive { .. } => {
-            eprintln!("not implemented yet (phase 2)");
-            std::process::exit(1);
+        Command::Receive {
+            share,
+            output,
+            dht_timeout: _,
+        } => {
+            // Parse the URI first (cheap, no I/O) so invalid input fails before
+            // we ask the user for a passphrase.
+            let share_str =
+                share.ok_or_else(|| cipherpost::Error::Config("share URI required".into()))?;
+            let uri = cipherpost::ShareUri::parse(&share_str)?;
+
+            // D-RECV-02: sentinel-first — BEFORE passphrase resolution.
+            if let Some(accepted_at) = cipherpost::flow::check_already_accepted(&uri.share_ref_hex)
+            {
+                eprintln!("already accepted at {}; not re-decrypting", accepted_at);
+                return Ok(());
+            }
+
+            let pw = cipherpost::identity::resolve_passphrase(
+                None,
+                Some("CIPHERPOST_PASSPHRASE"),
+                None,
+                None,
+            )?;
+            let id = cipherpost::identity::load(pw.as_secret())?;
+
+            let mut sink = match output.as_deref() {
+                None | Some("-") => cipherpost::flow::OutputSink::Stdout,
+                Some(p) => cipherpost::flow::OutputSink::File(std::path::PathBuf::from(p)),
+            };
+
+            let prompter = cipherpost::flow::TtyPrompter::new();
+
+            let transport: Box<dyn cipherpost::transport::Transport> = {
+                #[cfg(feature = "mock")]
+                {
+                    if std::env::var("CIPHERPOST_USE_MOCK_TRANSPORT").is_ok() {
+                        Box::new(cipherpost::transport::MockTransport::new())
+                    } else {
+                        Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                    }
+                }
+                #[cfg(not(feature = "mock"))]
+                {
+                    Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                }
+            };
+
+            cipherpost::flow::run_receive(&id, transport.as_ref(), &uri, &mut sink, &prompter)?;
+            Ok(())
         }
         Command::Receipts { .. } => {
             eprintln!("not implemented yet (phase 3)");
@@ -78,9 +219,11 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Command::Version => {
             // Plan 02 replaces with real version printer per D-13
-            println!("cipherpost {} ({})",
+            println!(
+                "cipherpost {} ({})",
                 env!("CARGO_PKG_VERSION"),
-                option_env!("CIPHERPOST_GIT_SHA").unwrap_or("unknown"));
+                option_env!("CIPHERPOST_GIT_SHA").unwrap_or("unknown")
+            );
             println!("crypto: age, Ed25519, Argon2id, HKDF-SHA256, JCS");
             Ok(())
         }

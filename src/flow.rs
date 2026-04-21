@@ -746,10 +746,7 @@ fn format_unix_as_iso_utc(unix: i64) -> String {
     let (y, m, d) = civil_from_days(days);
     let hour = rem / 3600;
     let minute = (rem % 3600) / 60;
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02} UTC",
-        y, m, d, hour, minute
-    )
+    format!("{:04}-{:02}-{:02} {:02}:{:02} UTC", y, m, d, hour, minute)
 }
 
 impl Prompter for TtyPrompter {
@@ -888,8 +885,7 @@ mod tests {
         match result {
             Err(Error::Config(msg)) => {
                 assert_eq!(
-                    msg,
-                    "acceptance requires a TTY; non-interactive receive is deferred",
+                    msg, "acceptance requires a TTY; non-interactive receive is deferred",
                     "D-ACCEPT-03 error message must be exact"
                 );
             }
