@@ -10,11 +10,16 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### Scaffold
 
-- [ ] **SCAF-01**: Repository has `Cargo.toml` with exact pins matching cclink v1.3.0's crypto/DHT stack (pkarr 5.0.3, `ed25519-dalek =3.0.0-pre.5`, age 0.11, argon2 0.5, hkdf 0.12, sha2 0.10, zeroize 1, clap 4.5, anyhow 1, thiserror 2, base64 0.22, bech32 0.9, dirs 5, dialoguer 0.12, serde + serde_json, serde_canonical_json)
-- [ ] **SCAF-02**: Repository has `cargo build --release` producing a single `cipherpost` binary
-- [ ] **SCAF-03**: CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo nextest run`, `cargo audit`, and `cargo deny check` on every pull request and on main
-- [ ] **SCAF-04**: Repository contains `LICENSE` (MIT), a `README.md` stub linking to `cipherpost-prd.md`, and a top-level `.gitignore` that excludes `target/`
-- [ ] **SCAF-05**: Async runtime decision enforced: `main.rs` is plain `fn main()` with no `#[tokio::main]`; no direct `tokio` dependency in `Cargo.toml`
+- [x] **SCAF-01
+**: Repository has `Cargo.toml` with exact pins matching cclink v1.3.0's crypto/DHT stack (pkarr 5.0.3, `ed25519-dalek =3.0.0-pre.5`, age 0.11, argon2 0.5, hkdf 0.12, sha2 0.10, zeroize 1, clap 4.5, anyhow 1, thiserror 2, base64 0.22, bech32 0.9, dirs 5, dialoguer 0.12, serde + serde_json, serde_canonical_json)
+- [x] **SCAF-02
+**: Repository has `cargo build --release` producing a single `cipherpost` binary
+- [x] **SCAF-03
+**: CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo nextest run`, `cargo audit`, and `cargo deny check` on every pull request and on main
+- [x] **SCAF-04
+**: Repository contains `LICENSE` (MIT), a `README.md` stub linking to `cipherpost-prd.md`, and a top-level `.gitignore` that excludes `target/`
+- [x] **SCAF-05
+**: Async runtime decision enforced: `main.rs` is plain `fn main()` with no `#[tokio::main]`; no direct `tokio` dependency in `Cargo.toml`
 
 ### Crypto primitives (vendored from cclink)
 
