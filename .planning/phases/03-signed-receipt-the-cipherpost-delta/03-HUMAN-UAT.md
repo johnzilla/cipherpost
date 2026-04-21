@@ -1,22 +1,29 @@
 ---
-status: pending
+status: partial
 phase: 03-signed-receipt-the-cipherpost-delta
 source: [03-VERIFICATION.md]
 started: 2026-04-21T00:00:00Z
-updated: 2026-04-21T00:00:00Z
+updated: 2026-04-21T23:00:00Z
 ---
 
 ## Current Test
 
-Pending — waiting on Plan 03-04 checkpoint approval before running.
+[testing complete]
 
 ## Tests
 
 ### 1. Real-DHT A→B→receipt round trip across two identities (RCPT-03 + TRANS-03)
 
 expected: Two shells (or two distinct `CIPHERPOST_HOME` directories) simulate sender A and recipient B, both connected to Mainline DHT. A generates identity A (prints z32_a). B generates identity B (prints z32_b). A runs `cipherpost send --share <z32_b> -p 'phase3 receipt test' --material-file -` with a payload on stdin; Mainline DHT publish succeeds; the printed URI is handed to B out-of-band. B runs `cipherpost receive <URI>`, the acceptance banner shows A's fingerprint, B pastes A's z32 to accept, and B's stdout receives the payload bytes. B's stderr contains `Publishing receipt to DHT...` (step 13 TRANS-05 trace). A then runs `cipherpost receipts --from <z32_b>` and observes a structured table with at least one row whose `share_ref` prefix matches the URI's share_ref, `purpose` == `phase3 receipt test`, and `recipient_fp` == B's OpenSSH fingerprint. A re-runs with `--share-ref <full-hex>` and confirms the single-row audit-detail view shows ALL 10 Receipt fields. A re-runs with `--json` and confirms valid pretty-printed JSON on stdout.
-result: pending
-notes: —
+result: issue
+reported: "Cosmetic: --share-ref audit view renders accepted_at with double-UTC suffix ('22:49 UTC UTC'). Substantive round trip passes — all 10 Receipt fields correct, JSON valid and JCS-ordered, sign/verify succeeds across two identities on real Mainline DHT. DHT propagation took ~60s (first resolve returned NotFound, retry succeeded)."
+severity: cosmetic
+result_date: 2026-04-21
+test_identities:
+  alice_z32: erwwi1f15tfmypkdxwkw3euhw9e9s74wooi8ez3yzqpw1bpxmt3o
+  bob_z32: qigqup9d4hehi8yxr83je6khrtox6a1sactjfgnguext1k7g5r7o
+  uri: "cipherpost://erwwi1f15tfmypkdxwkw3euhw9e9s74wooi8ez3yzqpw1bpxmt3o/6710d6fd3b9b081b9be5fe71d8315f9a"
+notes: "Binary from 12:53 was stale (Phase 2 era); required fresh `cargo build --release` + wiping Bob's state dir to re-trigger step 13."
 
 **How to run:**
 ```
@@ -57,8 +64,10 @@ echo "URI: $URI"
 ### 2. Optional: coexistence of B's outgoing share + incoming receipt on the real DHT
 
 expected: B first runs `cipherpost send --self` to establish a self-share under B's key. B then runs the Test 1 receive to accept A's share. A (or any third party with B's z32) then runs `pkarrctl resolve <z32_b>` (if installed) and observes BOTH the `_cipherpost` label AND the `_cprcpt-<ref>` label under B's key.
-result: pending
-notes: Optional — defer if not needed right now. Covered by automated `phase3_coexistence_b_self_share_and_receipt.rs` against MockTransport.
+result: blocked
+blocked_by: third-party
+reason: "No pkarrctl or other DHT-inspection tool installed in the test environment. Coexistence invariant is already proven by MockTransport tests (phase3_coexistence_b_self_share_and_receipt.rs, phase3_mock_publish_receipt_coexistence.rs)."
+notes: Optional — defer. Re-run once DHT inspection tooling is available.
 
 **How to run:**
 ```
@@ -79,7 +88,21 @@ pkarrctl resolve <z32_b>
 
 total: 2
 passed: 0
-issues: 0
-pending: 2
+issues: 1
+pending: 0
 skipped: 0
-blocked: 0
+blocked: 1
+
+## Gaps
+
+- truth: "`cipherpost receipts --from <z32> --share-ref <hex>` audit-detail view renders `accepted_at` with a single UTC suffix"
+  status: failed
+  reason: "Observed `accepted_at: 2026-04-21 22:49 UTC UTC (2026-04-21 18:49 local)` — double 'UTC'. Formatter appears to append 'UTC' literal to a string that already ends in 'UTC' from `format_unix_as_iso_utc` in src/flow.rs."
+  severity: cosmetic
+  test: 1
+  artifacts: [src/flow.rs]
+  missing: []
+
+## Observations
+
+- Mainline DHT propagation lag: first `receipts --from` query seconds after Bob's publish returned `record not found on DHT`. Retrying after ~60s resolved successfully. Validates the 24h TTL decision.
