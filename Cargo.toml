@@ -56,6 +56,18 @@ path = "tests/signed_packet_budget.rs"
 name = "outer_record_canonical_form"
 path = "tests/outer_record_canonical_form.rs"
 
+[[test]]
+name = "phase2_envelope_round_trip"
+path = "tests/phase2_envelope_round_trip.rs"
+
+[[test]]
+name = "phase2_material_variants_unimplemented"
+path = "tests/phase2_material_variants_unimplemented.rs"
+
+[[test]]
+name = "phase2_share_uri_parse"
+path = "tests/phase2_share_uri_parse.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

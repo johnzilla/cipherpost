@@ -55,7 +55,11 @@ pub enum Error {
     ShareRefMismatch,
 
     #[error("share too large for PKARR packet: encoded={encoded} bytes, budget={budget} bytes (plaintext was {plaintext} bytes)")]
-    WireBudgetExceeded { encoded: usize, budget: usize, plaintext: usize },
+    WireBudgetExceeded {
+        encoded: usize,
+        budget: usize,
+        plaintext: usize,
+    },
 
     #[error("invalid share URI: {0}")]
     InvalidShareUri(String),
@@ -89,9 +93,7 @@ pub fn exit_code(err: &Error) -> i32 {
         Error::NotFound => 5,
         Error::Network => 6,
         Error::Declined => 7,
-        Error::ShareRefMismatch
-        | Error::WireBudgetExceeded { .. }
-        | Error::InvalidShareUri(_) => 1,
+        Error::ShareRefMismatch | Error::WireBudgetExceeded { .. } | Error::InvalidShareUri(_) => 1,
         _ => 1,
     }
 }
