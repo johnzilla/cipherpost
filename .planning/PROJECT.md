@@ -23,6 +23,14 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 - ✓ Error-oracle hygiene: single `thiserror` enum with `#[source]` chains preserved but never Displayed to stderr; all signature-failure variants share one identical user-facing message and exit code 3
 - ✓ 23 tests green in parallel (Pitfalls #1, #4, #7, #8, #9, #13, #15 each have a prevention test)
 
+**Signed receipt (the cipherpost delta — Phase 3 — 2026-04-21)**
+- ✓ `Receipt` / `ReceiptSignable` wire schema locked via committed JCS fixture (`tests/fixtures/receipt_signable.bin`, 424 bytes); 128-bit nonce; recipient-signed with Ed25519; verified with `verify_strict` + round-trip-reserialize guard
+- ✓ `run_receive` step 13 publishes a signed receipt to the DHT under the recipient's PKARR key at DNS label `_cprcpt-<share_ref>`; tampering between outer verify and acceptance aborts before step 13 so zero receipts are published (MockTransport-verified)
+- ✓ `DhtTransport::publish_receipt` uses resolve-merge-republish so a recipient's existing outgoing share (`_cipherpost`) and prior receipts (`_cprcpt-*`) coexist after a new receipt is published (no clobber)
+- ✓ `cipherpost receipts --from <z32>` fetches + verifies + renders structured output; `--share-ref <hex>` returns a 10-field audit-detail view; `--json` emits pretty JSON on stdout; passphrase-free dispatch (D-OUT-04)
+- ✓ 4 integration tests cover all ROADMAP success criteria (SC1 tamper-zero-receipts, SC2 filter, SC3 coexistence, SC4 two-identity E2E); 86 tests pass under `cargo test --features mock`
+- Pending human UAT: real-DHT round trip across two identities (`03-HUMAN-UAT.md`)
+
 ### Active
 
 <!-- Current milestone: walking skeleton. Each remaining item is a hypothesis until shipped. -->
@@ -40,10 +48,6 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 - [ ] Payload schema supports typed cryptographic-material envelopes (generic-secret implemented; cert/PGP/SSH fields reserved)
 - [ ] Sender attaches free-text purpose binding to each share
 - [ ] Recipient sees purpose (and sender pubkey) and must explicitly accept before the inner material is revealed
-
-**Signed receipt (the cipherpost delta from cclink)**
-- [ ] On successful pickup + acceptance, recipient publishes a signed receipt back to the DHT referencing the original share
-- [ ] Sender can fetch and verify the receipt via `cipherpost receipts`
 
 **TTL & operational**
 - [ ] Shares carry a default TTL of 24 hours and honor a sender-supplied `--ttl`
@@ -89,6 +93,8 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 
 **Phase 1 complete (2026-04-21).** Rust crate scaffold + vendored crypto/identity/transport/record primitives shipped. Binary builds, 23 tests pass in parallel, `cipherpost identity generate/show/version` works end-to-end via env-var passphrase (interactive TTY flow captured as pending HUMAN-UAT). Foundation ready for Phase 2 (send/receive/acceptance).
 
+**Phase 3 complete (2026-04-21).** Signed-receipt cipherpost delta shipped. `Receipt` wire schema locked (JCS fixture 424 bytes); `DhtTransport::publish_receipt` uses resolve-merge-republish so coexisting TXT records are preserved; `cipherpost receipts --from <z32>` fetches + verifies + renders. 4 E2E integration tests cover all ROADMAP success criteria; 86 tests pass under `cargo test --features mock`. Real-DHT UAT pending. Phase 2 remains un-reviewed in PROJECT.md Active section (predates this phase).
+
 **Domain lineage.** The underlying protocol (E2E-encrypted payloads published to Mainline DHT via PKARR SignedPacket, age for payload encryption, Ed25519 for identity) is already implemented and exercised in `cclink`. Generalizing into keyshare is a small delta on existing code, not a new protocol.
 
 ## Constraints
@@ -112,7 +118,7 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 | Lock name as "Cipherpost" | PRD working name; cost of renaming compounds the later it slips; alternatives (keyshare, dropkey, sigpost) rejected for now | — Pending |
 | Fork-and-diverge from cclink, no shared core crate | cclink is mothballed — no active sibling to share a crate with; fork-and-diverge is lower overhead than extracting a library from a dead project | ✓ Good (Phase 1) |
 | Milestone target = walking skeleton, not full v1.0 | Validate the cclink extraction + the cipherpost-specific receipt flow end-to-end before committing to v1.0 breadth (TUI, all four modes, all payload types) | — Pending |
-| Skeleton includes signed receipt, not just self/share | The receipt is the cipherpost delta from cclink. A skeleton without it just validates cclink, not cipherpost. | — Pending (Phase 3) |
+| Skeleton includes signed receipt, not just self/share | The receipt is the cipherpost delta from cclink. A skeleton without it just validates cclink, not cipherpost. | ✓ Good (Phase 3 — JCS-locked Receipt + resolve-merge-republish + `cipherpost receipts` dispatch all shipped) |
 | Skeleton uses generic-secret payload type only | Other typed payloads (X.509, PGP, SSH) add parsing complexity without changing protocol shape; schema reserves them for v1.0 | — Pending (Phase 2) |
 | SPEC/THREAT-MODEL/SECURITY as drafts in skeleton | Writing them forces design clarity during skeleton work; final versions gate v1.0, not skeleton | — Pending (Phase 4) |
 | Default TTL = 24h (PRD said 4h) | Research showed Mainline DHT p50 lookup ~1 min with long tail; 4h default would routinely expire before pickup | — Pending (Phase 2) |
@@ -143,4 +149,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-21 after Phase 1 completion*
+*Last updated: 2026-04-21 after Phase 3 completion*
