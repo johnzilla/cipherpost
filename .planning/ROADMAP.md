@@ -12,7 +12,7 @@ Cipherpost's walking skeleton is a fork-and-diverge from mothballed `cclink`: ve
 
 Phases execute strictly sequentially. Within a phase, plans may run in parallel where dependencies allow.
 
-- [ ] **Phase 1: Foundation — scaffold, vendored primitives, and transport seam** - Cargo scaffold + CI; vendor crypto/identity/record/transport from cclink with domain-separated HKDF, canonical JSON (JCS), Argon2 params in file header, zeroize discipline, `Transport` trait + `MockTransport`, `share_ref` in the outer record schema.
+- [x] **Phase 1: Foundation — scaffold, vendored primitives, and transport seam** - Cargo scaffold + CI; vendor crypto/identity/record/transport from cclink with domain-separated HKDF, canonical JSON (JCS), Argon2 params in file header, zeroize discipline, `Transport` trait + `MockTransport`, `share_ref` in the outer record schema. (completed 2026-04-21)
 - [ ] **Phase 2: Send, receive, and explicit acceptance** - Typed `Envelope` + `Material::GenericSecret`, `cipherpost send --self` and `--share <pubkey>`, `cipherpost receive` with outer+inner signature verification before decrypt, TTL enforcement on inner signed timestamp, acceptance prompt showing full fingerprints + purpose, CLI ergonomics (exit-code taxonomy, `-` for stdin/stdout, non-interactive passphrase contract, `cipherpost version`).
 - [ ] **Phase 3: Signed receipt — the cipherpost delta** - Construct, sign, and publish a `Receipt` under the recipient's PKARR key at label `_cprcpt-<share_ref>` via the resolve-merge-republish `publish_receipt` pattern, and fetch + verify receipts from the sender side with `cipherpost receipts --from <recipient-pubkey>`.
 - [ ] **Phase 4: Protocol documentation drafts** - Draft `SPEC.md` (payload schema, canonical JSON, share_ref, receipt format, DHT labels, HKDF namespace, fingerprint format, exit codes, passphrase contract), draft `THREAT-MODEL.md` (identity, DHT adversaries, acceptance UX, receipt replay, purpose-as-sender-attested), `SECURITY.md` (disclosure contact + embargo).
@@ -32,9 +32,9 @@ Phases execute strictly sequentially. Within a phase, plans may run in parallel 
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Scaffold + CI + error enum + full CLI command tree + module stubs (Wave 1)
-- [ ] 01-02-PLAN.md — Crypto primitives (Ed25519↔X25519, age, Argon2id+HKDF, JCS, CIPHPOSK envelope) + Identity (generate/show/0600/PHC-header/passphrase-argv-reject) + wire identity + version commands end-to-end (Wave 2)
-- [ ] 01-03-PLAN.md — Transport trait (publish/resolve/publish_receipt) + DhtTransport + MockTransport (cfg-gated) + OuterRecord/OuterRecordSignable with 128-bit share_ref + JCS canonical form fixture + SignedPacket 1000-byte budget test (Wave 2)
+- [x] 01-01-PLAN.md — Scaffold + CI + error enum + full CLI command tree + module stubs (Wave 1)
+- [x] 01-02-PLAN.md — Crypto primitives (Ed25519↔X25519, age, Argon2id+HKDF, JCS, CIPHPOSK envelope) + Identity (generate/show/0600/PHC-header/passphrase-argv-reject) + wire identity + version commands end-to-end (Wave 2)
+- [x] 01-03-PLAN.md — Transport trait (publish/resolve/publish_receipt) + DhtTransport + MockTransport (cfg-gated) + OuterRecord/OuterRecordSignable with 128-bit share_ref + JCS canonical form fixture + SignedPacket 1000-byte budget test (Wave 2)
 
 ### Phase 2: Send, receive, and explicit acceptance
 **Goal**: Deliver the user-visible core round trip — a sender can hand off a generic-secret payload to themselves or a named recipient via `cipherpost send`, and a recipient can retrieve, verify both signatures before any decryption, enforce TTL on the inner signed timestamp, see a full-fingerprint acceptance screen with the sender-attested purpose, and (only on explicit typed confirmation) receive the decrypted material on stdout or `-o <path>`. This consolidates research Phases 4-7 into one coarse phase because acceptance is inseparable from the receive flow in the skeleton requirements (RECV-04 gates material surfacing inside the same code path that runs RECV-01..03), and the CLI ergonomics (`-` stdin/stdout, exit-code taxonomy, `cipherpost version`, passphrase hygiene) must land alongside the first user-visible commands or the skeleton calcifies a different answer.
@@ -77,7 +77,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4. Decimal insertions (e.g., 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation — scaffold, vendored primitives, and transport seam | 0/3 | Not started | - |
+| 1. Foundation — scaffold, vendored primitives, and transport seam | 3/3 | Complete    | 2026-04-21 |
 | 2. Send, receive, and explicit acceptance | 0/TBD | Not started | - |
 | 3. Signed receipt — the cipherpost delta | 0/TBD | Not started | - |
 | 4. Protocol documentation drafts | 0/TBD | Not started | - |

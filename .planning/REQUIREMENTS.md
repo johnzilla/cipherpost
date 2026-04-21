@@ -169,27 +169,27 @@ Populated by gsd-roadmapper on 2026-04-20. Every v1 requirement maps to exactly 
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCAF-01 | Phase 1 | Pending |
-| SCAF-02 | Phase 1 | Pending |
-| SCAF-03 | Phase 1 | Pending |
-| SCAF-04 | Phase 1 | Pending |
-| SCAF-05 | Phase 1 | Pending |
-| CRYPTO-01 | Phase 1 | Pending |
-| CRYPTO-02 | Phase 1 | Pending |
-| CRYPTO-03 | Phase 1 | Pending |
-| CRYPTO-04 | Phase 1 | Pending |
-| CRYPTO-05 | Phase 1 | Pending |
-| CRYPTO-06 | Phase 1 | Pending |
-| IDENT-01 | Phase 1 | Pending |
-| IDENT-02 | Phase 1 | Pending |
-| IDENT-03 | Phase 1 | Pending |
-| IDENT-04 | Phase 1 | Pending |
-| IDENT-05 | Phase 1 | Pending |
-| TRANS-01 | Phase 1 | Pending |
-| TRANS-02 | Phase 1 | Pending |
+| SCAF-01 | Phase 1 | Complete |
+| SCAF-02 | Phase 1 | Complete |
+| SCAF-03 | Phase 1 | Complete |
+| SCAF-04 | Phase 1 | Complete |
+| SCAF-05 | Phase 1 | Complete |
+| CRYPTO-01 | Phase 1 | Complete |
+| CRYPTO-02 | Phase 1 | Complete |
+| CRYPTO-03 | Phase 1 | Complete |
+| CRYPTO-04 | Phase 1 | Complete |
+| CRYPTO-05 | Phase 1 | Complete |
+| CRYPTO-06 | Phase 1 | Complete |
+| IDENT-01 | Phase 1 | Complete |
+| IDENT-02 | Phase 1 | Complete |
+| IDENT-03 | Phase 1 | Complete |
+| IDENT-04 | Phase 1 | Complete |
+| IDENT-05 | Phase 1 | Complete |
+| TRANS-01 | Phase 1 | Complete |
+| TRANS-02 | Phase 1 | Complete |
 | TRANS-03 | Phase 3 | Pending |
-| TRANS-04 | Phase 1 | Pending |
-| TRANS-05 | Phase 1 | Pending |
+| TRANS-04 | Phase 1 | Complete |
+| TRANS-05 | Phase 1 | Complete |
 | PAYL-01 | Phase 2 | Pending |
 | PAYL-02 | Phase 2 | Pending |
 | PAYL-03 | Phase 2 | Pending |
