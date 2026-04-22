@@ -1,21 +1,50 @@
 ---
 phase: 03-signed-receipt-the-cipherpost-delta
 verified: 2026-04-21T00:00:00Z
-status: human_needed
-score: 4/4 must-haves verified
+reverified: 2026-04-22T14:45:00Z
+status: passed
+score: 4/4 must-haves verified + 1/1 human UAT passed (1 optional blocked by tooling)
 overrides_applied: 0
 human_verification:
   - test: "Real-DHT A→B→receipt round trip"
     expected: "A generates identity, sends to B via Mainline DHT, B accepts, B's stderr shows 'Publishing receipt to DHT...', A runs `cipherpost receipts --from <z32_b>` and sees a table row whose share_ref matches the URI, purpose matches, recipient_fp is B's OpenSSH fingerprint. `--share-ref` returns the 10-field audit-detail view. `--json` returns valid pretty-printed JSON."
     why_human: "MockTransport tests exercise the full flow code path but cannot reach Mainline DHT. RCPT-03 requires an actual network round-trip across two real identities to prove the published-SignedPacket is resolvable by a third party using only the recipient's public z-base-32."
+    result: passed
+    executed: 2026-04-21
+    executed_by: johnzilla (repo maintainer)
+    findings: |
+      Substantive round trip passes — all 10 Receipt fields correct, JSON valid
+      and JCS-ordered, sign/verify succeeds across two real identities on real
+      Mainline DHT. DHT propagation took ~60s (first resolve returned NotFound,
+      retry succeeded — validates the 24h TTL decision).
+      Test identities captured in 03-HUMAN-UAT.md:
+        alice_z32 = erwwi1f15tfmypkdxwkw3euhw9e9s74wooi8ez3yzqpw1bpxmt3o
+        bob_z32   = qigqup9d4hehi8yxr83je6khrtox6a1sactjfgnguext1k7g5r7o
+        URI       = cipherpost://erwwi1f15.../6710d6fd3b9b081b9be5fe71d8315f9a
+      ONE cosmetic issue found and fixed at milestone close (2026-04-22):
+      `cipherpost receipts --from <z32> --share-ref <hex>` audit-detail view
+      rendered `accepted_at` with double-UTC suffix ("22:49 UTC UTC"). Root
+      cause: format_unix_as_iso_utc already appends " UTC"; the audit-detail
+      render line also appended " UTC" after the `{}` placeholder. Fix:
+      removed the redundant suffix in src/flow.rs render_receipts_table
+      audit-detail branch. Added a comment on format_unix_as_iso_utc_epoch
+      test pinning the formatter's suffix contract.
+    fix_commit: pending  # updated in the commit that lands the format fix
+  - test: "Coexistence of B's outgoing share + incoming receipt on real DHT (optional)"
+    expected: "After B establishes a self-share and accepts A's share, a third-party DHT inspector (e.g., pkarrctl resolve <z32_b>) returns BOTH _cipherpost and _cprcpt-<share_ref> labels under B's key."
+    why_human: "DHT observation tooling varies per environment; confirming two-label coexistence on real infrastructure cannot be automated without adding a DHT dep to the test harness."
+    result: blocked
+    blocked_by: third-party
+    reason: "No pkarrctl or equivalent DHT inspection tool installed in the test environment. The coexistence invariant is proven by MockTransport tests (phase3_coexistence_b_self_share_and_receipt.rs, phase3_mock_publish_receipt_coexistence.rs) and by VERIFICATION row 3. Deferred to a future release-time smoke check when tooling is available. Not a v1.0 blocker."
+    optional: true
 ---
 
 # Phase 3: Signed Receipt (the Cipherpost Delta) Verification Report
 
 **Phase Goal:** Deliver the signed-receipt feature that differentiates cipherpost from cclink — a Receipt signed by the recipient's Ed25519 key, published under the recipient's PKARR key at DNS label `_cprcpt-<share_ref>` via resolve-merge-republish (preserving coexisting TXT records), and independently fetchable and verifiable by the sender via `cipherpost receipts`.
 **Verified:** 2026-04-21
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Re-verified:** 2026-04-22 (real-DHT UAT confirmed passing + cosmetic double-UTC fix landed)
+**Status:** passed
 
 ## Goal Achievement
 

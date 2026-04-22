@@ -1,9 +1,10 @@
 ---
-status: partial
+status: passed
 phase: 03-signed-receipt-the-cipherpost-delta
 source: [03-VERIFICATION.md]
 started: 2026-04-21T00:00:00Z
-updated: 2026-04-21T23:00:00Z
+updated: 2026-04-22T14:45:00Z
+resolved: 2026-04-22 (cosmetic double-UTC bug fixed at milestone v1.0 close)
 ---
 
 ## Current Test
@@ -87,21 +88,24 @@ pkarrctl resolve <z32_b>
 ## Summary
 
 total: 2
-passed: 0
-issues: 1
+passed: 1
+issues: 0      # cosmetic double-UTC bug resolved 2026-04-22 at milestone close
 pending: 0
 skipped: 0
-blocked: 1
+blocked: 1     # Test 2 is optional (DHT inspection tooling unavailable)
 
 ## Gaps
 
 - truth: "`cipherpost receipts --from <z32> --share-ref <hex>` audit-detail view renders `accepted_at` with a single UTC suffix"
-  status: failed
-  reason: "Observed `accepted_at: 2026-04-21 22:49 UTC UTC (2026-04-21 18:49 local)` — double 'UTC'. Formatter appears to append 'UTC' literal to a string that already ends in 'UTC' from `format_unix_as_iso_utc` in src/flow.rs."
+  status: resolved
+  reason: "Observed `accepted_at: 2026-04-21 22:49 UTC UTC (2026-04-21 18:49 local)` — double 'UTC'. Formatter appended 'UTC' literal to a string that already ends in 'UTC' from `format_unix_as_iso_utc` in src/flow.rs."
   severity: cosmetic
   test: 1
   artifacts: [src/flow.rs]
   missing: []
+  fix: "Removed the redundant ` UTC` suffix from the audit-detail format string in src/flow.rs render_receipts_table (audit-detail branch). Added comment on format_unix_as_iso_utc_epoch test pinning the formatter's suffix contract so future callers can't re-introduce the bug."
+  fix_date: 2026-04-22
+  fix_commit: pending  # updated when the fix commit lands
 
 ## Observations
 

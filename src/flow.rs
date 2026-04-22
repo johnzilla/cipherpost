@@ -660,8 +660,9 @@ fn render_receipts_table(
         println!("share_ref:          {}", r.share_ref);
         println!("sender_pubkey:      {}", r.sender_pubkey);
         println!("recipient_pubkey:   {}", r.recipient_pubkey);
+        // format_unix_as_iso_utc already appends " UTC"; no extra suffix needed.
         println!(
-            "accepted_at:        {} UTC ({} local)",
+            "accepted_at:        {} ({} local)",
             format_unix_as_iso_utc(r.accepted_at),
             format_unix_as_iso_local(r.accepted_at),
         );
@@ -1139,6 +1140,8 @@ mod tests {
 
     #[test]
     fn format_unix_as_iso_utc_epoch() {
+        // Pins the suffix: callers must NOT append another " UTC" after
+        // `format_unix_as_iso_utc(...)` — see UAT-2 2026-04-21 double-UTC bug.
         assert_eq!(format_unix_as_iso_utc(0), "1970-01-01 00:00 UTC");
     }
 
