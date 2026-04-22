@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-04-PLAN.md — SECURITY.md + D-SEC-03 round-trip evidence (GHSA-36x8-r67j-hcw6) committed in bbc7368; summary in 6ff78fe
-last_updated: "2026-04-22T13:30:00.000Z"
-last_activity: 2026-04-22 -- Phase 04 Plan 04 complete
+status: milestone-complete
+stopped_at: Phase 4 complete — lychee CI + README + phase-close evidence (f1bba86, 822782d). v1.0 walking-skeleton milestone ready for /gsd-complete-milestone.
+last_updated: "2026-04-22T13:45:00.000Z"
+last_activity: 2026-04-22 -- Phase 04 complete; v1.0 milestone at 100%
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-20)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase --phase — 04
+**Current focus:** v1.0 walking-skeleton milestone complete — ready for /gsd-complete-milestone
 
 ## Current Position
 
-Phase: 04 (protocol-documentation-drafts) — EXECUTING
-Plan: 4 of 5 complete (04-05 remaining)
-Status: Plan 04-04 complete; 04-05 (link-check CI + README + phase close) is next
-Last activity: 2026-04-22 -- Plan 04-04 finalized (SECURITY.md + D-SEC-03 evidence)
+Phase: 04 (protocol-documentation-drafts) — COMPLETE
+Plan: 5 of 5 — 04-05 (link-check CI + README + phase close) done
+Status: Milestone v1.0 complete — all 4 phases and 15 plans have SUMMARY.md
+Last activity: 2026-04-22 -- Phase 04 Plan 05 committed (f1bba86, 822782d)
 
-Progress: [███████████████████░] 93%
+Progress: [████████████████████] 100%
 
 ## Performance Metrics
 
@@ -111,6 +111,10 @@ Recent decisions affecting current work:
 - Plan 04-04: Test advisory GHSA-36x8-r67j-hcw6 left in draft state as permanent reproducibility record; dismissal optional for D-SEC-03
 - Plan 04-04: Timestamp acceptance criterion relaxed from >=3 to >=2 — single-maintainer self-filing has no `notified_at` event (GitHub suppresses self-notifications); amended in-commit with rationale
 - Plan 04-04: D-SEC-03 evidence uses `gh api` REST captures over screenshots for reproducibility; verification commands committed in the evidence file
+- Plan 04-05: lychee-action SHA-pinned to 8646ba30535128ac92d33dfc9133794bfdd9b411 (v2.8.0) — bumped from the plan's suggested v2.0.0 via live GitHub API lookup; plan explicitly said to verify current v2.x before committing
+- Plan 04-05: Local dev lychee pinned to 0.21.0 (not latest 0.23.0) because project rustc is 1.85.1; CI bundles its own lychee via lychee-action so this asymmetry does not affect shipped artifacts
+- Plan 04-05: README Status line intentionally left stale ("Phase 1 underway") — /gsd-transition at milestone close owns README status updates
+- Plan 04-05: .lycheeignore kept minimal — only the auth-gated GitHub Advisory URL pre-populated; fixing source docs is preferred over adding ignore entries (T-04-05-03 mitigation)
 
 ### Pending Todos
 
@@ -130,9 +134,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-22T13:30:00.000Z
-Stopped at: Completed 04-04-PLAN.md — SECURITY.md + D-SEC-03 round-trip evidence (GHSA-36x8-r67j-hcw6) committed in bbc7368; summary in 6ff78fe
+Last session: 2026-04-22T13:45:00.000Z
+Stopped at: Phase 4 complete — lychee CI (f1bba86) + 04-05 SUMMARY (822782d). All DOC-01..04 evidenced; lychee 36/0/1 pass; cargo fmt/build green. v1.0 walking-skeleton milestone at 100%.
 Resume file: None
 
-**Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — 2026-04-22T00:35:27.582Z
-**Next plan:** 04-05 (link-check CI + README + phase-close verification) — final plan of Phase 4 and the v1.0 milestone
+**Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — 2026-04-22T00:35:27.582Z (all complete)
+**Next action:** `/gsd-complete-milestone` to archive v1.0 and prepare for the next milestone cycle
