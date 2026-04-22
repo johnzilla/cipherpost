@@ -29,7 +29,7 @@ human_verification:
       removed the redundant suffix in src/flow.rs render_receipts_table
       audit-detail branch. Added a comment on format_unix_as_iso_utc_epoch
       test pinning the formatter's suffix contract.
-    fix_commit: pending  # updated in the commit that lands the format fix
+    fix_commit: e95c95e
   - test: "Coexistence of B's outgoing share + incoming receipt on real DHT (optional)"
     expected: "After B establishes a self-share and accepts A's share, a third-party DHT inspector (e.g., pkarrctl resolve <z32_b>) returns BOTH _cipherpost and _cprcpt-<share_ref> labels under B's key."
     why_human: "DHT observation tooling varies per environment; confirming two-label coexistence on real infrastructure cannot be automated without adding a DHT dep to the test harness."

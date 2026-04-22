@@ -115,6 +115,8 @@ Recent decisions affecting current work:
 - Plan 04-05: Local dev lychee pinned to 0.21.0 (not latest 0.23.0) because project rustc is 1.85.1; CI bundles its own lychee via lychee-action so this asymmetry does not affect shipped artifacts
 - Plan 04-05: README Status line intentionally left stale ("Phase 1 underway") — /gsd-transition at milestone close owns README status updates
 - Plan 04-05: .lycheeignore kept minimal — only the auth-gated GitHub Advisory URL pre-populated; fixing source docs is preferred over adding ignore entries (T-04-05-03 mitigation)
+- Milestone v1.0 close (UAT-1 fix): `resolve_passphrase` gained `confirm_on_tty: bool`; `identity generate` prompts twice to prevent irrecoverable passphrase typo; unlock paths (show/send/receive) keep single-prompt (typo surfaces as PassphraseIncorrect, not footgun). Commit 2e29b74.
+- Milestone v1.0 close (UAT-2 fix): removed double-UTC suffix in `cipherpost receipts --share-ref` audit-detail render; `format_unix_as_iso_utc` already appends " UTC". Commit e95c95e.
 
 ### Pending Todos
 
@@ -134,9 +136,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-22T13:45:00.000Z
-Stopped at: Phase 4 complete — lychee CI (f1bba86) + 04-05 SUMMARY (822782d). All DOC-01..04 evidenced; lychee 36/0/1 pass; cargo fmt/build green. v1.0 walking-skeleton milestone at 100%.
+Last session: 2026-04-22T15:00:00.000Z
+Stopped at: Milestone v1.0 fully verified — bookkeeping debt resolved (e89fd41, 08bd78b, a56d1d9), UAT-1 executed + confirm-passphrase fix landed (2e29b74 / 7f7750f), UAT-2 completed + double-UTC cosmetic fix landed (e95c95e). Phases 01 and 03 both now `status: passed` with human_verification records. All 4 phases passed, all 49 requirements satisfied, zero outstanding debt.
 Resume file: None
 
-**Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — 2026-04-22T00:35:27.582Z (all complete)
+**Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — all complete
 **Next action:** `/gsd-complete-milestone` to archive v1.0 and prepare for the next milestone cycle

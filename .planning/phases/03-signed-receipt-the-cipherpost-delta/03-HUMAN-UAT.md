@@ -105,7 +105,7 @@ blocked: 1     # Test 2 is optional (DHT inspection tooling unavailable)
   missing: []
   fix: "Removed the redundant ` UTC` suffix from the audit-detail format string in src/flow.rs render_receipts_table (audit-detail branch). Added comment on format_unix_as_iso_utc_epoch test pinning the formatter's suffix contract so future callers can't re-introduce the bug."
   fix_date: 2026-04-22
-  fix_commit: pending  # updated when the fix commit lands
+  fix_commit: e95c95e
 
 ## Observations
 
