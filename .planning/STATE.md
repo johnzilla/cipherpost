@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-03-PLAN.md — THREAT-MODEL.md drafted (424 lines, 9 sections, 40 decision-ID citations)
-last_updated: "2026-04-22T01:53:39.561Z"
-last_activity: 2026-04-22 -- Phase --phase execution started
+stopped_at: Completed 04-04-PLAN.md — SECURITY.md + D-SEC-03 round-trip evidence (GHSA-36x8-r67j-hcw6) committed in bbc7368; summary in 6ff78fe
+last_updated: "2026-04-22T13:30:00.000Z"
+last_activity: 2026-04-22 -- Phase 04 Plan 04 complete
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 15
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-20)
 
 ## Current Position
 
-Phase: --phase (04) — EXECUTING
-Plan: 1 of --name
-Status: Executing Phase --phase
-Last activity: 2026-04-22 -- Phase --phase execution started
+Phase: 04 (protocol-documentation-drafts) — EXECUTING
+Plan: 4 of 5 complete (04-05 remaining)
+Status: Plan 04-04 complete; 04-05 (link-check CI + README + phase close) is next
+Last activity: 2026-04-22 -- Plan 04-04 finalized (SECURITY.md + D-SEC-03 evidence)
 
-Progress: [█████████░] 87%
+Progress: [███████████████████░] 93%
 
 ## Performance Metrics
 
@@ -107,6 +107,10 @@ Recent decisions affecting current work:
 - Phase 4 SC3 round-trip verification is a Security Advisory receipt, not a live email round-trip
 - THREAT-MODEL.md §3 DHT Adversaries uses per-sub-section Mitigations blocks (3.1/3.2/3.3) rather than one aggregate block — each sub-adversary has distinct capability surface
 - THREAT-MODEL.md §7 uses three lettered worked examples (A/B/C) for receipt replay/race/tamper rather than three sub-sections
+- Plan 04-04: SECURITY.md publishes NO email disclosure channel — GHSA URL only per D-SEC-01; re-opening requires explicit decision amendment
+- Plan 04-04: Test advisory GHSA-36x8-r67j-hcw6 left in draft state as permanent reproducibility record; dismissal optional for D-SEC-03
+- Plan 04-04: Timestamp acceptance criterion relaxed from >=3 to >=2 — single-maintainer self-filing has no `notified_at` event (GitHub suppresses self-notifications); amended in-commit with rationale
+- Plan 04-04: D-SEC-03 evidence uses `gh api` REST captures over screenshots for reproducibility; verification commands committed in the evidence file
 
 ### Pending Todos
 
@@ -126,8 +130,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-22T01:53:39.555Z
-Stopped at: Completed 04-03-PLAN.md — THREAT-MODEL.md drafted (424 lines, 9 sections, 40 decision-ID citations)
+Last session: 2026-04-22T13:30:00.000Z
+Stopped at: Completed 04-04-PLAN.md — SECURITY.md + D-SEC-03 round-trip evidence (GHSA-36x8-r67j-hcw6) committed in bbc7368; summary in 6ff78fe
 Resume file: None
 
 **Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — 2026-04-22T00:35:27.582Z
+**Next plan:** 04-05 (link-check CI + README + phase-close verification) — final plan of Phase 4 and the v1.0 milestone
