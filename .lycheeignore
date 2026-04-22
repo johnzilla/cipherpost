@@ -1,0 +1,13 @@
+# Lychee link-check ignore list.
+# Add a full URL here if and only if it is a documented false positive
+# (e.g., a GitHub heading slug that lychee generates differently than
+# GitHub's rendering) or an auth-gated URL that lychee cannot reach.
+# Include a comment above each entry explaining why.
+# Keep this file as short as possible; prefer fixing the source doc.
+
+# GitHub Security Advisory creation URL — auth-gated; verified manually via D-SEC-03
+# (evidence: .planning/security-disclosure-test.md). Unauthenticated requests
+# redirect to the GitHub login page, which lychee may report as a redirect or
+# rate-limit failure depending on CI IP reputation; pre-populating keeps the
+# link-check job deterministic.
+https://github.com/johnzilla/cipherpost/security/advisories/new
