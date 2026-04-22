@@ -6,3 +6,6 @@
 *.swp
 *.swo
 .DS_Store
+
+# Claude Code per-project state: permissions + agent worktrees
+.claude/
