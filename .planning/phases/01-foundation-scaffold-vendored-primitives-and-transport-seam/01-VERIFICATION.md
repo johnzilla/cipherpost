@@ -33,7 +33,7 @@ human_verification:
       re-prompt. File mode 0600 confirmed. Both OpenSSH + z-base-32
       fingerprints printed (e.g., ed25519:SHA256:2b+bq8mrGm5VJYyiX/8Ke1VRtiDcnl9KesBzm6QUICk
       / bjh9oh49j6rqa7i7f9udy8j61d67dg8qjrsoup9b8dmc5f4b8hwy).
-    fix_commit: pending  # updated in the commit that lands the code fix
+    fix_commit: 2e29b74
 ---
 
 # Phase 1: Foundation Scaffold Verification Report
