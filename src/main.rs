@@ -41,11 +41,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             } => {
                 // Reject argv-inline passphrase (IDENT-04 / Pitfall #14). The `passphrase`
                 // field is `hide = true` in src/cli.rs — exists only so this rejection fires.
+                // confirm_on_tty: true — a typo'd passphrase on generate bricks the key.
                 let pw = cipherpost::identity::resolve_passphrase(
                     passphrase.as_deref(),
                     Some("CIPHERPOST_PASSPHRASE"),
                     passphrase_file.as_deref(),
                     passphrase_fd,
+                    true,
                 )?;
                 let id = cipherpost::identity::generate(pw.as_secret())?;
                 let (openssh, z32) = cipherpost::identity::show_fingerprints(&id);
@@ -59,11 +61,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                 passphrase_fd,
                 passphrase,
             } => {
+                // confirm_on_tty: false — unlock path; wrong passphrase surfaces as
+                // PassphraseIncorrect against the existing identity, no footgun.
                 let pw = cipherpost::identity::resolve_passphrase(
                     passphrase.as_deref(),
                     Some("CIPHERPOST_PASSPHRASE"),
                     passphrase_file.as_deref(),
                     passphrase_fd,
+                    false,
                 )?;
                 let id = cipherpost::identity::load(pw.as_secret())?;
                 let (openssh, z32) = cipherpost::identity::show_fingerprints(&id);
@@ -81,11 +86,13 @@ fn dispatch(cli: Cli) -> Result<()> {
         } => {
             // Phase 2 does not add passphrase flags to Send — pulls from env / TTY only.
             // (cli.rs is locked per Phase 1 D-11; a future plan may add --passphrase-file / --fd.)
+            // confirm_on_tty: false — unlock path.
             let pw = cipherpost::identity::resolve_passphrase(
                 None,
                 Some("CIPHERPOST_PASSPHRASE"),
                 None,
                 None,
+                false,
             )?;
             let id = cipherpost::identity::load(pw.as_secret())?;
 
@@ -180,11 +187,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
 
+            // confirm_on_tty: false — unlock path.
             let pw = cipherpost::identity::resolve_passphrase(
                 None,
                 Some("CIPHERPOST_PASSPHRASE"),
                 None,
                 None,
+                false,
             )?;
             let id = cipherpost::identity::load(pw.as_secret())?;
 

@@ -248,12 +248,19 @@ impl std::fmt::Debug for Passphrase {
 /// 2. `fd` — read from a numeric file descriptor (process-provided secret).
 /// 3. `file` — read from `--passphrase-file <path>` (file must be mode 0600 or 0400).
 /// 4. `env_var_name` — read from the named env var (default: `CIPHERPOST_PASSPHRASE`).
-/// 5. TTY prompt — interactive `dialoguer::Password` prompt.
+/// 5. TTY prompt — interactive `dialoguer::Password` prompt. When `confirm_on_tty` is
+///    `true`, the user is prompted a second time and the two entries must match; mismatch
+///    re-prompts. This is critical for `identity generate` because a silently-typo'd
+///    passphrase bricks the newly-created key (no recovery path). Unlock operations
+///    (`show`, `send`, `receive`) pass `false` — a typo surfaces as
+///    `Error::PassphraseIncorrect` against the existing identity, so double-entry is
+///    wasted keystrokes.
 pub fn resolve_passphrase(
     inline_argv: Option<&str>,
     env_var_name: Option<&str>,
     file: Option<&Path>,
     fd: Option<i32>,
+    confirm_on_tty: bool,
 ) -> Result<Passphrase, Error> {
     // Priority 1: reject argv-inline (Pitfall #14 / IDENT-04).
     if inline_argv.is_some() {
@@ -301,8 +308,12 @@ pub fn resolve_passphrase(
     }
 
     // Priority 5: TTY prompt via dialoguer.
-    let pw = dialoguer::Password::new()
-        .with_prompt("Cipherpost passphrase")
+    let mut prompt = dialoguer::Password::new();
+    prompt = prompt.with_prompt("Cipherpost passphrase");
+    if confirm_on_tty {
+        prompt = prompt.with_confirmation("Confirm passphrase", "Passphrases don't match");
+    }
+    let pw = prompt
         .interact()
         .map_err(|_| Error::Config("TTY not available for passphrase prompt".into()))?;
     Ok(Passphrase::from_string(pw))

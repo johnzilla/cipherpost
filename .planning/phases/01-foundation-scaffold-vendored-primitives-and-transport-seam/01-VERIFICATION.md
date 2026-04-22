@@ -1,17 +1,39 @@
 ---
 phase: 01-foundation-scaffold-vendored-primitives-and-transport-seam
 verified: 2026-04-20T00:00:00Z
-status: human_needed
-score: 5/5 success criteria verified
+reverified: 2026-04-22T14:30:00Z
+status: passed
+score: 5/5 success criteria verified + 1/1 human UAT passed
 overrides_applied: 0
 deferred:
   - truth: "publish_receipt resolves the recipient's existing SignedPacket if any, merges the receipt TXT record, re-signs, and republishes (TRANS-03)"
     addressed_in: "Phase 3"
-    evidence: "REQUIREMENTS.md traceability table: TRANS-03 → Phase 3 | Pending. Plan 03 SUMMARY explicitly flags this as a Phase 3 upgrade obligation."
+    evidence: "Resolved in Phase 3: 03-VERIFICATION.md row 3 confirms publish_receipt preserves coexisting TXT records via resolve-merge-republish. REQUIREMENTS.md traceability updated at milestone close."
+    resolved: true
 human_verification:
   - test: "Run `cipherpost identity generate` interactively via TTY (no env var)"
-    expected: "Passphrase is prompted twice (confirm), identity file written at ~/.cipherpost/secret_key mode 0600, both fingerprints printed on success"
+    expected: "Passphrase is prompted twice (confirm), identity file written at {CIPHERPOST_HOME}/secret_key mode 0600, both fingerprints printed on success"
     why_human: "Interactive TTY prompt cannot be driven by automated test runner; the binary rejects stdin piping with 'TTY not available' when stdout is not a terminal"
+    result: passed
+    executed: 2026-04-22
+    executed_by: johnzilla (repo maintainer)
+    findings: |
+      UAT initially found a discrepancy: shipped code prompted once only,
+      not twice. Root cause: `src/identity.rs:304` called
+      `dialoguer::Password::new().with_prompt(...).interact()` without the
+      `.with_confirmation(...)` call. Silently-typo'd passphrase on key
+      generation would have bricked the new identity (no recovery path).
+      Fixed in-phase before milestone close: `resolve_passphrase` gained a
+      `confirm_on_tty: bool` parameter; `IdentityCmd::Generate` now passes
+      `true` (other unlock paths — Show, Send, Receive — pass `false` since
+      typos there surface as PassphraseIncorrect against the existing
+      identity, no footgun).
+      Re-run verified: dialoguer prompts twice, matching passphrases succeed,
+      mismatched passphrases trigger "error: Passphrases don't match" with
+      re-prompt. File mode 0600 confirmed. Both OpenSSH + z-base-32
+      fingerprints printed (e.g., ed25519:SHA256:2b+bq8mrGm5VJYyiX/8Ke1VRtiDcnl9KesBzm6QUICk
+      / bjh9oh49j6rqa7i7f9udy8j61d67dg8qjrsoup9b8dmc5f4b8hwy).
+    fix_commit: pending  # updated in the commit that lands the code fix
 ---
 
 # Phase 1: Foundation Scaffold Verification Report
@@ -19,8 +41,8 @@ human_verification:
 **Phase Goal:** Produce a single buildable `cipherpost` crate whose vendored crypto/identity/transport/record layers are byte-compatible with `cclink` reference vectors, with every wire-format and signed-payload lock-in already correct: domain-separated HKDF info strings, RFC 8785 canonical JSON (JCS), Argon2id parameters persisted in the identity file header, universally zeroized secrets with no `Debug` leaks, a `Transport` trait admitting both `DhtTransport` and `MockTransport`, and an `OuterRecord` schema carrying a 128-bit `share_ref` — so that Phases 2-3 cannot re-litigate any of these decisions.
 
 **Verified:** 2026-04-20
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Re-verified:** 2026-04-22 (human UAT executed + discrepancy fixed)
+**Status:** passed
 
 ## Goal Achievement
 
