@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-02-PLAN.md — SPEC.md drafted (535 lines, 9 sections, 74 decision ID citations)
-last_updated: "2026-04-22T01:44:54Z"
-last_activity: 2026-04-22 -- Phase 04 Plan 02 execution completed
+stopped_at: Completed 04-03-PLAN.md — THREAT-MODEL.md drafted (424 lines, 9 sections, 40 decision-ID citations)
+last_updated: "2026-04-22T01:53:39.561Z"
+last_activity: 2026-04-22 -- Phase --phase execution started
 progress:
   total_phases: 4
   completed_phases: 3
@@ -30,7 +30,7 @@ Plan: 1 of --name
 Status: Executing Phase --phase
 Last activity: 2026-04-22 -- Phase --phase execution started
 
-Progress: [███████░░░] 73%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [███████░░░] 73%
 | Phase 02 P03 | 25 min | 4 tasks | 10 files |
 | Phase 04 P01 | 5 | 1 tasks | 2 files |
 | Phase 04 P02 | ~25 min | 2 tasks | 24 files |
+| Phase 04-protocol-documentation-drafts P03 | 5 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Recent decisions affecting current work:
 - Plan 02-03: no full-CLI binary round-trip test shipped — Plan 02 library-level tests cover the invariant; binary surface covered by version/help/stderr-scan/declined/not-tty tests plus human UAT
 - DOC-03 disclosure channel is GitHub Security Advisory (primary), email, or equivalent — not email-only
 - Phase 4 SC3 round-trip verification is a Security Advisory receipt, not a live email round-trip
+- THREAT-MODEL.md §3 DHT Adversaries uses per-sub-section Mitigations blocks (3.1/3.2/3.3) rather than one aggregate block — each sub-adversary has distinct capability surface
+- THREAT-MODEL.md §7 uses three lettered worked examples (A/B/C) for receipt replay/race/tamper rather than three sub-sections
 
 ### Pending Todos
 
@@ -123,8 +126,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-04-22T01:36:48.292Z
-Stopped at: Completed 04-01-PLAN.md — D-SEC-04 pre-write blocker resolved
+Last session: 2026-04-22T01:53:39.555Z
+Stopped at: Completed 04-03-PLAN.md — THREAT-MODEL.md drafted (424 lines, 9 sections, 40 decision-ID citations)
 Resume file: None
 
 **Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — 2026-04-22T00:35:27.582Z

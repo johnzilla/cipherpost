@@ -120,7 +120,8 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 - [x] **DOC-01
 **: `SPEC.md` draft covers: payload schema (Envelope / Material), canonical JSON (JCS), outer + inner signature formats, share URI format, DHT labels (`_cipherpost`, `_cprcpt-<ref>`), share_ref derivation, TTL semantics (inner signed timestamp), exit-code taxonomy, and non-interactive passphrase contract
-- [ ] **DOC-02**: `THREAT-MODEL.md` draft covers: identity compromise, DHT adversaries (sybil, eclipse, replay), purpose as sender-attested (not verified), acceptance UX adversary model (prompt fatigue), receipt replay, MITM on passphrase prompt, and explicit "out of scope" adversary cases
+- [x] **DOC-02
+**: `THREAT-MODEL.md` draft covers: identity compromise, DHT adversaries (sybil, eclipse, replay), purpose as sender-attested (not verified), acceptance UX adversary model (prompt fatigue), receipt replay, MITM on passphrase prompt, and explicit "out of scope" adversary cases
 - [x] **DOC-03
 **: `SECURITY.md` has a working disclosure channel (GitHub Security Advisory, email, or equivalent) and a 90-day embargo policy statement
 - [x] **DOC-04
