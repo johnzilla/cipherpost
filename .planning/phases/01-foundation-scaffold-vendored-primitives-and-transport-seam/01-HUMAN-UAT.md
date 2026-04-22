@@ -1,21 +1,29 @@
 ---
-status: partial
+status: passed
 phase: 01-foundation-scaffold-vendored-primitives-and-transport-seam
 source: [01-VERIFICATION.md]
 started: 2026-04-20T00:00:00Z
-updated: 2026-04-20T00:00:00Z
+updated: 2026-04-22T18:30:00Z
 ---
 
 ## Current Test
 
-[awaiting human testing]
+[all tests passed]
 
 ## Tests
 
 ### 1. Interactive TTY passphrase prompt (IDENT-01)
 
 expected: On a real terminal with no `CIPHERPOST_PASSPHRASE` env var set, `./target/release/cipherpost identity generate` prompts for the passphrase twice (via `dialoguer::Password`), writes the identity file at `~/.cipherpost/secret_key` with mode `0600`, and prints both the OpenSSH-style (`ed25519:SHA256:<base64>`) and z-base-32 PKARR fingerprints on success.
-result: [pending]
+result: [pass]
+verified_on: 2026-04-22 (real terminal, forge host, zsh)
+observed:
+- `identity generate` prompted for passphrase twice (`Cipherpost passphrase:` + `Confirm passphrase:` via `dialoguer::Password::with_confirmation`)
+- `~/.cipherpost/secret_key` mode `-rw-------` (0600), 410 bytes
+- Fingerprints printed on both `identity generate` and a follow-up `identity show`:
+  - `ed25519:SHA256:Dag2oc3X6KfPqR2zxESaZhvwqQPSZTwe24fqGR0bpko`
+  - `osi6xzfe3x6wnjwicnn3odi5t8xc7d7znkkkc4ue941bs6xehr7o`
+- `identity show` re-prompted for passphrase (single prompt, no confirmation — unlock path per `confirm_on_tty: false`) and produced the same fingerprints.
 
 **How to run:**
 ```
@@ -32,9 +40,9 @@ ls -l "$HOME/.cipherpost/secret_key"     # should be -rw------- (mode 0600)
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
