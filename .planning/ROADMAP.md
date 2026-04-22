@@ -82,8 +82,8 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Amend REQUIREMENTS.md DOC-03 and ROADMAP.md Phase 4 SC3 to say 'disclosure channel' per D-SEC-04 (Wave 1)
-- [ ] 04-02-PLAN.md — Draft SPEC.md (wire format, share URI, flows, exit codes, passphrase contract, inline test vectors, lineage) (Wave 2)
+- [x] 04-01-PLAN.md — Amend REQUIREMENTS.md DOC-03 and ROADMAP.md Phase 4 SC3 to say 'disclosure channel' per D-SEC-04 (Wave 1)
+- [x] 04-02-PLAN.md — Draft SPEC.md (wire format, share URI, flows, exit codes, passphrase contract, inline test vectors, lineage) (Wave 2)
 - [ ] 04-03-PLAN.md — Draft THREAT-MODEL.md (adversary-indexed §§1-9 with worked examples and decision-ID-cited mitigations) (Wave 3)
 - [ ] 04-04-PLAN.md — Draft SECURITY.md + file test GitHub Security Advisory + commit .planning/security-disclosure-test.md round-trip evidence (Wave 3, human-gated)
 - [ ] 04-05-PLAN.md — Add lychee link-check CI job + update README.md with Documentation section + phase-close grep verification (Wave 4)
