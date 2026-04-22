@@ -90,10 +90,7 @@ pub fn nonce_hex() -> String {
 
 /// Sign a `ReceiptSignable` with the recipient's PKARR keypair.
 /// Returns base64-STANDARD-encoded Ed25519 signature over the JCS bytes (D-RS-05).
-pub fn sign_receipt(
-    signable: &ReceiptSignable,
-    keypair: &pkarr::Keypair,
-) -> Result<String, Error> {
+pub fn sign_receipt(signable: &ReceiptSignable, keypair: &pkarr::Keypair) -> Result<String, Error> {
     let bytes = crate::crypto::jcs_serialize(signable)?;
     let sig = keypair.sign(&bytes);
     Ok(base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()))

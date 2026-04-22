@@ -114,10 +114,9 @@ pub fn sign_record(
 ///     (guards against the canonicalization-bypass attack, T-01-03-02).
 pub fn verify_record(record: &OuterRecord) -> Result<(), Error> {
     // 1. Parse pubkey from z-base-32 → VerifyingKey
-    let pk = pkarr::PublicKey::try_from(record.pubkey.as_str())
-        .map_err(|_| Error::SignatureInner)?;
-    let vk = VerifyingKey::from_bytes(pk.as_bytes())
-        .map_err(|_| Error::SignatureInner)?;
+    let pk =
+        pkarr::PublicKey::try_from(record.pubkey.as_str()).map_err(|_| Error::SignatureInner)?;
+    let vk = VerifyingKey::from_bytes(pk.as_bytes()).map_err(|_| Error::SignatureInner)?;
 
     // 2. Decode signature
     let sig_bytes = base64::engine::general_purpose::STANDARD
@@ -154,7 +153,9 @@ mod tests {
     fn share_ref_is_32_hex_chars() {
         let r = share_ref_from_bytes(b"hello", 1_700_000_000);
         assert_eq!(r.len(), 32);
-        assert!(r.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(r
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
     }
 
     #[test]

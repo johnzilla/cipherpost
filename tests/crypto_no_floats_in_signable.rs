@@ -77,5 +77,8 @@ fn float_struct_detection_works() {
     };
     // Confirm detection works (this does NOT call assert_no_floats_in_value with 1.5
     // because that would fail the test; we just verify the detection logic).
-    assert!(has_float, "float detection logic should identify 1.5 as float");
+    assert!(
+        has_float,
+        "float detection logic should identify 1.5 as float"
+    );
 }

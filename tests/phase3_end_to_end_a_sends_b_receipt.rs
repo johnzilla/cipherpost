@@ -9,13 +9,12 @@
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
-    run_receipts, run_receive, run_send, MaterialSource, OutputSink, SendMode,
-    DEFAULT_TTL_SECONDS,
+    run_receipts, run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
 };
 use cipherpost::identity::Identity;
 use cipherpost::receipt::{verify_receipt, Receipt};
 use cipherpost::transport::MockTransport;
-use cipherpost::{DHT_LABEL_RECEIPT_PREFIX, ShareUri};
+use cipherpost::{ShareUri, DHT_LABEL_RECEIPT_PREFIX};
 use secrecy::SecretBox;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
@@ -67,7 +66,9 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         &id_a,
         &transport,
         &kp_a,
-        SendMode::Share { recipient_z32: b_z32.clone() },
+        SendMode::Share {
+            recipient_z32: b_z32.clone(),
+        },
         "e2e test",
         MaterialSource::Bytes(material_bytes.to_vec()),
         DEFAULT_TTL_SECONDS,
@@ -90,7 +91,11 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
 
     // Assert material was written to B's sink byte-for-byte.
     if let OutputSink::InMemory(ref buf) = sink {
-        assert_eq!(buf.as_slice(), material_bytes, "B's decrypted output must equal A's input");
+        assert_eq!(
+            buf.as_slice(),
+            material_bytes,
+            "B's decrypted output must equal A's input"
+        );
     } else {
         panic!("sink was not InMemory");
     }
@@ -104,13 +109,18 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         .expect("_cprcpt-<share_ref> must exist under B's key after accept");
 
     // 4. Parse + verify the receipt.
-    let receipt: Receipt =
-        serde_json::from_str(&receipt_entry.1).expect("receipt JSON must parse");
+    let receipt: Receipt = serde_json::from_str(&receipt_entry.1).expect("receipt JSON must parse");
     verify_receipt(&receipt).expect("verify_receipt must succeed on freshly-published receipt");
 
     // 5. Assert receipt field values.
-    assert_eq!(receipt.sender_pubkey, a_z32, "receipt.sender_pubkey must be A");
-    assert_eq!(receipt.recipient_pubkey, b_z32, "receipt.recipient_pubkey must be B");
+    assert_eq!(
+        receipt.sender_pubkey, a_z32,
+        "receipt.sender_pubkey must be A"
+    );
+    assert_eq!(
+        receipt.recipient_pubkey, b_z32,
+        "receipt.recipient_pubkey must be B"
+    );
     assert_eq!(
         receipt.share_ref, uri.share_ref_hex,
         "receipt.share_ref must match URI"

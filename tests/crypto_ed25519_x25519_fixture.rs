@@ -26,13 +26,26 @@ fn ed25519_x25519_matches_committed_vectors() {
         let ed_pub = ed25519_dalek::SigningKey::from_bytes(&seed)
             .verifying_key()
             .to_bytes();
-        assert_eq!(ed_pub, ed_pub_expected, "ed25519 pub mismatch for seed {}", v.seed_hex);
+        assert_eq!(
+            ed_pub, ed_pub_expected,
+            "ed25519 pub mismatch for seed {}",
+            v.seed_hex
+        );
 
         let x_pub = cipherpost::crypto::ed25519_to_x25519_public(&ed_pub).unwrap();
-        assert_eq!(x_pub, x_pub_expected, "x25519 pub mismatch for seed {}", v.seed_hex);
+        assert_eq!(
+            x_pub, x_pub_expected,
+            "x25519 pub mismatch for seed {}",
+            v.seed_hex
+        );
 
         let x_sec = cipherpost::crypto::ed25519_to_x25519_secret(&seed);
-        assert_eq!(&x_sec[..], &x_sec_expected[..], "x25519 secret mismatch for seed {}", v.seed_hex);
+        assert_eq!(
+            &x_sec[..],
+            &x_sec_expected[..],
+            "x25519 secret mismatch for seed {}",
+            v.seed_hex
+        );
     }
 }
 

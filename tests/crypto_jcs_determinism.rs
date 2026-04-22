@@ -32,7 +32,8 @@ fn jcs_fixture_bytes_match_committed() {
     let got = cipherpost::crypto::jcs_serialize(&fx).unwrap();
     let expected = fs::read("tests/fixtures/jcs_signing_bytes.bin").unwrap();
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "JCS bytes changed — this invalidates every past signature! \
          Got: {}, Expected: {}",
         String::from_utf8_lossy(&got),

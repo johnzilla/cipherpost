@@ -203,10 +203,7 @@ fn openssh_fingerprint(pk: &[u8; 32]) -> String {
     encoded.extend_from_slice(pk);
 
     let digest = Sha256::digest(&encoded);
-    let b64 = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD_NO_PAD,
-        digest,
-    );
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, digest);
     format!("ed25519:SHA256:{}", b64)
 }
 
@@ -276,7 +273,11 @@ pub fn resolve_passphrase(
         reader.read_line(&mut line).map_err(Error::Io)?;
         // Prevent the file from being closed (drop would close the raw fd).
         std::mem::forget(reader);
-        return Ok(Passphrase::from_string(line.trim_end_matches('\n').trim_end_matches('\r').to_string()));
+        return Ok(Passphrase::from_string(
+            line.trim_end_matches('\n')
+                .trim_end_matches('\r')
+                .to_string(),
+        ));
     }
 
     // Priority 3: passphrase-file.
@@ -287,7 +288,9 @@ pub fn resolve_passphrase(
             return Err(Error::IdentityPermissions);
         }
         let s = fs::read_to_string(path).map_err(Error::Io)?;
-        return Ok(Passphrase::from_string(s.trim_end_matches('\n').trim_end_matches('\r').to_string()));
+        return Ok(Passphrase::from_string(
+            s.trim_end_matches('\n').trim_end_matches('\r').to_string(),
+        ));
     }
 
     // Priority 4: environment variable.

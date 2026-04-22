@@ -29,7 +29,11 @@ fn identity_debug_does_not_leak_bytes() {
     // Must not contain any 8-byte window of the secret key in hex.
     let secret_bytes = id.secret_key_bytes_for_leak_test();
     for win in secret_bytes.windows(8) {
-        let hex: String = win.iter().fold(String::new(), |mut s, b| { use std::fmt::Write; let _ = write!(s, "{:02x}", b); s });
+        let hex: String = win.iter().fold(String::new(), |mut s, b| {
+            use std::fmt::Write;
+            let _ = write!(s, "{:02x}", b);
+            s
+        });
         assert!(
             !debug_str.contains(&hex),
             "Debug leak: seed bytes {:?} found in format!({{:?}}, identity). Full debug: {:?}",
@@ -41,7 +45,8 @@ fn identity_debug_does_not_leak_bytes() {
 
 #[test]
 fn passphrase_debug_does_not_leak() {
-    let pass = cipherpost::identity::Passphrase::from_string("my-correct-horse-battery".to_string());
+    let pass =
+        cipherpost::identity::Passphrase::from_string("my-correct-horse-battery".to_string());
     let debug_str = format!("{:?}", pass);
     assert!(
         !debug_str.contains("my-correct-horse-battery"),

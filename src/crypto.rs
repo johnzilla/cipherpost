@@ -74,8 +74,7 @@ pub const CIPHPOSK_ENVELOPE_VERSION: u8 = 1;
 /// the Edwards→Montgomery map. Matches cclink v1.3.0's output byte-for-byte.
 pub fn ed25519_to_x25519_public(ed_pub_bytes: &[u8; 32]) -> Result<[u8; 32], Error> {
     use ed25519_dalek::VerifyingKey;
-    let vk = VerifyingKey::from_bytes(ed_pub_bytes)
-        .map_err(|e| Error::Crypto(Box::new(e)))?;
+    let vk = VerifyingKey::from_bytes(ed_pub_bytes).map_err(|e| Error::Crypto(Box::new(e)))?;
     Ok(vk.to_montgomery().to_bytes())
 }
 
@@ -119,8 +118,7 @@ fn str_err(s: impl std::fmt::Display) -> Error {
 /// Uses bech32 encoding with the "age" HRP — the same encoding age uses for
 /// public recipients. This is the pattern from cclink v1.3.0.
 pub fn recipient_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Recipient, Error> {
-    let encoded = bech32::encode("age", bytes.to_base32(), Variant::Bech32)
-        .map_err(str_err)?;
+    let encoded = bech32::encode("age", bytes.to_base32(), Variant::Bech32).map_err(str_err)?;
     x25519::Recipient::from_str(&encoded).map_err(str_err)
 }
 
@@ -129,8 +127,8 @@ pub fn recipient_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Recipient
 /// Uses bech32 encoding with the "age-secret-key-" HRP.
 /// The secret is uppercased per age's canonical format.
 pub fn identity_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Identity, Error> {
-    let encoded = bech32::encode("age-secret-key-", bytes.to_base32(), Variant::Bech32)
-        .map_err(str_err)?;
+    let encoded =
+        bech32::encode("age-secret-key-", bytes.to_base32(), Variant::Bech32).map_err(str_err)?;
     x25519::Identity::from_str(&encoded.to_uppercase()).map_err(str_err)
 }
 
@@ -139,10 +137,9 @@ pub fn identity_from_x25519_bytes(bytes: &[u8; 32]) -> Result<x25519::Identity, 
 /// All AEAD goes through age's Encryptor API (Pitfall #9). No direct
 /// `chacha20poly1305` usage.
 pub fn age_encrypt(plaintext: &[u8], recipient: &x25519::Recipient) -> Result<Vec<u8>, Error> {
-    let encryptor = age::Encryptor::with_recipients(
-        std::iter::once(recipient as &dyn age::Recipient),
-    )
-    .map_err(str_err)?;
+    let encryptor =
+        age::Encryptor::with_recipients(std::iter::once(recipient as &dyn age::Recipient))
+            .map_err(str_err)?;
     let mut out = Vec::new();
     let mut writer = encryptor.wrap_output(&mut out).map_err(str_err)?;
     writer.write_all(plaintext).map_err(Error::Io)?;
@@ -195,7 +192,11 @@ pub fn derive_kek(
     );
     let mut argon_out = Zeroizing::new([0u8; 32]);
     argon
-        .hash_password_into(passphrase.expose_secret().as_bytes(), salt, &mut argon_out[..])
+        .hash_password_into(
+            passphrase.expose_secret().as_bytes(),
+            salt,
+            &mut argon_out[..],
+        )
         .map_err(str_err)?;
 
     // HKDF-SHA256 with domain-separated info string (Pitfall #4).
@@ -257,8 +258,7 @@ fn encrypt_key_envelope_impl(
     rand::thread_rng().fill_bytes(&mut salt_bytes);
 
     // 2. Produce a PHC-format PasswordHash string so params are stored in the envelope.
-    let salt_str = SaltString::encode_b64(&salt_bytes)
-        .map_err(str_err)?;
+    let salt_str = SaltString::encode_b64(&salt_bytes).map_err(str_err)?;
     let argon = Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::V0x13,
@@ -317,8 +317,8 @@ pub fn decrypt_key_envelope(
     if blob.len() < 11 + phc_len {
         return Err(Error::IdentityCorrupt);
     }
-    let phc_str = std::str::from_utf8(&blob[11..11 + phc_len])
-        .map_err(|_| Error::IdentityCorrupt)?;
+    let phc_str =
+        std::str::from_utf8(&blob[11..11 + phc_len]).map_err(|_| Error::IdentityCorrupt)?;
 
     // 3. Parse the PHC hash → extract Argon2 params and salt.
     use argon2::password_hash::PasswordHash;

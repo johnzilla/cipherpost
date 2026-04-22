@@ -607,7 +607,11 @@ pub fn run_receipts(
     }
 
     // Summary on stderr (CLI-01).
-    let mut summary = format!("fetched {} receipt(s); {} valid", candidate_jsons.len(), valid.len());
+    let mut summary = format!(
+        "fetched {} receipt(s); {} valid",
+        candidate_jsons.len(),
+        valid.len()
+    );
     if malformed > 0 {
         summary.push_str(&format!(", {} malformed", malformed));
     }
@@ -672,7 +676,10 @@ fn render_receipts_table(
     }
 
     // Multi-row table (D-OUT-01 columns).
-    println!("{:<16}  {:<20}  {:<40}  recipient_fp", "share_ref", "accepted_at (UTC)", "purpose");
+    println!(
+        "{:<16}  {:<20}  {:<40}  recipient_fp",
+        "share_ref", "accepted_at (UTC)", "purpose"
+    );
     for r in receipts {
         let (fp, _) = sender_openssh_fingerprint_and_z32(&r.recipient_pubkey)?;
         let purpose_display = truncate_purpose(&r.purpose, 40);
@@ -780,7 +787,7 @@ fn append_ledger_entry(
         ciphertext_hash: ch,
         cleartext_hash: ph,
         purpose,
-        receipt_published_at: None,   // step 12 writes null; step 13 appends a success row
+        receipt_published_at: None, // step 12 writes null; step 13 appends a success row
         sender: sender_z32,
         share_ref,
     };
@@ -1144,7 +1151,12 @@ mod tests {
         // valid unix timestamp. Any TZ that chrono can resolve produces this.
         let s = format_unix_as_iso_local(0);
         assert_ne!(s, "?", "chrono should resolve local TZ on a healthy host");
-        assert_eq!(s.len(), 16, "expected `YYYY-MM-DD HH:MM` (16 chars), got {:?}", s);
+        assert_eq!(
+            s.len(),
+            16,
+            "expected `YYYY-MM-DD HH:MM` (16 chars), got {:?}",
+            s
+        );
         assert_eq!(&s[4..5], "-");
         assert_eq!(&s[7..8], "-");
         assert_eq!(&s[10..11], " ");

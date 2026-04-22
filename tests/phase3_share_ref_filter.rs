@@ -7,12 +7,11 @@
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
-    run_receipts, run_receive, run_send, MaterialSource, OutputSink, SendMode,
-    DEFAULT_TTL_SECONDS,
+    run_receipts, run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
 };
 use cipherpost::identity::Identity;
 use cipherpost::transport::MockTransport;
-use cipherpost::{DHT_LABEL_OUTER, ShareUri};
+use cipherpost::{ShareUri, DHT_LABEL_OUTER};
 use secrecy::SecretBox;
 use serial_test::serial;
 use std::fs;
@@ -67,7 +66,9 @@ fn receipts_filter_and_senders_own_share_coexists() {
         &id_a,
         &transport,
         &kp_a,
-        SendMode::Share { recipient_z32: b_z32.clone() },
+        SendMode::Share {
+            recipient_z32: b_z32.clone(),
+        },
         "p1",
         MaterialSource::Bytes(b"payload one distinct".to_vec()),
         DEFAULT_TTL_SECONDS,
@@ -77,8 +78,15 @@ fn receipts_filter_and_senders_own_share_coexists() {
 
     std::env::set_var("CIPHERPOST_HOME", dir_b.path());
     let mut sink1 = OutputSink::InMemory(Vec::new());
-    run_receive(&id_b, &transport, &kp_b, &uri1, &mut sink1, &AutoConfirmPrompter)
-        .expect("B accept 1");
+    run_receive(
+        &id_b,
+        &transport,
+        &kp_b,
+        &uri1,
+        &mut sink1,
+        &AutoConfirmPrompter,
+    )
+    .expect("B accept 1");
 
     // Between cycles, sleep 1s so created_at differs (share_ref = sha256(ciphertext || created_at)[..16]).
     // Different bytes already guarantee different share_ref, but the sleep makes it rock-solid.
@@ -92,7 +100,9 @@ fn receipts_filter_and_senders_own_share_coexists() {
         &id_a,
         &transport,
         &kp_a,
-        SendMode::Share { recipient_z32: b_z32.clone() },
+        SendMode::Share {
+            recipient_z32: b_z32.clone(),
+        },
         "p2",
         MaterialSource::Bytes(b"payload two different".to_vec()),
         DEFAULT_TTL_SECONDS,
@@ -106,8 +116,15 @@ fn receipts_filter_and_senders_own_share_coexists() {
 
     std::env::set_var("CIPHERPOST_HOME", dir_b.path());
     let mut sink2 = OutputSink::InMemory(Vec::new());
-    run_receive(&id_b, &transport, &kp_b, &uri2, &mut sink2, &AutoConfirmPrompter)
-        .expect("B accept 2");
+    run_receive(
+        &id_b,
+        &transport,
+        &kp_b,
+        &uri2,
+        &mut sink2,
+        &AutoConfirmPrompter,
+    )
+    .expect("B accept 2");
 
     // Assert B's key has exactly 2 receipts.
     let b_entries = transport.resolve_all_txt(&b_z32);
@@ -129,8 +146,7 @@ fn receipts_filter_and_senders_own_share_coexists() {
         .expect("filter-2 should succeed with 1 match");
 
     // run_receipts with no filter — both receipts returned.
-    run_receipts(&transport, &b_z32, None, false)
-        .expect("no-filter should succeed with 2 matches");
+    run_receipts(&transport, &b_z32, None, false).expect("no-filter should succeed with 2 matches");
 
     // A's own outgoing _cipherpost share under A's key is STILL resolvable
     // (ROADMAP SC4 invariant). The _cipherpost entry is the LAST uri2.

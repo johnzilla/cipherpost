@@ -15,7 +15,7 @@ use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{run_receive, OutputSink};
 use cipherpost::identity::Identity;
-use cipherpost::record::{sign_record, share_ref_from_bytes, OuterRecord, OuterRecordSignable};
+use cipherpost::record::{share_ref_from_bytes, sign_record, OuterRecord, OuterRecordSignable};
 use cipherpost::transport::{MockTransport, Transport};
 use cipherpost::{Error, ShareUri, PROTOCOL_VERSION};
 use secrecy::SecretBox;
@@ -70,8 +70,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
     use base64::Engine;
     let created_at: i64 = 1_700_000_000;
     let garbage_ciphertext: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03];
-    let garbage_blob_b64 =
-        base64::engine::general_purpose::STANDARD.encode(&garbage_ciphertext);
+    let garbage_blob_b64 = base64::engine::general_purpose::STANDARD.encode(&garbage_ciphertext);
     let share_ref = share_ref_from_bytes(&garbage_ciphertext, created_at);
     let signable = OuterRecordSignable {
         blob: garbage_blob_b64.clone(),
@@ -124,8 +123,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
         .filter(|(l, _)| l.starts_with(cipherpost::DHT_LABEL_RECEIPT_PREFIX))
         .count();
     assert_eq!(
-        receipt_count,
-        0,
+        receipt_count, 0,
         "ROADMAP SC1 invariant violated: tampered ciphertext produced {} receipt(s); expected 0",
         receipt_count
     );

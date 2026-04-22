@@ -21,12 +21,9 @@ fn unlock_uses_header_params_not_code_constants() {
     // Non-default WEAKER params to prove unlock reads them from header.
     let weak = Params::new(19456, 2, 1, Some(32)).unwrap();
     let seed = [7u8; 32];
-    let blob = cipherpost::crypto::encrypt_key_envelope_with_params(
-        &Zeroizing::new(seed),
-        &pw,
-        &weak,
-    )
-    .unwrap();
+    let blob =
+        cipherpost::crypto::encrypt_key_envelope_with_params(&Zeroizing::new(seed), &pw, &weak)
+            .unwrap();
 
     let path = cipherpost::identity::key_path();
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

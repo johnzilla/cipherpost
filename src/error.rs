@@ -24,16 +24,16 @@ pub enum Error {
     #[error("wrong passphrase or identity decryption failed")]
     DecryptFailed,
 
-    #[error("signature verification failed")]  // D-16: same Display for all sig-fail variants below
+    #[error("signature verification failed")] // D-16: same Display for all sig-fail variants below
     SignatureOuter,
 
-    #[error("signature verification failed")]  // D-16
+    #[error("signature verification failed")] // D-16
     SignatureInner,
 
-    #[error("signature verification failed")]  // D-16
+    #[error("signature verification failed")] // D-16
     SignatureCanonicalMismatch,
 
-    #[error("signature verification failed")]  // D-16
+    #[error("signature verification failed")] // D-16
     SignatureTampered,
 
     #[error("share expired")]

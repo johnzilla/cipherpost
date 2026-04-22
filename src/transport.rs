@@ -100,8 +100,7 @@ impl DhtTransport {
 impl Transport for DhtTransport {
     fn publish(&self, keypair: &pkarr::Keypair, record: &OuterRecord) -> Result<(), Error> {
         eprintln!("Publishing to DHT..."); // TRANS-05
-        let rdata = serde_json::to_string(record)
-            .map_err(|e| Error::Transport(Box::new(e)))?;
+        let rdata = serde_json::to_string(record).map_err(|e| Error::Transport(Box::new(e)))?;
         let name: pkarr::dns::Name<'_> = DHT_LABEL_OUTER
             .try_into()
             .map_err(|e| Error::Transport(map_dns_err(e)))?;
@@ -271,7 +270,9 @@ fn map_pkarr_publish_error(e: pkarr::errors::PublishError) -> Error {
 }
 
 /// Map a simple_dns error (from Name/TXT TryFrom conversions) to a boxed error.
-fn map_dns_err(e: impl std::error::Error + Send + Sync + 'static) -> Box<dyn std::error::Error + Send + Sync> {
+fn map_dns_err(
+    e: impl std::error::Error + Send + Sync + 'static,
+) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(e)
 }
 
@@ -321,8 +322,7 @@ mod mock {
 
     impl Transport for MockTransport {
         fn publish(&self, kp: &pkarr::Keypair, record: &OuterRecord) -> Result<(), Error> {
-            let rdata = serde_json::to_string(record)
-                .map_err(|e| Error::Transport(Box::new(e)))?;
+            let rdata = serde_json::to_string(record).map_err(|e| Error::Transport(Box::new(e)))?;
             // Enforce the same ceiling pkarr enforces — prevents tests-pass-locally-fail-on-publish
             // (T-01-03-05). 1000 bytes is pkarr's MAX encoded DNS packet size.
             if rdata.len() > 1000 {

@@ -216,10 +216,21 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             };
 
-            cipherpost::flow::run_receive(&id, transport.as_ref(), &kp, &uri, &mut sink, &prompter)?;
+            cipherpost::flow::run_receive(
+                &id,
+                transport.as_ref(),
+                &kp,
+                &uri,
+                &mut sink,
+                &prompter,
+            )?;
             Ok(())
         }
-        Command::Receipts { from, share_ref, json } => {
+        Command::Receipts {
+            from,
+            share_ref,
+            json,
+        } => {
             // D-OUT-04: no passphrase prompt, no Identity load. Receipts listing
             // requires only a public PKARR key for the DHT resolve and the
             // Receipt's own recipient_pubkey for verify.
@@ -237,12 +248,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
                 }
             };
-            cipherpost::flow::run_receipts(
-                transport.as_ref(),
-                &from,
-                share_ref.as_deref(),
-                json,
-            )?;
+            cipherpost::flow::run_receipts(transport.as_ref(), &from, share_ref.as_deref(), json)?;
             Ok(())
         }
         Command::Version => {

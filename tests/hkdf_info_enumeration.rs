@@ -21,7 +21,10 @@ use std::path::Path;
 fn all_hkdf_info_strings_are_versioned_and_distinct() {
     let mut infos: Vec<String> = Vec::new();
     walk(Path::new("src"), &mut infos);
-    assert!(!infos.is_empty(), "expected at least one HKDF info string in src/");
+    assert!(
+        !infos.is_empty(),
+        "expected at least one HKDF info string in src/"
+    );
     for info in &infos {
         assert!(!info.is_empty(), "empty HKDF info string found");
         assert!(

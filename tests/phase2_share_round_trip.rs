@@ -80,7 +80,15 @@ fn share_round_trip_recipient_decrypts_third_party_fails() {
     // B decrypts
     std::env::set_var("CIPHERPOST_HOME", dir_b.path());
     let mut sink_b = OutputSink::InMemory(Vec::new());
-    run_receive(&id_b, &transport, &kp_b, &uri, &mut sink_b, &AutoConfirmPrompter).expect("B decrypts");
+    run_receive(
+        &id_b,
+        &transport,
+        &kp_b,
+        &uri,
+        &mut sink_b,
+        &AutoConfirmPrompter,
+    )
+    .expect("B decrypts");
     match sink_b {
         OutputSink::InMemory(buf) => assert_eq!(buf, plaintext),
         _ => panic!("InMemory expected"),
@@ -89,7 +97,15 @@ fn share_round_trip_recipient_decrypts_third_party_fails() {
     // C cannot decrypt
     std::env::set_var("CIPHERPOST_HOME", dir_c.path());
     let mut sink_c = OutputSink::InMemory(Vec::new());
-    let err = run_receive(&id_c, &transport, &kp_c, &uri, &mut sink_c, &AutoConfirmPrompter).unwrap_err();
+    let err = run_receive(
+        &id_c,
+        &transport,
+        &kp_c,
+        &uri,
+        &mut sink_c,
+        &AutoConfirmPrompter,
+    )
+    .unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::DecryptFailed),
         "third party must fail with DecryptFailed, got {:?}",

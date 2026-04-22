@@ -13,7 +13,7 @@ use cipherpost::flow::{
 };
 use cipherpost::identity::Identity;
 use cipherpost::transport::MockTransport;
-use cipherpost::{DHT_LABEL_OUTER, DHT_LABEL_RECEIPT_PREFIX, ShareUri};
+use cipherpost::{ShareUri, DHT_LABEL_OUTER, DHT_LABEL_RECEIPT_PREFIX};
 use secrecy::SecretBox;
 use serial_test::serial;
 use std::fs;
@@ -83,7 +83,9 @@ fn bs_self_share_survives_publish_receipt() {
         &id_a,
         &transport,
         &kp_a,
-        SendMode::Share { recipient_z32: b_z32.clone() },
+        SendMode::Share {
+            recipient_z32: b_z32.clone(),
+        },
         "a to b",
         MaterialSource::Bytes(b"a-to-b share".to_vec()),
         DEFAULT_TTL_SECONDS,
@@ -94,8 +96,15 @@ fn bs_self_share_survives_publish_receipt() {
     // 3. B receives + accepts — step 13 publishes a receipt under B's key.
     std::env::set_var("CIPHERPOST_HOME", dir_b.path());
     let mut sink = OutputSink::InMemory(Vec::new());
-    run_receive(&id_b, &transport, &kp_b, &uri, &mut sink, &AutoConfirmPrompter)
-        .expect("B run_receive");
+    run_receive(
+        &id_b,
+        &transport,
+        &kp_b,
+        &uri,
+        &mut sink,
+        &AutoConfirmPrompter,
+    )
+    .expect("B run_receive");
 
     // 4. Assert coexistence: B's key now holds 2 entries — one _cipherpost (B's self-share)
     //    AND one _cprcpt-<share_ref> (the new receipt).
