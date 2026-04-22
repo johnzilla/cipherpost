@@ -230,3 +230,195 @@ the correct sender, just with a misleading purpose.
 from any correctly-fingerprinted sender without corroborating the purpose is vulnerable. This
 residual risk is the single strongest argument for the full-z32 confirmation token (§5) — the
 friction itself is a small cognitive speed-bump that resists acceptance-by-muscle-memory.
+
+## 5. Acceptance-UX Adversary
+
+**Capabilities:** The adversary exploits the cognitive limits of the user at the acceptance
+step — prompt-fatigue attacks, lookalike-fingerprint attacks, clipboard-injection attacks on
+the confirmation token, terminal-rendering attacks against the acceptance screen.
+
+**Worked example:** Mallory sends Alice a barrage of shares with purposes that all claim to be
+"routine key renewals," hoping that Alice develops acceptance-by-reflex and stops verifying
+the full z-base-32 pubkey each time. On the 20th share, Mallory slips in a share under a
+different pubkey — one that visually resembles a known-legitimate sender in the first 8 chars
+but diverges in the middle. If Alice pastes from her clipboard without re-reading the full 52
+chars, she may confirm the wrong pubkey. Alternatively, Mallory sends a `purpose` containing
+control characters (newlines, ANSI escapes) hoping to inject fake "Sender:" lines above the
+real one — mitigated at send time by D-WIRE-05 stripping, defense-in-depth at display.
+
+**Mitigations:**
+- Confirmation token is the sender's **full 52-char z-base-32 pubkey**, not `y`/`n` or a
+  short hash. Constant-length, high-entropy, no default. Alice must type or paste all 52
+  chars exactly. [D-ACCEPT-01, RECV-04]
+- No `--yes` flag, no `--no-confirm`, no batch mode. The acceptance step has no bypass.
+  Scripted use requires an injected `Prompter` trait implementation, which is
+  `#[cfg(any(test, feature = "mock"))]`-only in production builds. [D-ACCEPT-03, RECV-05]
+- TTY requirement — both stdin and stderr MUST be TTYs. If either is a pipe or file,
+  `receive` aborts before decrypt with `Error::Config`. Prevents automated injection of a
+  stored confirmation answer. [D-ACCEPT-03, RECV-05]
+- Acceptance screen is ANSI-free by default, renders plain ASCII with a bordered box layout.
+  Logs and screenshots reproduce the screen legibly. [D-ACCEPT-02, CLI-04]
+- Purpose is displayed in ASCII double quotes with control chars already stripped at send
+  time. No ANSI-escape injection possible. [D-WIRE-05, D-ACCEPT-02, PAYL-04]
+- Sender's OpenSSH-style fingerprint and z-base-32 are displayed on **separate lines** so
+  both forms are visually comparable; the user can verify via either channel their
+  out-of-band record uses. [D-ACCEPT-02, IDENT-05, SPEC.md#5-flows]
+
+**Residual risk:** Mallory can still engineer prompt fatigue by sending many legitimate-looking
+shares to prime Alice's reflex. The mitigation against this is again out-of-band: Alice should
+not accept a key she didn't specifically expect to receive. No mechanical defense exists in
+the protocol itself against a user who chooses to paste without reading.
+
+## 6. Passphrase-MITM Adversary
+
+**Capabilities:** The adversary can intercept or observe the passphrase at the moment the user
+enters it — shoulder surfing, keylogger malware, malicious environment-variable injection in
+shell startup files, malicious shims wrapping the `cipherpost` binary.
+
+**Worked example:** Bob runs `cipherpost send` inside a compromised shell that has been
+persistently altered. The shell wrapper has replaced `/usr/local/bin/cipherpost` with a script
+that reads stdin (where the passphrase prompt response goes), records it to
+`/tmp/.exfil`, and then invokes the real binary. Bob types his passphrase; the malicious
+wrapper captures it; the binary proceeds normally. Bob has no indication of compromise.
+
+**Mitigations:**
+- Passphrase prompting requires a TTY (`rpassword`-style stdin check). Pipe-based passphrase
+  injection is refused — the non-interactive sources (`CIPHERPOST_PASSPHRASE`,
+  `--passphrase-file`, `--passphrase-fd`) are the explicit opt-in for automated contexts.
+  [D-13, IDENT-04, SPEC.md#7-passphrase-contract]
+- Inline argv passphrase (`--passphrase <value>`) is refused at parse time. Prevents
+  historical `ps` disclosure and shell-history leaks. [D-13, IDENT-04]
+- Wrong passphrase surfaces a uniform `passphrase failed` message with exit code 4, no
+  timing disclosure, no partial-match hint. [D-16, SPEC.md#6-exit-codes]
+- Passphrase bytes are held only in `secrecy::SecretBox<Vec<u8>>` / `Zeroizing<Vec<u8>>`
+  buffers; `Debug` derive on wrapping structs is forbidden (enforced by
+  `tests/debug_leak_scan.rs`). Error source chains never Display (D-15). [CRYPTO-06, D-15]
+- Error stderr is fuzz-scanned for passphrase-byte leakage in CI
+  (`tests/stderr_scan.rs`-like coverage). No known leak paths. [CLI-05, D-15]
+
+**Residual risk:** Cipherpost cannot defend against compromise of the local execution
+environment (malicious wrapper, keylogger, rootkit). "Trusts the local environment" is
+explicit in §1 Trust Model. Users on untrusted systems MUST regenerate their identity on a
+clean system; no remediation is possible otherwise.
+
+## 7. Receipt-Replay / Race Adversary
+
+**Capabilities:** The adversary replays a harvested receipt, or races legitimate concurrent
+publications, or tampers with a stored receipt on the recipient's PKARR key before the sender
+fetches it.
+
+**Worked example A (replay):** Mallory observes a live receipt TXT record under Bob's PKARR
+key at label `_cprcpt-<abc...>` (D-06). Days later, Mallory injects the same TXT record back
+into the DHT (possible if Mallory runs DHT nodes). Alice runs `cipherpost receipts --from
+<b-z32>` and sees the replayed receipt. Unlike share replay, a replayed receipt is still
+validly signed by Bob — the signature does not expire.
+
+**Worked example B (race):** Bob accepts two shares from different senders at nearly the same
+time. Both `publish_receipt` calls race: each resolves Bob's current SignedPacket, builds a
+new one with their new receipt, and publishes. Whichever wins the publish drops the other's
+receipt — a classic lost-update race. D-MRG-02 explicitly documents this as known-but-not-
+mitigated.
+
+**Worked example C (receipt tamper):** Mallory flips a byte in a stored receipt TXT record
+in the DHT (possible if running a malicious DHT node + successfully racing the recipient's
+re-publication). Alice's `cipherpost receipts` fetches the mutated record and attempts to
+verify it.
+
+**Mitigations:**
+- `verify_receipt` uses `verify_strict` + round-trip-reserialize guard (canonicalization-
+  bypass defense). A tampered-byte receipt fails both Ed25519 verification and the JCS
+  re-serialize equality check; `Error::SignatureInner` (D-16 unified) is surfaced, the
+  specific receipt is skipped, and the rest of the listing continues. [D-RS-07, D-OUT-03]
+- `cipherpost receipts` counts and displays `fetched N receipt(s); M valid, K malformed,
+  L invalid-signature`; exit 0 if any receipt verifies; exit 3 if all present receipts fail
+  signature verification; exit 1 if only malformed; exit 5 if no receipts under `_cprcpt-`.
+  The warn-and-skip contract means one tampered receipt doesn't poison the entire listing.
+  [D-OUT-03, D-OUT-04, SPEC.md#5-flows]
+- Replay is contextually detectable because the Receipt's `accepted_at` field and `nonce`
+  (128-bit random, D-RS-03) make honest duplicates highly unlikely to collide; a re-published
+  receipt with identical `accepted_at` and `nonce` IS the same receipt. Multiple receipts for
+  the same `share_ref` from the same recipient public key are a policy signal to the sender
+  (unusual) but not a hard failure — the sender may inspect via `--share-ref <ref>`
+  audit-detail view. [D-RS-03, D-OUT-02, SPEC.md#34-receipt]
+- Concurrent-publish race (example B) is documented, not mitigated in code. Per the PITFALLS
+  traffic estimate (1–100 shares/week/user), concurrent receipts under the same identity are
+  vanishingly rare in skeleton use. Future `cipherpost republish-receipt` command (deferred
+  to v1.0+) would allow the sender to ask the recipient to retry. [D-MRG-02, D-SEQ-02]
+- Publish failure on the recipient side is degraded to a stderr warning + exit 0 (material
+  delivered successfully; receipt loss is sender-visible degradation only). The recipient's
+  local ledger stays at `receipt_published_at: null`, recording the state for future retry.
+  [D-SEQ-02, D-SEQ-04, D-STATE-01]
+
+**Residual risk:** The concurrent-publish race (example B) means that under genuinely
+concurrent acceptance on the same recipient's machine, one receipt may be lost from the DHT
+even though the recipient's local ledger records both acceptances. At skeleton scale this is
+rare enough to defer; if telemetry shows otherwise, the mitigation is a per-identity
+publish-lock or an optimistic-concurrency retry loop (tracked in 03-CONTEXT.md deferred).
+
+## 8. Out of Scope Adversaries
+
+This threat model does **not** cover the following adversary classes. Defense against these
+is either provided by other layers (OS, hardware, cryptographic primitives' own security
+proofs) or is an explicit non-goal of cipherpost/v1.
+
+- **Cryptographically-relevant quantum adversary.** Ed25519, X25519, ChaCha20-Poly1305, and
+  SHA-256 are all pre-quantum primitives. A sufficiently large quantum computer breaks all
+  cipherpost guarantees. No post-quantum migration in v1.0; tracked as a v2+ consideration.
+- **Nation-state forensic access to physical devices.** Cold-boot attacks, RAM extraction,
+  evil-maid attacks on unlocked machines. Cipherpost cannot defend against an adversary who
+  can physically manipulate a powered-on machine; `Zeroize` only reduces, not eliminates,
+  residual-memory exposure. [CRYPTO-06]
+- **Supply-chain compromise of `rustc`, `cargo`, or pinned dependencies.** Cipherpost's
+  builds trust the published crates (enforced by `cargo audit` + `cargo deny check` in CI
+  per SCAF-03), but do not use `cargo-vet` or reproducible-build verification in
+  cipherpost/v1. Deferred to v1.0 per `.planning/research/PITFALLS.md` §13.
+- **Malicious libraries on `crates.io`.** If `pkarr`, `age`, `ed25519-dalek`, `argon2`,
+  `hkdf`, `sha2`, or `serde_canonical_json` ship with a backdoor, cipherpost has no
+  independent defense. Mitigation at the ecosystem layer: pin exact versions, audit changelogs
+  at upgrade time, subscribe to RustSec advisories. [SCAF-03, SCAF-04]
+- **Destruction attestation.** PRD lists destruction attestation as a v1.1 feature; not
+  shipped in the skeleton. A compromised recipient who lies about having destroyed material
+  cannot be detected by cipherpost/v1.
+- **Long-term storage security** of the material after delivery. Once material leaves
+  cipherpost's decrypt buffer, its lifecycle is the recipient's responsibility. Cipherpost is
+  not a vault.
+- **Accountability across multiple devices under the same identity.** If Alice runs
+  cipherpost on two machines with the same identity, there's no cross-device sync of the
+  local state ledger. Receipts published from one machine are discoverable from the other,
+  but acceptance sentinels are not shared. This is a v1.0+ operational concern. [D-STATE-01]
+- **Timing side-channel attacks on `ed25519-dalek`, `age`, or Argon2id.** Cipherpost assumes
+  the underlying crates are constant-time where necessary; independent verification is
+  out of scope for this threat model. [CRYPTO-01]
+- **Receipt rotation / garbage collection under wire-budget pressure.** If a recipient
+  accumulates enough receipts under one identity to exceed the ~1000-byte SignedPacket
+  budget, `publish_receipt` surfaces `Error::WireBudgetExceeded`. Automatic pruning /
+  rotation is a v1.0+ operational feature. [D-MRG-06, D-ERR-01]
+
+## 9. Lineage
+
+Cipherpost is a fork-and-diverge of [cclink](https://github.com/johnzilla/cclink) — a prior
+project that applied the same PKARR + age + Ed25519 + Mainline DHT primitives to Claude Code
+session-ID handoff. cclink is **mothballed**; no further development is planned upstream.
+
+The crypto, identity, record, and transport layers ported from cclink are reused without
+protocol-level modification — `age 0.11` for payload encryption; `ed25519-dalek =3.0.0-pre.5`
+for signatures; `argon2 0.5` with (64 MB, 3 iter) parameters; `hkdf 0.12` with SHA-256;
+`pkarr 5.0.3` for DHT rendezvous. The threat-model implications of these choices (Argon2id
+brute-force cost factor §2, Ed25519 signature forgery §4, age AEAD §7, HKDF domain
+separation) are shared with cclink.
+
+Cipherpost domain-separates from cclink via the HKDF info-string prefix `cipherpost/v1/`
+(D-08; enforced by `tests/hkdf_info_enumeration.rs`). Keys produced by cipherpost and keys
+produced by cclink are not interoperable despite sharing primitive implementations — attempts
+to cross-decrypt fail at the HKDF step. This domain separation means a cclink compromise does
+NOT directly compromise cipherpost identities (and vice versa); the two systems share
+library surface but not key material. [D-08, CRYPTO-03, TRANS-05]
+
+**Fork point:** cclink v1.3.0 (the last release before cclink was mothballed). Any cclink
+CVE that surfaces post-fork is evaluated on a case-by-case basis for cipherpost applicability
+— cipherpost inherits cclink's *code patterns* but is an independently maintained codebase
+with its own release cadence. [SCAF-01]
+
+The cipherpost-specific delta from cclink (typed payload schema, explicit acceptance, signed
+receipt) is the subject of the threat-model sections above; cclink's threat model does not
+cover these because cclink has no such mechanisms. [PAYL-01, RECV-04, RCPT-01]
