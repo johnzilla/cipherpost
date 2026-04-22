@@ -58,6 +58,12 @@ decisions:
 metrics:
   duration_minutes: ~20
   completed_date: 2026-04-21
+requirements-completed:
+  - PAYL-01
+  - PAYL-02
+  - PAYL-03
+  - PAYL-04
+  - PAYL-05
 ---
 
 # Phase 2 Plan 01: Payload Schema + URI + Error Variants Summary

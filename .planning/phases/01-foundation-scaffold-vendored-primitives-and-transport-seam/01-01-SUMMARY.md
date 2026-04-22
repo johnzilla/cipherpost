@@ -86,6 +86,12 @@ metrics:
   tasks_total: 3
   files_created: 20
   files_modified: 0
+requirements-completed:
+  - SCAF-01
+  - SCAF-02
+  - SCAF-03
+  - SCAF-04
+  - SCAF-05
 ---
 
 # Phase 01 Plan 01: Cargo Scaffold, CLI Skeleton, and CI Gates Summary

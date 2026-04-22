@@ -63,6 +63,11 @@ metrics:
   tasks_total: 2
   files_created: 6
   files_modified: 2
+requirements-completed:
+  - TRANS-01
+  - TRANS-02
+  - TRANS-04
+  - TRANS-05
 ---
 
 # Phase 01 Plan 03: Transport Seam and OuterRecord Wire Format Summary

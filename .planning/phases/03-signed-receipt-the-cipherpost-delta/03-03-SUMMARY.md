@@ -54,6 +54,10 @@ metrics:
   tasks_total: 3
   files_created: 0
   files_modified: 10
+requirements-completed:
+  - TRANS-03
+  - RCPT-01
+  - RCPT-02
 ---
 
 # Phase 3 Plan 03: Flow Wiring — run_receive Step 13 + run_receipts + CLI Dispatch Summary

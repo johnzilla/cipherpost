@@ -24,6 +24,9 @@ metrics:
   completed: "2026-04-22"
   tasks_completed: 2
   files_changed: 24
+requirements-completed:
+  - DOC-01
+  - DOC-04
 ---
 
 # Phase 04 Plan 02: Draft SPEC.md Summary

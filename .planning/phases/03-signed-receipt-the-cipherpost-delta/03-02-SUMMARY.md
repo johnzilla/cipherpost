@@ -48,6 +48,8 @@ metrics:
   tasks_total: 2
   files_created: 1
   files_modified: 3
+requirements-completed:
+  - TRANS-03
 ---
 
 # Phase 3 Plan 02: Transport Merge-Republish + Ledger Extension Summary

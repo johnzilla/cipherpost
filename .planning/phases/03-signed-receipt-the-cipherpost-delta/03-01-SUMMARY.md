@@ -45,6 +45,8 @@ metrics:
   tasks_total: 2
   files_created: 4
   files_modified: 1
+requirements-completed:
+  - RCPT-01
 ---
 
 # Phase 3 Plan 01: Receipt Wire Schema + Sign/Verify + JCS Fixture Summary

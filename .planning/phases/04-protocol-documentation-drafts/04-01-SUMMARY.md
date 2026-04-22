@@ -21,6 +21,8 @@ decisions:
 metrics:
   duration: "< 5 minutes"
   completed: "2026-04-22"
+requirements-completed:
+  - DOC-03  # pre-write wording amendment; full satisfaction in 04-04
 ---
 
 # Phase 4 Plan 01: Amend DOC-03 and Phase 4 SC3 to disclosure-channel language — Summary

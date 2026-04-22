@@ -74,6 +74,18 @@ metrics:
   tasks_total: 2
   files_created: 13
   files_modified: 1
+requirements-completed:
+  - CRYPTO-01
+  - CRYPTO-02
+  - CRYPTO-03
+  - CRYPTO-04
+  - CRYPTO-05
+  - CRYPTO-06
+  - IDENT-01
+  - IDENT-02
+  - IDENT-03
+  - IDENT-04
+  - IDENT-05
 ---
 
 # Phase 01 Plan 02: Crypto Primitives and Identity Layer Summary

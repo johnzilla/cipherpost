@@ -54,6 +54,11 @@ metrics:
   tasks_total: 4
   files_created: 5
   files_modified: 3
+requirements-completed:
+  - TRANS-03
+  - RCPT-01
+  - RCPT-02
+  - RCPT-03
 ---
 
 # Phase 3 Plan 04: Integration Tests + HUMAN-UAT Script Summary
