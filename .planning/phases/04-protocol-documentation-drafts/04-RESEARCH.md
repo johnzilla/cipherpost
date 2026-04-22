@@ -540,22 +540,29 @@ GitHub Security Advisory round-trip confirmed. Disclosure channel is operational
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three open questions from the research pass were resolved during planning and are now addressed
+in the Phase 4 plan set. Each question below is annotated with its resolution and the plan+task
+where the resolution is executed.
 
 1. **Test keypair: [0u8;32] seed validation**
    - What we know: ed25519-dalek =3.0.0-pre.5 is pinned; `SigningKey::from_bytes` signature exists
    - What's unclear: Whether the library rejects an all-zeros seed as cryptographically weak at construction time
    - Recommendation: Planner's Wave 1 task for SPEC §8 should start by running the snippet in Code Examples above and confirming it doesn't panic; if it does, substitute a SHA-256("cipherpost-test-only") seed (still deterministic, non-secret)
+   - **RESOLVED:** Plan `04-02-PLAN.md` Task 1 Step A executes the `[0u8;32]` path as primary and documents an explicit fallback to `SHA-256("cipherpost/v1/spec-test-vector")` if the library rejects the all-zero seed. Plan 04-02 `must_haves.truths[4]` covers both branches so the truth holds regardless of which path fires.
 
 2. **README.md `## Documentation` section placement**
    - What we know: README.md is 426 bytes, minimal content (project description + PRD link)
    - What's unclear: Where exactly to insert the section (before or after the PRD link)
    - Recommendation: Planner's discretion per Claude's Discretion; suggest inserting after the first paragraph and before the PRD link for discoverability
+   - **RESOLVED:** Plan `04-05-PLAN.md` Task 2 Step A pins the insertion point to "between the description paragraph and the PRD link" and provides the exact post-edit README content as a verbatim block (planner's discretion exercised; matches the research recommendation).
 
 3. **lychee-action SHA pin currency**
    - What we know: Current v2 SHA is `7da8ec1fc4e01b5a12062ac6c589c10a4ce70d67` as of research date [VERIFIED: lychee-action README]
    - What's unclear: Whether this SHA is still the latest v2 point at plan-execution time
    - Recommendation: Planner should verify the SHA against `github.com/lycheeverse/lychee-action/releases` at write time; the SHA format is correct regardless
+   - **RESOLVED:** Plan `04-05-PLAN.md` Task 2 Step B explicitly verifies the SHA at execution time via the GitHub releases API (or the `/browse` skill) and substitutes a newer v2.x SHA if one has shipped. The acceptance criteria enforce a 40-hex-char SHA-pin format regardless of which concrete SHA lands.
 
 ---
 
