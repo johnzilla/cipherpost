@@ -55,7 +55,7 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 **: `src/transport/` defines a `Transport` trait with methods for `publish(packet)`, `resolve(pubkey)`, and `publish_receipt(share_ref, receipt)`; a `DhtTransport` impl wraps `pkarr::ClientBlocking`
 - [x] **TRANS-02
 **: A `MockTransport` in `src/transport/mock.rs` (or tests) provides an in-memory map keyed by PKARR pubkey so integration tests do not hit real DHT
-- [ ] **TRANS-03**: `publish_receipt` resolves the recipient's existing SignedPacket if any, merges the receipt TXT record under label `_cprcpt-<share_ref>`, re-signs with the recipient's key, and republishes
+- [x] **TRANS-03**: `publish_receipt` resolves the recipient's existing SignedPacket if any, merges the receipt TXT record under label `_cprcpt-<share_ref>`, re-signs with the recipient's key, and republishes
 - [x] **TRANS-04
 **: A default DHT request timeout of 30 seconds is enforced; `--dht-timeout <seconds>` overrides it; timeouts return exit code 6 distinct from "not found" (exit 5) and "network error"
 - [x] **TRANS-05
@@ -99,9 +99,9 @@ Requirements for the walking-skeleton milestone. Each maps to exactly one roadma
 
 ### Receipt (the cipherpost delta)
 
-- [ ] **RCPT-01**: On successful acceptance, a `Receipt { share_ref, sender_pubkey, recipient_pubkey, accepted_at, nonce, ciphertext_hash, cleartext_hash, purpose, protocol_version, signature }` is constructed, signed by the recipient's Ed25519 key, and published via `publish_receipt` under the recipient's PKARR key at label `_cprcpt-<share_ref>`
-- [ ] **RCPT-02**: `cipherpost receipts --from <recipient-pubkey> [--share-ref <ref>]` resolves the recipient's PKARR packet, extracts receipt TXT records, verifies each signature, and prints a structured summary on stdout
-- [ ] **RCPT-03**: A verified end-to-end integration test publishes a share from identity A to identity B, has B accept via `MockTransport`, verifies the receipt is published under B's key, and confirms A can fetch+verify it
+- [x] **RCPT-01**: On successful acceptance, a `Receipt { share_ref, sender_pubkey, recipient_pubkey, accepted_at, nonce, ciphertext_hash, cleartext_hash, purpose, protocol_version, signature }` is constructed, signed by the recipient's Ed25519 key, and published via `publish_receipt` under the recipient's PKARR key at label `_cprcpt-<share_ref>`
+- [x] **RCPT-02**: `cipherpost receipts --from <recipient-pubkey> [--share-ref <ref>]` resolves the recipient's PKARR packet, extracts receipt TXT records, verifies each signature, and prints a structured summary on stdout
+- [x] **RCPT-03**: A verified end-to-end integration test publishes a share from identity A to identity B, has B accept via `MockTransport`, verifies the receipt is published under B's key, and confirms A can fetch+verify it
 
 ### CLI ergonomics
 
@@ -207,49 +207,50 @@ Populated by gsd-roadmapper on 2026-04-20. Every v1 requirement maps to exactly 
 | IDENT-05 | Phase 1 | Complete |
 | TRANS-01 | Phase 1 | Complete |
 | TRANS-02 | Phase 1 | Complete |
-| TRANS-03 | Phase 3 | Pending |
+| TRANS-03 | Phase 3 | Complete |
 | TRANS-04 | Phase 1 | Complete |
 | TRANS-05 | Phase 1 | Complete |
-| PAYL-01 | Phase 2 | Pending |
-| PAYL-02 | Phase 2 | Pending |
-| PAYL-03 | Phase 2 | Pending |
-| PAYL-04 | Phase 2 | Pending |
-| PAYL-05 | Phase 2 | Pending |
-| SEND-01 | Phase 2 | Pending |
-| SEND-02 | Phase 2 | Pending |
-| SEND-03 | Phase 2 | Pending |
-| SEND-04 | Phase 2 | Pending |
-| SEND-05 | Phase 2 | Pending |
-| RECV-01 | Phase 2 | Pending |
-| RECV-02 | Phase 2 | Pending |
-| RECV-03 | Phase 2 | Pending |
-| RECV-04 | Phase 2 | Pending |
-| RECV-05 | Phase 2 | Pending |
-| RECV-06 | Phase 2 | Pending |
-| RCPT-01 | Phase 3 | Pending |
-| RCPT-02 | Phase 3 | Pending |
-| RCPT-03 | Phase 3 | Pending |
-| CLI-01 | Phase 2 | Pending |
-| CLI-02 | Phase 2 | Pending |
-| CLI-03 | Phase 2 | Pending |
-| CLI-04 | Phase 2 | Pending |
-| CLI-05 | Phase 2 | Pending |
-| DOC-01 | Phase 4 | Pending |
-| DOC-02 | Phase 4 | Pending |
-| DOC-03 | Phase 4 | Pending |
-| DOC-04 | Phase 4 | Pending |
+| PAYL-01 | Phase 2 | Complete |
+| PAYL-02 | Phase 2 | Complete |
+| PAYL-03 | Phase 2 | Complete |
+| PAYL-04 | Phase 2 | Complete |
+| PAYL-05 | Phase 2 | Complete |
+| SEND-01 | Phase 2 | Complete |
+| SEND-02 | Phase 2 | Complete |
+| SEND-03 | Phase 2 | Complete |
+| SEND-04 | Phase 2 | Complete |
+| SEND-05 | Phase 2 | Complete |
+| RECV-01 | Phase 2 | Complete |
+| RECV-02 | Phase 2 | Complete |
+| RECV-03 | Phase 2 | Complete |
+| RECV-04 | Phase 2 | Complete |
+| RECV-05 | Phase 2 | Complete |
+| RECV-06 | Phase 2 | Complete |
+| RCPT-01 | Phase 3 | Complete |
+| RCPT-02 | Phase 3 | Complete |
+| RCPT-03 | Phase 3 | Complete |
+| CLI-01 | Phase 2 | Complete |
+| CLI-02 | Phase 2 | Complete |
+| CLI-03 | Phase 2 | Complete |
+| CLI-04 | Phase 2 | Complete |
+| CLI-05 | Phase 2 | Complete |
+| DOC-01 | Phase 4 | Complete |
+| DOC-02 | Phase 4 | Complete |
+| DOC-03 | Phase 4 | Complete |
+| DOC-04 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 49 total (note: the header count of "46" in the prior draft was stale — the actual enumerated REQ-IDs total 49 across SCAF(5) + CRYPTO(6) + IDENT(5) + TRANS(5) + PAYL(5) + SEND(5) + RECV(6) + RCPT(3) + CLI(5) + DOC(4))
 - Mapped to phases: 49 (100%)
 - Unmapped: 0
+- **Complete: 49 (100%)** — all v1 requirements satisfied as of milestone v1.0 close (2026-04-22)
 
 **Phase distribution:**
-- Phase 1 (Foundation): 20 requirements
-- Phase 2 (Send/receive/acceptance): 21 requirements
-- Phase 3 (Signed receipt): 4 requirements
-- Phase 4 (Protocol docs): 4 requirements
+- Phase 1 (Foundation): 20 requirements — Complete
+- Phase 2 (Send/receive/acceptance): 21 requirements — Complete
+- Phase 3 (Signed receipt): 4 requirements — Complete
+- Phase 4 (Protocol docs): 4 requirements — Complete
 
 ---
 *Requirements defined: 2026-04-20*
-*Last updated: 2026-04-20 after roadmap traceability population*
+*Last updated: 2026-04-22 — all 49 v1 requirements marked complete at milestone v1.0 close; 4 body checkboxes (TRANS-03, RCPT-01..03) and 29 traceability rows brought in sync with phase verifications*
