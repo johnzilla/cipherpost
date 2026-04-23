@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone-complete
-stopped_at: Phase 4 complete — lychee CI + README + phase-close evidence (f1bba86, 822782d). v1.0 walking-skeleton milestone ready for /gsd-complete-milestone.
-last_updated: "2026-04-22T13:45:00.000Z"
-last_activity: 2026-04-22 -- Phase 04 complete; v1.0 milestone at 100%
+status: completed
+stopped_at: "Milestone v1.0 fully verified — bookkeeping debt resolved (e89fd41, 08bd78b, a56d1d9), UAT-1 executed + confirm-passphrase fix landed (2e29b74 / 7f7750f), UAT-2 completed + double-UTC cosmetic fix landed (e95c95e). Phases 01 and 03 both now `status: passed` with human_verification records. All 4 phases passed, all 49 requirements satisfied, zero outstanding debt."
+last_updated: "2026-04-23T01:16:09.669Z"
+last_activity: 2026-04-23
 progress:
   total_phases: 4
   completed_phases: 4
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-20)
+See: .planning/PROJECT.md (updated 2026-04-22 at v1.0 milestone close)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** v1.0 walking-skeleton milestone complete — ready for /gsd-complete-milestone
+**Current focus:** v1.0 Walking Skeleton shipped + archived (2026-04-22). Next milestone TBD via `/gsd-new-milestone`.
 
 ## Current Position
 
-Phase: 04 (protocol-documentation-drafts) — COMPLETE
-Plan: 5 of 5 — 04-05 (link-check CI + README + phase close) done
-Status: Milestone v1.0 complete — all 4 phases and 15 plans have SUMMARY.md
-Last activity: 2026-04-22 -- Phase 04 Plan 05 committed (f1bba86, 822782d)
+Phase: — (between milestones)
+Plan: —
+Status: Milestone v1.0 archived to `.planning/milestones/v1.0-*`. Phase directories moved to `milestones/v1.0-phases/`. Walking-skeleton scope shipped end-to-end (self + share + signed receipt on generic-secret; SPEC/THREAT-MODEL/SECURITY drafts). Awaiting `/gsd-new-milestone` to define next scope.
+Last activity: 2026-04-22
 
 Progress: [████████████████████] 100%
 
