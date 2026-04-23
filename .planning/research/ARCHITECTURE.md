@@ -1,672 +1,723 @@
-# Architecture Research — Cipherpost Walking Skeleton
+# Architecture Research — Cipherpost v1.1 Integration Points
 
 **Domain:** Self-sovereign cryptographic-material handoff (Rust CLI)
-**Researched:** 2026-04-20
-**Confidence:** HIGH — based on direct inspection of cclink source at github.com/johnzilla/cclink (commit on `main`), not inference.
+**Researched:** 2026-04-23
+**Scope:** v1.1 feature integration into the existing walking-skeleton architecture
+**Confidence:** HIGH — based on direct inspection of `src/` (payload.rs, flow.rs, cli.rs,
+  main.rs, transport.rs, error.rs) and all `.planning/` context documents.
 
 ---
 
-## Source inspection summary (cclink, what we're forking)
+## Existing Architecture (Reference Baseline)
 
-Read directly from the cclink repo:
+The v1.0 walking skeleton ships as a single flat-module Rust crate:
 
 ```
-cclink/
-├── Cargo.toml                 # Single crate. pkarr 5.0.3, ed25519-dalek =3.0.0-pre.5 (pinned),
-│                              # age 0.11, clap 4.5, argon2, hkdf, sha2, zeroize, base64, bech32,
-│                              # backon (retry), dialoguer, qr2term, owo-colors, serde/serde_json
-├── src/
-│   ├── main.rs                # Dispatch on Cli → commands::*
-│   ├── lib.rs                 # Re-exports crypto/error/keys/record/transport/util — for integration tests
-│   ├── cli.rs                 # clap derive: top-level args + Init/Whoami/Pickup/List/Revoke subcommands
-│   ├── error.rs               # thiserror enum: NoKeypairFound, SignatureVerificationFailed, ...
-│   ├── util.rs                # human_duration etc.
-│   ├── crypto/mod.rs          # Ed25519↔X25519 bridge, age_encrypt/decrypt, pin_*, CCLINKEK envelope
-│   ├── keys/
-│   │   ├── store.rs           # ~/.pubky/secret_key, atomic write, 0600, passphrase load/save
-│   │   ├── fingerprint.rs
-│   │   └── mod.rs
-│   ├── record/mod.rs          # HandoffRecord + HandoffRecordSignable + canonical_json + sign/verify
-│   ├── transport/mod.rs       # DhtClient wraps pkarr::ClientBlocking, publish/resolve/revoke, TXT label `_cclink`
-│   ├── session/mod.rs         # ← cclink-specific: Claude Code session discovery. Will NOT be copied.
-│   └── commands/
-│       ├── publish.rs         # send flow (pin validation, encrypt, sign, publish)
-│       ├── pickup.rs          # receive flow (resolve w/ backon retry, verify, TTL check, decrypt, exec)
-│       ├── init.rs, whoami.rs, list.rs, revoke.rs
-│       └── mod.rs
-└── tests/
-    ├── integration_round_trip.rs   # Fixed seeds [42;32], [99;32] — no DHT. Uses lib re-exports.
-    └── plaintext_leak.rs           # Byte-window + UTF-8 scan for known plaintext in ciphertext.
+src/
+  cli.rs         — clap derive tree; subcommand structs; passphrase field declarations
+  crypto.rs      — Ed25519↔X25519 derivation; age_encrypt/decrypt; jcs_serialize; HKDF helpers
+  error.rs       — thiserror Error enum; exit_code(); user_message()
+  flow.rs        — run_send, run_receive, run_receipts; Prompter trait; TtyPrompter; state ledger
+  identity.rs    — load/generate/resolve_passphrase; key_dir(); signing_seed()
+  lib.rs         — pub mod re-exports; PROTOCOL_VERSION; DHT_LABEL_OUTER; DHT_LABEL_RECEIPT_PREFIX
+  main.rs        — fn dispatch(); clap parse → flow calls; passphrase wiring
+  payload.rs     — Envelope; Material enum; base64_std serde module; strip_control_chars
+  receipt.rs     — Receipt; ReceiptSignable; sign_receipt; verify_receipt; nonce_hex
+  record.rs      — OuterRecord; OuterRecordSignable; sign_record; verify_record; share_ref_from_bytes
+  transport.rs   — Transport trait; DhtTransport; MockTransport (cfg-gated)
 ```
 
-**Key facts that constrain cipherpost's design:**
+Key invariants that every v1.1 change must respect:
 
-1. **SignedPacket budget is ~1000 bytes encoded** — asserted in cclink's `test_build_signed_packet_fits_budget`. This is the hard ceiling for the outer JSON TXT record. Cipherpost's PRD says payloads are capped at 64 KB, but that's the *plaintext before encryption*; the encrypted ciphertext goes into `blob` as base64, and the whole record (including sig, pubkey, timestamps, receipt pointer, purpose) must fit in 1000 bytes encoded. **Two-tier storage will be needed** — see §4.3.
-2. **Canonical JSON is achieved by alphabetical field order + compact serde_json** — no `preserve_order` feature. HandoffRecordSignable is a separate struct from HandoffRecord, omitting `signature`. Cipherpost must replicate this split pattern exactly.
-3. **Two signatures, both Ed25519:**
-   - Inner: `sign_record` signs canonical JSON of `HandoffRecordSignable` → base64 → stored in `.signature` field of outer record.
-   - Outer: `pkarr::SignedPacket::builder().sign(&keypair)` signs the DNS packet.
-   - Verifier checks both independently.
-4. **Outer record leaves `hostname` and `project` empty** — all sensitive metadata is encrypted into the inner `Payload` blob. Cipherpost must do the same for purpose strings and any other sender context.
-5. **Tests don't hit the DHT.** Integration tests exercise crypto + record round-trips with fixed seeds. DHT publish/resolve tested indirectly via `extract_txt` on a locally-built SignedPacket. This is the testing pattern we'll reuse.
+- JCS via `serde_canonical_json 1.0.0` — no raw serde_json byte serialization on signable structs
+- HKDF info strings: `cipherpost/v1/<context>` — never empty, never None; enumeration test enforces
+- `ed25519-dalek =3.0.0-pre.5` exact pin — pkarr 5.0.4 depends on `^3.0.0-pre.1`; no stable 3.x
+- No `#[derive(Debug)]` on secret-holding structs; manual redacting Debug implementations
+- All sig-verify variants share identical user-facing Display (error-oracle hygiene, exit 3)
+- Dual-signature ordering: outer PKARR verify FIRST, then age-decrypt, then inner Ed25519 verify
+- Receipt published only after full verification + typed-z32 acceptance (tamper-zero invariant)
+- `chacha20poly1305` reachable only via `age`; no direct calls
+- No async runtime at the cipherpost layer; `pkarr::ClientBlocking` throughout
+- `serial_test = "3"` + `#[serial]` on any test mutating `CIPHERPOST_HOME` or other process env
 
 ---
 
-## Recommended Cipherpost Architecture
+## 1. Typed Material Integration (Phases 6 and 7)
 
-### System Overview
+### 1.1 What the Acceptance Banner Shows (and When)
 
-```
-┌───────────────────────────────────────────────────────────────────────┐
-│                         cli.rs (clap derive)                           │
-│    init · whoami · send · receive · receipts                           │
-├───────────────────────────────────────────────────────────────────────┤
-│                        flow/ (orchestration)                           │
-│    send_flow · receive_flow · receipt_publish · receipt_fetch          │
-│    (owns the policy: acceptance prompt, TTL check, two-tier blob)      │
-├───────────────┬──────────────────────┬────────────────────────────────┤
-│   payload/    │     receipt/         │        identity/                │
-│ (cipherpost)  │   (cipherpost)       │      (keys/store derivative)    │
-│ Envelope,     │   Receipt struct,    │      ~/.cipherpost/secret_key   │
-│ Material enum │   sign/verify,       │      Argon2id passphrase wrap   │
-│ purpose, ttl, │   share_ref hash     │      (CIPHPOSK envelope)        │
-│ canonical JSON│                      │                                 │
-├───────────────┴──────────────────────┴────────────────────────────────┤
-│  record/  (cclink-vendored, thin rename)    crypto/  (cclink-vendored)│
-│  OuterRecord + OuterRecordSignable          Ed25519↔X25519, age_*,    │
-│  canonical_json, sign/verify_record         argon2+hkdf, key envelope │
-├───────────────────────────────────────────────────────────────────────┤
-│  transport/  (cclink-vendored)                                         │
-│  DhtClient wraps pkarr::ClientBlocking · publish · resolve · revoke    │
-│  (label `_cipherpost` instead of `_cclink`)                            │
-└───────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-                    Mainline DHT via PKARR
+The acceptance screen is rendered at `flow.rs:run_receive` step 8 — AFTER age-decrypt (step 6)
+and Envelope parse (step 7), but BEFORE any payload field reaches stdout/stderr. The fields
+surfaced in the banner come from two sources:
+
+- From `OuterRecord` (outer-verified, pre-decrypt): `record.pubkey` (sender z32), `record.share_ref`,
+  `record.created_at`, `record.ttl_seconds`. These are available from step 3 onward.
+- From `Envelope` (inner-verified, post-decrypt): `envelope.purpose`, `envelope.material`.
+  `material_type_string(&envelope.material)` and `material_bytes.len()` appear in the banner.
+
+This means the material-type label and size on the acceptance screen are always post-decrypt.
+There is no outer metadata field that leaks the payload type before decrypt — the DHT sees only
+the encrypted blob. This is correct behavior; do not add a plaintext `material_type` field to
+`OuterRecord` or `OuterRecordSignable`.
+
+### 1.2 Wire Representation for New Variants
+
+`Material` is a `#[serde(tag = "type", rename_all = "snake_case")]` enum. The existing
+`GenericSecret` wire shape is:
+
+```json
+{"type": "generic_secret", "bytes": "<base64-STANDARD-padded>"}
 ```
 
-### Component Responsibilities
+The `bytes` field uses the `base64_std` serde-with module defined in `payload.rs` (standard
+padding, not URL-safe no-pad). New variants should follow this same shape for consistency with
+the JCS field-ordering invariant:
 
-| Component | Origin | Responsibility |
-|-----------|--------|----------------|
-| `crypto/` | **vendored from cclink** (rename constants only) | Ed25519→X25519 derivation, `age_encrypt`/`age_decrypt`, `age_identity`/`age_recipient`, Argon2id + HKDF-SHA256 key envelope. Pure functions, no I/O. |
-| `transport/` | **vendored from cclink** (rename label + a method) | `DhtClient` wraps `pkarr::ClientBlocking`. `publish`, `resolve_record`, `revoke`. No knowledge of payload semantics. |
-| `record/` | **vendored from cclink** (generalized) | `OuterRecord` / `OuterRecordSignable` — the thing that goes in the PKARR TXT record. Dual-sig verify. No knowledge of cryptographic-material types. |
-| `identity/` | **vendored from cclink** (rename + relocate) | Disk-backed keypair: `~/.cipherpost/secret_key` (CIPHPOSK envelope), atomic 0600 write, passphrase load/save. Roughly cclink's `keys/store.rs`. |
-| `payload/` | **NEW — cipherpost delta** | `Envelope` struct (purpose, terms, ttl, material, created_at) + `Material` enum (GenericSecret for skeleton; Cert/Pgp/Ssh reserved). Canonical JSON encode/decode. |
-| `receipt/` | **NEW — cipherpost delta** | `Receipt` struct (share_ref, recipient_pubkey, accepted_at, nonce) + sign/verify. Share-ref = SHA-256 of sender's outer record bytes (before publish). |
-| `flow/` | **NEW — cipherpost delta** | Orchestrates the four flows. Owns acceptance prompt, TTL enforcement, and the two-tier blob indirection (if needed for bigger payloads). |
-| `cli/` | **adapted from cclink** | clap derive. New subcommand surface: `init`, `whoami`, `send`, `receive`, `receipts`. |
-| `error.rs` | adapted from cclink | `CipherpostError` enum. |
-| `util.rs` | adapted from cclink | `human_duration` and small helpers. |
-
----
-
-## Recommended Project Structure
-
-```
-cipherpost/
-├── Cargo.toml                            # Single crate. Deps match cclink exactly (esp. pkarr 5.0.3
-│                                         # + ed25519-dalek =3.0.0-pre.5 pin). Drop: arboard, qr2term,
-│                                         # gethostname (not needed for skeleton). Add nothing new.
-├── src/
-│   ├── main.rs                           # thin: parse CLI, dispatch to flow::*
-│   ├── lib.rs                            # pub mod re-exports for integration tests
-│   ├── cli.rs                            # clap: init / whoami / send / receive / receipts
-│   ├── error.rs                          # CipherpostError (thiserror)
-│   ├── util.rs                           # human_duration, share_ref_hash helpers
-│   │
-│   ├── crypto/                           # ── VENDORED FROM cclink/src/crypto ───────────────
-│   │   └── mod.rs                        # Identical to cclink except:
-│   │                                     #   - ENVELOPE_MAGIC: b"CIPHPOSK" (was b"CCLINKEK")
-│   │                                     #   - KEY_HKDF_INFO: b"cipherpost-key-v1"
-│   │                                     #   - All `cclink-pin-v1` HKDF info strings renamed
-│   │                                     #     (even though --pin is deferred, bake in the
-│   │                                     #     domain separator now to avoid a protocol break later)
-│   │
-│   ├── transport/                        # ── VENDORED FROM cclink/src/transport ────────────
-│   │   └── mod.rs                        # Identical to cclink except:
-│   │                                     #   - CCLINK_LABEL → CIPHERPOST_LABEL = "_cipherpost"
-│   │                                     #   - Add resolve_receipts(pubkey) helper (§4.4)
-│   │
-│   ├── identity/                         # ── VENDORED FROM cclink/src/keys ─────────────────
-│   │   ├── mod.rs                        # pub use store::*;
-│   │   ├── store.rs                      # Identical to cclink/keys/store.rs except:
-│   │   │                                 #   - key_dir() → ~/.cipherpost (was ~/.pubky)
-│   │   │                                 #   - drop homeserver_* (cclink-specific)
-│   │   └── fingerprint.rs                # verbatim
-│   │
-│   ├── record/                           # ── VENDORED FROM cclink/src/record (generalized) ─
-│   │   └── mod.rs                        # OuterRecord + OuterRecordSignable, renamed from
-│   │                                     # HandoffRecord. Field changes:
-│   │                                     #   - DROP: hostname, project (cclink-specific debris;
-│   │                                     #           were already empty strings in cclink v1.1)
-│   │                                     #   - KEEP: blob, created_at, pubkey, signature, ttl,
-│   │                                     #           recipient (optional z32)
-│   │                                     #   - ADD: share_ref: String (hex-encoded, 16 chars =
-│   │                                     #          first 8 bytes of SHA-256) — stable reference
-│   │                                     #          the receipt points at. Always present.
-│   │                                     #   - DEFER: burn, pin_salt (skeleton scope drops these
-│   │                                     #            modes; schema reserves the slots by NOT
-│   │                                     #            using names that would collide)
-│   │
-│   ├── payload/                          # ── NEW: cipherpost-specific ──────────────────────
-│   │   ├── mod.rs                        # pub use envelope::*; pub use material::*;
-│   │   ├── envelope.rs                   # Envelope { version, purpose, terms, material, created_at,
-│   │   │                                 #            ttl_secs } — the thing that gets age-encrypted
-│   │   │                                 #            into record.blob. Serialized as canonical JSON
-│   │   │                                 #            (alphabetical fields, compact). Has a signable
-│   │   │                                 #            form (EnvelopeSignable) mirroring cclink's
-│   │   │                                 #            HandoffRecord/HandoffRecordSignable pattern.
-│   │   └── material.rs                   # #[serde(tag = "kind")] enum Material {
-│   │                                     #    GenericSecret { data_b64: String },
-│   │                                     #    // RESERVED (not implemented in skeleton):
-│   │                                     #    // X509Pair { cert_pem, key_pem },
-│   │                                     #    // PgpPair { public_armored, private_armored },
-│   │                                     #    // SshPair { public_ssh, private_pem },
-│   │                                     # }  Size cap 64KB enforced at encode time.
-│   │
-│   ├── receipt/                          # ── NEW: cipherpost-specific ──────────────────────
-│   │   └── mod.rs                        # Receipt { share_ref: String,
-│   │                                     #           sender_pubkey: String (z32),
-│   │                                     #           recipient_pubkey: String (z32),
-│   │                                     #           accepted_at: u64,
-│   │                                     #           nonce: String (base64, 16B random),
-│   │                                     #           signature: String (over ReceiptSignable) }
-│   │                                     # published as a TXT record named `_cprcpt-<share_ref>`
-│   │                                     # under the RECIPIENT's PKARR key (not the sender's).
-│   │                                     # Sender fetches by resolving recipient's own pubkey +
-│   │                                     # iterating TXT labels with the prefix. See §4.4.
-│   │
-│   ├── flow/                             # ── NEW: cipherpost-specific orchestration ────────
-│   │   ├── mod.rs
-│   │   ├── send.rs                       # run_send_self() / run_send_share()
-│   │   │                                 #   1. identity::load_keypair()
-│   │   │                                 #   2. payload::Envelope::new(...) + canonical encode
-│   │   │                                 #   3. crypto::age_encrypt to self OR recipient
-│   │   │                                 #   4. compute share_ref = hex(sha256(ciphertext || created_at)[..8])
-│   │   │                                 #   5. record::OuterRecord + sign
-│   │   │                                 #   6. transport::publish
-│   │   │                                 #   7. print share_ref to sender
-│   │   ├── receive.rs                    # run_receive(target_z32, share_ref_opt)
-│   │   │                                 #   1. identity::load_keypair()
-│   │   │                                 #   2. transport::resolve_record (w/ backon retry — reuse cclink pattern)
-│   │   │                                 #   3. record::verify_record (inner sig) + rely on pkarr for outer sig
-│   │   │                                 #   4. TTL check (flow owns this — see cclink/pickup.rs:3)
-│   │   │                                 #   5. age_decrypt blob → Envelope
-│   │   │                                 #   6. Display: sender_pubkey fingerprint + purpose + terms
-│   │   │                                 #   7. PROMPT: explicit accept (dialoguer::Confirm, default No)
-│   │   │                                 #   8. if accepted: print Material → stdout/file
-│   │   │                                 #   9. receipt_publish::run(share_ref, sender_pubkey) — fire and note failures
-│   │   │                                 #      as warnings but do NOT unwind acceptance
-│   │   ├── receipt_publish.rs            # Build + sign Receipt, publish under recipient's
-│   │   │                                 # PKARR key at TXT label `_cprcpt-<share_ref>`.
-│   │   └── receipt_fetch.rs              # run_receipts(): list outstanding share_refs the
-│   │                                     # sender has published; for each, resolve the
-│   │                                     # recipient's key (if known from record.recipient);
-│   │                                     # fetch the receipt TXT; verify signature; display.
-│   │
-│   └── commands/                         # Thin wrappers — kept separate so cli.rs stays minimal.
-│       ├── mod.rs
-│       ├── init.rs                       # calls identity::init
-│       ├── whoami.rs                     # calls identity::current
-│       ├── send.rs                       # calls flow::send
-│       ├── receive.rs                    # calls flow::receive
-│       └── receipts.rs                   # calls flow::receipt_fetch
-│
-└── tests/
-    ├── crypto_roundtrip.rs               # Adapted from cclink/tests/integration_round_trip.rs
-    ├── plaintext_leak.rs                 # Adapted from cclink — add Envelope-level scans
-    ├── envelope_canonical_json.rs        # NEW: field order, compact output, re-sign stability
-    ├── record_roundtrip.rs               # NEW: build OuterRecord, fit-in-1000-bytes, sig verify
-    ├── receipt_roundtrip.rs              # NEW: issue + verify receipt; share_ref binding
-    └── flow_two_identity.rs              # NEW: in-process two-identity test. NO DHT — uses a
-                                          # mock transport trait (see §5) so send→receive+receipt
-                                          # runs synchronously on one thread.
+```json
+{"bytes": "<base64-STANDARD-padded>", "type": "x509_cert"}
+{"bytes": "<base64-STANDARD-padded>", "type": "pgp_key"}
+{"bytes": "<base64-STANDARD-padded>", "type": "ssh_key"}
 ```
 
-### Structure Rationale
+JCS sorts fields alphabetically, so `"bytes"` precedes `"type"` in all four variants. This
+ordering is already correct for `GenericSecret` and is inherited automatically by the serde
+tag enum.
 
-- **Single crate, no workspace.** cclink is a single crate with `lib.rs` re-exporting all internals for integration tests — this exact pattern is what the skeleton needs. Splitting into `cipherpost-core` + `cipherpost` is premature; the PRD calls it out as "open question" and `.planning/PROJECT.md` has it as a pending Key Decision. Do the split only when a *second* consumer exists (TUI or another tool).
-- **Vendored modules live at `src/crypto`, `src/transport`, `src/record`, `src/identity`.** These four directories are the vendored-from-cclink surface. Everything else (`payload/`, `receipt/`, `flow/`) is greenfield cipherpost code. This makes the boundary visually obvious: if a future cclink bug fix comes out, we know exactly which four directories to re-sync from.
-- **`flow/` owns policy, `commands/` is glue.** cclink mixes policy and glue in `commands/publish.rs` and `commands/pickup.rs` — they do CLI parsing AND orchestrate the round-trip AND own TTL/retry logic. Splitting flow from commands lets tests exercise `flow::send_self()` directly without going through `clap`.
-- **`payload/` and `receipt/` are peers, not nested.** The receipt references the share by `share_ref` (a hash), not by including the envelope. Keeping them peer modules prevents the receipt from taking a structural dependency on the envelope beyond that one string field.
-- **`session/` from cclink is dropped entirely.** It's Claude-Code-specific directory scanning. Nothing in cipherpost replaces it for the skeleton — material comes from CLI args or stdin.
-
----
-
-## Boundaries (vendored-vs-new)
-
-| Boundary | Vendored from cclink? | Cipherpost-specific? |
-|----------|:---------------------:|:--------------------:|
-| Ed25519 key management (on disk) | YES | Only the `~/.cipherpost` path rename and dropping `homeserver_path`. |
-| Ed25519 ↔ X25519 derivation | YES — identical | — |
-| age encrypt/decrypt | YES — identical | — |
-| Argon2id + HKDF key derivation | YES — identical algorithm; new HKDF info strings for domain separation | HKDF info `cipherpost-key-v1`, envelope magic `CIPHPOSK` |
-| PKARR SignedPacket publish/resolve | YES — identical | TXT label `_cipherpost` (was `_cclink`); add `resolve_receipts` helper |
-| Outer record struct (JSON in TXT) | Structural pattern vendored (signable split, alphabetical fields) | Fields change: drop hostname/project; add `share_ref` |
-| Canonical JSON convention | YES (alphabetical declaration order, compact serde_json, no `preserve_order`) | Apply to both `OuterRecordSignable` and `EnvelopeSignable` |
-| Dual signing model | YES (inner Ed25519 sig + outer PKARR sig) | Extend to third signature: receipt is independently signed by recipient |
-| CLI subcommands (publish/pickup) | Architectural pattern | Completely new surface: send/receive/receipts |
-| Payload schema | — | **All new.** Envelope + Material enum. |
-| Acceptance step | — | **All new.** Lives in `flow/receive.rs`. |
-| Receipt publishing | — | **All new.** `receipt/` + `flow/receipt_*`. |
-| Session discovery | N/A — dropped | — |
-| QR code output, clipboard | N/A — dropped for skeleton | Can be re-added post-skeleton |
-
----
-
-## Data Flow — Each Skeleton Flow End-to-End
-
-### 4.1 `cipherpost send --self`
-
-```
-CLI:          cipherpost send --self --purpose "backup my signing key" \
-                              --material-file ./secret.txt --ttl 14400
-│
-├── cli::parse                           → SendArgs { mode: Self, purpose, material, ttl }
-├── commands::send::run                  → calls flow::send::run_send_self
-│
-flow::send::run_send_self:
-│
-├── identity::store::load_keypair()      → pkarr::Keypair  (may prompt passphrase)
-│                                          Source: identity/store.rs (vendored keys/store.rs)
-├── payload::Envelope::build(...)        → Envelope { version: 1, purpose, terms, material:
-│                                            Material::GenericSecret { data_b64 }, created_at, ttl }
-│                                          Enforce plaintext size ≤ 64 KB here.
-├── payload::canonical_envelope_bytes()  → Vec<u8> (alphabetical serde_json)
-│
-├── crypto::ed25519_to_x25519_public(&kp)→ [u8; 32]
-├── crypto::age_recipient(...)           → age::x25519::Recipient  (self)
-├── crypto::age_encrypt(env_bytes, rcpt) → Vec<u8> ciphertext
-│
-├── compute share_ref:                   → hex(sha256(ciphertext || created_at.to_be_bytes())[..8])
-│                                          16-char hex string. Used as the receipt's pointer.
-├── record::OuterRecordSignable { blob: b64(ciphertext), created_at,
-│                                 pubkey: kp.z32(), recipient: None,
-│                                 share_ref, ttl }
-├── record::sign_record(signable, &kp)   → base64 Ed25519 signature
-├── record::OuterRecord { ...signable fields..., signature }
-│
-├── transport::DhtClient::new()          → pkarr ClientBlocking
-├── DhtClient::publish(&kp, &record)     → SignedPacket built + signed + published to DHT.
-│                                          Outer sig is pkarr's; inner sig is record.signature.
-│
-└── print to stderr/stdout:              "Sent. Share ref: <16-hex>. Expires in 4h."
-```
-
-**Self mode does not surface a share-ref to give to another party** — the whole point is self-retrieval. The share_ref is still computed and stored so receipt logic has a uniform shape.
-
-### 4.2 `cipherpost send --share <recipient_z32>`
-
-Identical to 4.1 except:
-
-- `crypto::age_recipient` call is replaced by `crypto::recipient_from_z32(&share_pubkey)` (already exists in cclink's crypto module).
-- `OuterRecordSignable.recipient = Some(share_pubkey)`.
-- Post-publish output: **print the share_ref to stdout** — sender gives recipient both their own pubkey and the share_ref. Pickup command becomes `cipherpost receive <sender_pubkey>` (share_ref optional because there's only ever one active record per PKARR key in the skeleton, matching cclink's model).
-
-### 4.3 `cipherpost receive <sender_pubkey>`
-
-```
-CLI:          cipherpost receive <sender_z32>
-│
-flow::receive::run:
-│
-├── identity::store::load_keypair()          → own pkarr::Keypair
-│
-├── transport::DhtClient::new()
-├── DhtClient::resolve_record(sender_z32)    → OuterRecord
-│                                              Uses backon ExponentialBuilder retry (vendored).
-│                                              Inside resolve_record, record::verify_record runs
-│                                              the inner-sig check. The outer pkarr sig is already
-│                                              enforced by pkarr's SignedPacket::resolve.
-│
-├── flow::receive::check_ttl(&record)        → Err(Expired) if now ≥ created_at+ttl
-│
-├── crypto::ed25519_to_x25519_secret(&kp)    → X25519 secret
-├── crypto::age_identity(secret)             → age::Identity
-├── base64 decode record.blob                → ciphertext bytes
-├── crypto::age_decrypt(ct, &identity)       → Vec<u8> envelope_bytes
-│                                              If recipient's key doesn't match: fail cleanly.
-│                                              NO partial output, no side effects.
-├── payload::Envelope::decode(&envelope_bytes)
-│                                           → Envelope  (version check, size sanity)
-│
-├── flow::receive::display_preamble(&record, &envelope):
-│         stderr: "From: <fp of sender_pubkey>"
-│         stderr: "Purpose: <envelope.purpose>"
-│         stderr: "Expires: <human_duration>"
-│         (Material is NOT shown yet.)
-│
-├── dialoguer::Confirm::new()                → accept? default FALSE
-│        .with_prompt("Accept and reveal material? (this publishes a signed receipt)")
-│        .default(false)
-│        .interact()
-│
-├── if not accepted:                         → print "Declined." + exit 0 with no receipt
-│
-├── MATERIAL REVEAL:
-│         match envelope.material {
-│             Material::GenericSecret { data_b64 } => {
-│                 base64::decode → stdout (or --output <path>)
-│             }
-│             _ => Err("material type not supported in skeleton"),
-│         }
-│
-└── flow::receipt_publish::run(
-│       share_ref: record.share_ref,
-│       sender_pubkey: record.pubkey,
-│       recipient_kp: &own_kp,
-│   )
-│   Failure here must NOT unwind the material reveal — log warning, suggest retry.
-│   Rationale: receipt is auxiliary; we've already shown the material to the user.
-```
-
-### 4.4 Receipt publish + fetch
-
-**Publishing side (runs inside `flow::receive`, post-acceptance):**
-
-```
-flow::receipt_publish::run(share_ref, sender_z32, recipient_kp):
-│
-├── receipt::Receipt::new(share_ref, sender_z32, recipient_kp.z32(), now, rand_nonce)
-├── receipt::ReceiptSignable::from(&r)
-├── receipt::sign(&rs, recipient_kp)       → ed25519 sig over canonical JSON
-├── r.signature = sig
-│
-├── Serialize r as compact JSON (≤1000 bytes — receipts are tiny so this is trivial)
-├── transport::publish_receipt(
-│       keypair: recipient_kp,
-│       label: &format!("_cprcpt-{}", share_ref),  // e.g. _cprcpt-a1b2c3d4e5f6a7b8
-│       json: &json,
-│   )
-│   Internally: builds a SignedPacket with one TXT record at that label and publishes
-│   under the RECIPIENT's PKARR key. Crucially: this does not overwrite the recipient's
-│   own outgoing share (if any) because pkarr's SignedPacket allows multiple TXT labels —
-│   BUT pkarr replaces the whole packet on publish, so the transport layer must:
-│       1. Resolve the current SignedPacket for recipient_kp (if any)
-│       2. Extract all existing TXT records
-│       3. Build a new SignedPacket containing the union + the new receipt label
-│       4. Publish
-│   This is a small extension of DhtClient and must be tested (see §5).
-```
-
-**Design note on receipt storage:** Receipts are published under the *recipient's* PKARR key (not the sender's) because:
-1. The sender doesn't hold the recipient's private key — only the recipient can sign.
-2. pkarr records are authored by their key owner. The sender fetches receipts by resolving the recipient's key, which they know (it was the `--share` target).
-3. This means `receipts` command must be told which recipient to query. For the skeleton, `cipherpost receipts --from <recipient_z32>` is acceptable; a richer ledger comes later.
-
-**Fetching side:**
-
-```
-flow::receipt_fetch::run(recipient_z32, share_ref_filter):
-│
-├── transport::DhtClient::new()
-├── DhtClient::resolve_signed_packet(recipient_z32)
-├── For each TXT record in the packet:
-│     ├── If name starts with "_cprcpt-":
-│     │     ├── Extract share_ref from label suffix
-│     │     ├── If share_ref_filter set and != this one, skip
-│     │     ├── Parse JSON → receipt::Receipt
-│     │     ├── receipt::verify(&r, &pkarr::PublicKey::from_z32(recipient_z32))
-│     │     └── Display: "<share_ref> accepted at <human time> by <recipient fp>"
-```
-
-### 4.5 Why `share_ref` works without leaking content
-
-`share_ref = hex(sha256(ciphertext || created_at.to_be_bytes())[..8])`
-
-- **Public:** anyone resolving the sender's DHT record sees the full OuterRecord (ciphertext blob + share_ref + recipient pubkey if shared mode). So `share_ref` is not a secret — it's a shortened hash of public data.
-- **Unique enough for skeleton:** 64 bits of collision resistance is fine at skeleton scale (v1.0 can widen if needed).
-- **Binding:** A receipt with `share_ref = X` verifiably references one specific `(ciphertext, created_at)` tuple. The sender, holding the original record, can confirm the match.
-- **Doesn't leak content:** SHA-256 is preimage-resistant; the recipient can't produce a valid `share_ref` without the ciphertext, and the ciphertext is already public on the DHT anyway — so the receipt adds no information beyond "I, the holder of key K, acknowledge record X."
-
----
-
-## Build Order (Justified by Dependency Graph)
-
-```
-                  ┌─────────────────────┐
-                  │   util.rs, error.rs │  (trivial, first)
-                  └──────────┬──────────┘
-                             │
-        ┌────────────────────┼────────────────────────┐
-        │                    │                        │
-        ▼                    ▼                        ▼
-   ┌─────────┐         ┌──────────┐            ┌───────────┐
-   │ crypto/ │         │ identity/│            │  record/  │
-   └────┬────┘         └────┬─────┘            └─────┬─────┘
-        │  (no deps)        │ (→ crypto)             │ (→ crypto for sig?)
-        │                   │                        │ Actually sig is ed25519_dalek
-        │                   │                        │ direct — record depends only
-        │                   │                        │ on pkarr+base64+ed25519.
-        └────────┬──────────┴──────────┬─────────────┘
-                 │                     │
-                 ▼                     ▼
-           ┌──────────┐          ┌───────────┐
-           │transport/│          │ payload/  │
-           └────┬─────┘          └─────┬─────┘
-                │ (→ record)           │ (→ crypto for material encoding)
-                │                      │
-                └──────────┬───────────┘
-                           ▼
-                     ┌──────────┐
-                     │   flow/  │────► send_self → send_share → receive
-                     └─────┬────┘            │            │        │
-                           │                 ▼            ▼        ▼
-                           │             receipt_publish  receipt_fetch
-                           ▼
-                     ┌──────────┐
-                     │   cli/   │
-                     │ commands/│
-                     │  main.rs │
-                     └──────────┘
-```
-
-**Recommended phase ordering for the skeleton milestone:**
-
-1. **Phase: Scaffold** (< half a day)
-   - Cargo.toml with cclink's exact dep versions (especially the `ed25519-dalek = "=3.0.0-pre.5"` pin — this is non-negotiable per cclink's Cargo.toml comment; pkarr 5.0.3 requires it).
-   - Empty `src/lib.rs`, `src/main.rs`, `src/error.rs`, `src/util.rs`.
-   - CI: `cargo check`, `cargo test`, `cargo clippy --deny warnings`.
-   - *Dependency:* none.
-
-2. **Phase: Vendor crypto + identity** (1 day)
-   - Copy `cclink/src/crypto/mod.rs` verbatim into `src/crypto/mod.rs`, rename constants (`CCLINKEK` → `CIPHPOSK`, HKDF info strings). Update imports.
-   - Copy `cclink/src/keys/` into `src/identity/`. Drop `homeserver_*`. Rename `~/.pubky` → `~/.cipherpost`.
-   - Copy cclink's unit tests; they should pass as-is after rename.
-   - *Dependency:* Phase 1.
-
-3. **Phase: Vendor transport + record** (1 day)
-   - Copy `cclink/src/transport/mod.rs`, rename label to `_cipherpost`.
-   - Copy `cclink/src/record/mod.rs`. Generalize `HandoffRecord` → `OuterRecord`, drop `hostname`/`project`, add `share_ref` field (both in `OuterRecord` and `OuterRecordSignable`).
-   - Adapt unit tests; the fit-in-1000-bytes test must be updated to reflect new field set.
-   - *Dependency:* Phase 2.
-
-4. **Phase: Payload schema** (1 day)
-   - `payload/envelope.rs`: `Envelope` + `EnvelopeSignable` (mirror cclink's pattern — we don't actually need the envelope to be signed *separately* from the outer record, because the outer record signs the ciphertext which includes the envelope — but keep the signable-split pattern if we want future-proofing for envelope-only signing. Decide: **NO separate envelope signature in skeleton.** The outer record's inner-sig over the ciphertext blob is sufficient.)
-   - `payload/material.rs`: `Material` enum with only `GenericSecret` implemented.
-   - Unit tests: canonical JSON determinism (encode → decode → encode produces identical bytes), size cap at 64 KB.
-   - *Dependency:* Phases 2, 3.
-
-5. **Phase: Self-mode round trip** (1 day)
-   - `flow/send.rs::run_send_self` + `flow/receive.rs::run_receive` (without acceptance prompt yet — just verify + decrypt).
-   - `cli.rs` + `main.rs` just enough to drive these two commands.
-   - Integration test: `tests/flow_two_identity.rs::test_self_mode` with a **mock transport** (see §5).
-   - First real milestone demo: `cipherpost send --self` then `cipherpost receive` on same identity.
-   - *Dependency:* Phase 4.
-
-6. **Phase: Share-mode** (half day)
-   - `flow/send.rs::run_send_share` — uses `crypto::recipient_from_z32`.
-   - `receive` already works; just pass through.
-   - Integration test: two identities, one sends to the other, recipient decrypts, sender cannot.
-   - *Dependency:* Phase 5.
-
-7. **Phase: Acceptance step** (half day)
-   - Add `dialoguer::Confirm` gate in `flow/receive.rs` between display_preamble and material reveal.
-   - Non-interactive behavior: if stdin is not a TTY, require `--yes` flag, else abort with a clear error.
-   - Test: spawn a child process with piped stdin → send "y" or "n", verify stdout has material only in the "y" case.
-   - *Dependency:* Phase 6.
-
-8. **Phase: Receipt publishing** (1 day)
-   - `receipt/mod.rs`: `Receipt`, `ReceiptSignable`, `sign`, `verify`.
-   - `transport/mod.rs` extension: `publish_receipt` method that merges a new TXT record into recipient's existing SignedPacket without clobbering other records.
-   - `flow/receipt_publish.rs`: wire into `flow/receive.rs` post-acceptance.
-   - Tests: round-trip (sign, verify, tamper detection), coexistence (publish receipt under a key that already has a send-record; both TXT records survive).
-   - *Dependency:* Phase 7.
-
-9. **Phase: Receipt fetching** (half day)
-   - `flow/receipt_fetch.rs` + `cipherpost receipts --from <z32>` CLI.
-   - Test: integration test publishes a receipt, then fetches it, verifies the signature.
-   - *Dependency:* Phase 8.
-
-10. **Phase: Docs drafts** (1 day, can run in parallel with 8/9)
-    - `SPEC.md` skeleton: payload schema, canonical JSON rules, share_ref derivation, receipt format, DHT label scheme.
-    - `THREAT-MODEL.md` skeleton: identity-wrap, DHT as adversary, acceptance semantics, receipt replay.
-    - `SECURITY.md`: disclosure contact.
-    - *Dependency:* requires Phases 4, 7, 8 to be definitionally stable enough to document.
-
-**Total walking-skeleton estimate: ~7 working days** if everything vendors cleanly. The pkarr/ed25519-dalek version pin is the single biggest external risk — if it breaks at any point, stop and pin to the exact versions cclink's Cargo.lock uses.
-
-**Parallelism opportunities (what a second developer or a future phase split could hand off):**
-- Phases 2 and 3 are independent of each other — they only share Phase 1. Could run concurrently.
-- Phase 10 (docs) can run alongside Phases 8–9 once Phase 7 is complete.
-- Nothing else parallelizes cleanly; receipt publishing depends transitively on almost everything.
-
----
-
-## Testing Architecture
-
-### The DHT problem
-
-Hitting the real Mainline DHT from CI is slow and flaky — cclink explicitly avoids it. Their integration tests in `tests/integration_round_trip.rs` only use fixed-seed keypairs and exercise crypto + record, never `DhtClient::publish`. They test DHT packet structure by building a `SignedPacket` locally and calling `extract_txt` directly. **Adopt this pattern unchanged for cipherpost**, and add one extension for flows.
-
-### Testing layers
-
-| Layer | Scope | Tool | Where |
-|-------|-------|------|-------|
-| Unit | Pure functions inside a module | `#[cfg(test)] mod tests` inline | Each `src/**/mod.rs` |
-| Integration — crypto | `age_encrypt`/`age_decrypt` round trip with fixed seeds; plaintext-leak byte-window scan | `#[test]` against `cipherpost::crypto::*` via `lib.rs` re-exports | `tests/crypto_roundtrip.rs`, `tests/plaintext_leak.rs` |
-| Integration — record | Build OuterRecord, sign, verify, tamper-detect, fit-in-1000-bytes assertion | `#[test]` | `tests/record_roundtrip.rs` |
-| Integration — payload | Canonical JSON determinism (encode/decode/encode bit-identical), size cap enforcement | `#[test]` | `tests/envelope_canonical_json.rs` |
-| Integration — receipt | Issue + verify; tampering the share_ref, sender_pubkey, or nonce fails verification | `#[test]` | `tests/receipt_roundtrip.rs` |
-| Integration — **flow** | End-to-end send→resolve→verify→decrypt→accept→receipt, **without real DHT** | `#[test]` with a `MockTransport` implementing a thin trait | `tests/flow_two_identity.rs` |
-| Manual smoke test | Real DHT round-trip on one developer machine, two terminals | shell script | `scripts/smoke.sh` (manual, not in CI) |
-
-### The MockTransport seam
-
-Create a trait in `src/transport/mod.rs`:
+Concrete variant shapes:
 
 ```rust
-pub trait Transport {
-    fn publish(&self, kp: &pkarr::Keypair, record: &OuterRecord) -> anyhow::Result<()>;
-    fn resolve_record(&self, z32: &str) -> anyhow::Result<OuterRecord>;
-    fn publish_receipt(&self, kp: &pkarr::Keypair, label: &str, json: &str)
-        -> anyhow::Result<()>;
-    fn resolve_all_txt(&self, z32: &str) -> anyhow::Result<Vec<(String, String)>>;
-    fn revoke(&self, kp: &pkarr::Keypair) -> anyhow::Result<()>;
-}
+// in src/payload.rs — modify Material enum in place
 
-pub struct DhtClient { /* real impl, wraps pkarr */ }
-impl Transport for DhtClient { /* ... */ }
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Material {
+    GenericSecret {
+        #[serde(with = "base64_std")]
+        bytes: Vec<u8>,
+    },
+    X509Cert {
+        #[serde(with = "base64_std")]
+        bytes: Vec<u8>,   // raw DER bytes (not PEM) — consistent with GenericSecret
+    },
+    PgpKey {
+        #[serde(with = "base64_std")]
+        bytes: Vec<u8>,   // binary OpenPGP packet (single transferable key, not armored)
+    },
+    SshKey {
+        #[serde(with = "base64_std")]
+        bytes: Vec<u8>,   // OpenSSH private key format bytes (the file content)
+    },
+}
 ```
 
-In `tests/`, write a `MockTransport` backed by a `HashMap<z32, SignedPacket>` (or just `HashMap<z32, Vec<(label, json)>>`). `flow::*` functions take `&dyn Transport` so tests inject the mock. This is the only interface change relative to cclink (which uses `DhtClient` concretely) — and it's cheap because the mock never needs to verify signatures or do async work; it just stores bytes.
+**Why raw bytes (not parsed/pre-validated)?** Keeping all variants as `{ bytes: Vec<u8> }`
+is the correct choice because:
 
-**Critical:** the mock must enforce **the same size ceiling** (1000 bytes encoded) as the real DHT, or tests will pass locally and fail on publish. Add a debug-mode assert in `MockTransport::publish` that serializes and checks length.
+1. Consistency with `GenericSecret` — the protocol transports an opaque byte payload; parsing
+   is a receiver-side concern, not a wire-format concern.
+2. JCS stability — a struct with a single `bytes` field has a trivially stable canonical form.
+   Adding parsed fields (e.g., `subject: String` for X.509) would require those to be in the
+   signable too, creating both a larger JCS byte string and a new fixture to pin.
+3. 64 KB plaintext cap still applies — enforced in `run_send` via `enforce_plaintext_cap` before
+   `Material` is constructed. No per-variant cap change needed.
 
-### Property tests (optional for skeleton, recommended for v1.0)
+**What bytes go in each variant:**
 
-`proptest` or `quickcheck` on:
-- Canonical JSON: for any `Envelope`, `encode(e) == encode(decode(encode(e)))`.
-- share_ref: same ciphertext + created_at → same share_ref; any byte change → different share_ref.
-- Receipt: round-trip for any valid field combination; flipping any bit of the signable → verify fails.
+- `X509Cert.bytes`: DER-encoded X.509 certificate. If the sender has PEM, they decode before
+  sending. The `size_bytes` shown on the acceptance banner is the DER length.
+- `PgpKey.bytes`: Binary OpenPGP transferable key packet (single key, not a keyring). RFC 4880
+  binary format. Armored ASCII representation is the sender's concern pre-send.
+- `SshKey.bytes`: The raw content of an OpenSSH private key file (the PEM-like `-----BEGIN
+  OPENSSH PRIVATE KEY-----` format including headers and trailing newline). This is what
+  `~/.ssh/id_ed25519` contains — send it as-is.
 
-These add dependency weight; defer to v1.0 unless a bug forces the issue earlier.
+### 1.3 Accessor Methods
 
-### What NOT to test in CI
+Replace the current `as_generic_secret_bytes` with per-variant accessors. The current
+`NotImplemented { phase: 2 }` error code is no longer appropriate once variants are live.
+Add a generic `as_bytes()` accessor that works across all variants:
 
-- Real DHT publish. Ever. Keep the shell smoke test manual.
-- Passphrase correctness timing. Argon2id is too slow for CI throughput; unit-test the key envelope round-trip with a fixed salt and lower `m_cost` via a `#[cfg(test)]` override if runtime becomes a problem.
-- Interactive dialoguer prompts in CI directly. Instead, extract the prompting logic behind a `trait Prompter` so tests can inject a scripted answer.
+```rust
+// New in src/payload.rs
+
+impl Material {
+    /// Return the raw bytes for any variant. Used post-accept in run_receive.
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Material::GenericSecret { bytes }
+            | Material::X509Cert { bytes }
+            | Material::PgpKey { bytes }
+            | Material::SshKey { bytes } => bytes.as_slice(),
+        }
+    }
+
+    /// Retain for backwards compatibility with existing run_receive call site.
+    /// Delegates to as_bytes() for GenericSecret; all other variants are now real.
+    pub fn as_generic_secret_bytes(&self) -> Result<&[u8], Error> {
+        Ok(self.as_bytes())
+    }
+}
+```
+
+The `flow.rs:run_receive` step 8 currently calls `envelope.material.as_generic_secret_bytes()?`.
+That call site can remain unchanged if `as_generic_secret_bytes` is updated to delegate to
+`as_bytes()` — no change required in `flow.rs` for basic typed-material receive.
+
+### 1.4 Debug Redaction
+
+The manual `Debug` impl in `payload.rs` must be extended to redact bytes for all variants:
+
+```rust
+impl std::fmt::Debug for Material {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Material::GenericSecret { bytes } =>
+                write!(f, "GenericSecret([REDACTED {} bytes])", bytes.len()),
+            Material::X509Cert { bytes } =>
+                write!(f, "X509Cert([REDACTED {} bytes])", bytes.len()),
+            Material::PgpKey { bytes } =>
+                write!(f, "PgpKey([REDACTED {} bytes])", bytes.len()),
+            Material::SshKey { bytes } =>
+                write!(f, "SshKey([REDACTED {} bytes])", bytes.len()),
+        }
+    }
+}
+```
+
+The leak-scan test `tests/debug_leak_scan.rs` enumerates keyed structs; it must be extended
+to cover all four variants.
+
+### 1.5 Error Handling for Malformed Material
+
+When the sender sends `X509Cert` bytes that are malformed DER, the receiver should NOT
+validate at receive time — the protocol transports bytes, not parsed objects. Any validation
+is an application-layer concern on top of the decrypted bytes. Do not add a new error variant
+for malformed cert/key data.
+
+The only new error scenario is if a sender using a future protocol extension sends an unknown
+variant name (e.g., `"type": "hardware_token"`) to a v1.1 receiver. `serde` with
+`deny_unknown_fields` would reject it; without that attribute, it falls through to
+`SignatureCanonicalMismatch` because `Envelope::from_jcs_bytes` will fail to parse. This is
+the correct behavior — unknown variants are treated as a signature-class error (exit 3).
+
+### 1.6 JCS Fixture Requirements
+
+Each new variant needs a committed JCS fixture for byte-level determinism enforcement.
+Follow the existing pattern: one `.bin` fixture per signable struct containing the canonical
+bytes for a test-vector `Envelope`. The existing `tests/fixtures/outer_record_signable.bin`
+and `tests/fixtures/receipt_signable.bin` are the model.
+
+New fixtures needed (one per new Material variant):
+
+```
+tests/fixtures/envelope_x509cert.bin   — JCS bytes of Envelope { material: X509Cert { bytes: [0xde, 0xad, 0xbe, 0xef] }, ... }
+tests/fixtures/envelope_pgpkey.bin
+tests/fixtures/envelope_sshkey.bin
+```
+
+A property test (extend the existing `envelope_jcs_round_trip_is_byte_identical` test) should
+assert byte-for-byte identity for each variant.
+
+### 1.7 Protocol Version Impact
+
+Adding fields to existing variants = protocol break. Adding new variant names = wire-additive
+(old receivers see an unknown tag and reject — correct behavior). Because the new variants
+(`X509Cert`, `PgpKey`, `SshKey`) are already reserved in the serde enum definition (they
+serialize as `{"type":"x509_cert"}` with no fields currently), adding a `bytes` field to them
+IS a breaking change to the wire format for senders/receivers running different versions.
+
+Resolution: `protocol_version` stays at `1`. The SPEC.md note "Reserved variants will produce
+`Error::NotImplemented`" is updated to define the field shape. Old receivers (v1.0) that
+receive a typed envelope will fail at `Envelope::from_jcs_bytes` (deserialization error →
+`SignatureCanonicalMismatch`, exit 3). This is acceptable behavior and documented in SPEC.md.
+A true protocol bump is only needed when changing existing signed-field semantics.
+
+### 1.8 Build Order: Phase 6 Before 7
+
+Phase 6 (`X509Cert`) establishes the pattern:
+
+1. Add `{ bytes: Vec<u8> }` to `X509Cert` variant in `payload.rs`
+2. Update `Debug` impl and `as_bytes()` accessor
+3. Add `material_file` type hint for X.509 in `cli.rs` (optional — the CLI is bytes-in, bytes-out)
+4. Update `material_type_string` in `flow.rs` to return descriptive strings
+5. Commit new JCS fixture
+6. Extend property tests
+
+Phase 7 (`PgpKey` + `SshKey`) repeats the same steps for two variants. The work is mechanical
+once the X.509 pattern is established. Phase 7 does not depend on Phase 6 being complete to
+start — but starting Phase 7 before Phase 6 is fully tested wastes effort if the fixture
+approach needs adjustment. Recommended: complete Phase 6 end-to-end (including fixture commit
+and test pass) before starting Phase 7.
+
+**Phase 8 (`--pin`/`--burn`) does NOT require typed materials.** It can be layered on
+`GenericSecret` alone. Phase ordering: 5 → 6 → 7 → 8 is natural, but 5 → 8 is also valid
+if pin/burn is higher priority than typed payloads.
 
 ---
 
-## Anti-Patterns to Avoid
+## 2. `--pin` and `--burn` Flags (Phase 8)
 
-### Anti-Pattern 1: "Just take a dependency on cclink"
+### 2.1 Where These Modes Come From
 
-**What people do:** `cclink = "1.3"` in Cargo.toml, `use cclink::crypto::*;`
-**Why it's wrong:** cclink is mothballed (per `.planning/PROJECT.md`). It will not receive security fixes. Any cipherpost bug reproducible in cclink is your problem to fix in both places, and you can't fix it upstream because upstream is unmaintained. Also, `cclink`'s record schema carries Claude Code session debris (the old `hostname`/`project` fields, `session/` module) that cipherpost shouldn't inherit into its type system.
-**Do this instead:** Fork-and-diverge. Physically copy the four modules with clear provenance comments (`// Vendored from cclink@<commit-sha> on <date>. Do not edit in-place without documenting divergence.`).
+cclink's `src/crypto/mod.rs` has `pin_*` functions (referenced in the v1.0 ARCHITECTURE.md).
+cclink uses PIN as a second factor: the sender derives a PIN-keyed encryption layer on top of
+the age ciphertext, and the receiver must supply the PIN to unwrap it. The HKDF info strings
+in cclink use `cclink-pin-v1`; cipherpost has already claimed the domain-separated namespace
+`cipherpost/v1/<context>` for all HKDF calls. The fork-and-diverge approach applies: copy the
+pin KDF logic from cclink, substitute the HKDF info string prefix.
 
-### Anti-Pattern 2: Putting acceptance logic in `cli.rs`
+`--burn` is a state-ledger / protocol-semantic feature, not a crypto primitive. It has no
+cclink equivalent — it is a cipherpost-specific addition.
 
-**What people do:** The `cipherpost receive` clap handler prompts for acceptance before calling `flow::receive`.
-**Why it's wrong:** Makes the policy untestable without spawning a subprocess. The acceptance gate is a security boundary — it needs property tests and unit tests.
-**Do this instead:** `flow::receive` takes a `&dyn Prompter` (or an enum `AcceptancePolicy { Interactive, AutoAccept, AutoDecline }`). The CLI constructs `Interactive` for real use; tests construct `AutoAccept` or `AutoDecline`.
+### 2.2 `--pin` Flow Design
 
-### Anti-Pattern 3: Publishing receipts under the sender's key
+**Where the PIN goes:** The PIN is a second recipient factor layered on top of age encryption.
+It is NOT a post-decrypt gate (that would not improve security — the material would already be
+in RAM). Instead:
 
-**What people do:** "The receipt is about the sender's share, so it belongs with the sender's record." → publish receipt as a TXT under sender's PKARR key.
-**Why it's wrong:** The sender doesn't have the recipient's private key, so pkarr refuses to sign. Even if you tunnel it, you've just invented a side-channel that requires the recipient to hand the sender a signed blob, which is exactly the operator role the PRD forbids.
-**Do this instead:** Receipt lives under the **recipient's** PKARR key at label `_cprcpt-<share_ref>`. Sender fetches by resolving the recipient's pubkey (which they know from the `--share` flag). §4.4 above.
+1. **Sender side (`run_send`):** After age-encrypts the JCS Envelope bytes, the sender
+   applies a PIN-keyed symmetric wrap using HKDF-derived key from the PIN:
+   ```
+   pin_key = HKDF(salt=random_16_bytes, ikm=pin_bytes, info="cipherpost/v1/pin_wrap", len=32)
+   pin_ciphertext = XChaCha20Poly1305(key=pin_key, plaintext=age_ciphertext, nonce=random_24_bytes)
+   blob = base64(salt || nonce || pin_ciphertext)
+   ```
+   The `OuterRecord.blob` then contains the PIN-wrapped ciphertext rather than the raw age
+   ciphertext. `pin_required: true` must be signaled to the receiver.
 
-### Anti-Pattern 4: Material reveal before acceptance
+2. **Receiver side (`run_receive`):** Before age-decrypt (step 6), the receiver detects
+   `pin_required = true`, prompts for the PIN (via `Prompter` trait — add a
+   `prompt_for_pin()` method or a separate `PinPrompter` trait), unwraps the outer layer,
+   then proceeds to age-decrypt the inner ciphertext.
 
-**What people do:** Decrypt, print to stdout, then prompt "did you want that?"
-**Why it's wrong:** The material is on screen / in `less` scrollback / in terminal emulator history before the user decided. The acceptance step becomes cosmetic.
-**Do this instead:** `flow/receive.rs` decrypts the Envelope, displays **only** the sender fingerprint + purpose + expiry, and holds the decrypted `Material` in a `Zeroizing<Vec<u8>>` until after the prompt returns `Yes`. On `No`, drop it.
+3. **`Envelope` or `OuterRecord`?** The `pin_required` signal must appear in `OuterRecord`
+   (outer-signed, pre-decrypt readable) so the receiver knows to prompt for a PIN BEFORE
+   attempting age-decrypt. Putting it only in `Envelope` (inner, post-decrypt) would create
+   a circular dependency: the receiver needs to decrypt to learn the PIN is required, but needs
+   the PIN to decrypt. Therefore: add `pin_required: bool` to both `OuterRecord` and
+   `OuterRecordSignable`. Default `false` (serde `default`).
 
-### Anti-Pattern 5: Losing the canonical-JSON invariant
+4. **Protocol version impact:** Adding a new field with `#[serde(default)]` to
+   `OuterRecordSignable` is additive for deserialization (old senders omit the field, old
+   receivers deserialize it as `false`). However, because `OuterRecordSignable` is the
+   signed struct, any new field changes the JCS bytes — a v1.1 sender with `pin_required:
+   false` produces different JCS bytes than a v1.0 sender (which omitted the field). This
+   is a wire-format-breaking change. Resolution: bump `protocol_version` to 2 when shipping
+   `--pin` support, or add `pin_required` as a field only when `true` via
+   `#[serde(skip_serializing_if = "is_false")]`. The skip-if-false approach preserves
+   byte-identity with v1.0 for non-pin shares. This is the recommended approach.
 
-**What people do:** Refactor `OuterRecordSignable` to derive `Serialize` with a `#[serde(rename_all = "snake_case")]` or reorder fields "for readability."
-**Why it's wrong:** Signatures are over the *bytes* of the JSON. Any field reordering or rename invalidates every previously issued signature. cclink enforces alphabetical field declaration order manually; a future Rust version or a well-meaning format pass could silently break this.
-**Do this instead:** Add a `#[test] fn canonical_ordering_is_stable()` that hardcodes the expected field order and fails if `serde_json::to_string` of a known `OuterRecordSignable` deviates by a single byte. Same for `EnvelopeSignable` and `ReceiptSignable`.
+5. **`pin_salt` and `pin_nonce`:** The PIN KDF salt and AEAD nonce used for the pin-wrap layer
+   must be stored so the receiver can unwrap. Options:
+   - Store in `OuterRecord` as `pin_salt: Option<String>` and `pin_nonce: Option<String>` (with
+     `skip_serializing_if = "Option::is_none"`).
+   - Prepend salt+nonce to the blob (self-contained).
+   
+   Self-contained blob is simpler (no new `OuterRecord` fields for salt/nonce) and avoids
+   expanding the wire budget. Recommended: `blob = base64(16-byte-salt || 24-byte-nonce ||
+   pin_ciphertext)` when `pin_required = true`. The receiver strips the prefix before passing
+   to the pin_unwrap function.
+
+6. **Non-interactive PIN:** The PIN is a second factor on top of the passphrase. It follows
+   the same contract as the passphrase: argv-inline rejected; env var `CIPHERPOST_PIN` or
+   `--pin-file <path>` or `--pin-fd <fd>` or TTY prompt. This is consistent with the
+   passphrase contract in SPEC.md §7. The `resolve_passphrase` function in `identity.rs`
+   can be reused with a different env var name and confirmation behavior.
+
+### 2.3 `--burn` Flow Design
+
+**What burn means:** A share marked `burn_after_read = true` is consumed on first successful
+acceptance. The sender trusts the recipient will not re-receive (and the receipt proves they
+received it once). The mechanism is ledger + wire-flag based, not cryptographic deletion
+(DHT data cannot be actively deleted).
+
+**Wire representation:** Add `burn_after_read: bool` to `Envelope` (inner-signed, post-decrypt).
+This is correct because:
+- The burn semantic is about the recipient's local behavior after decrypt, not something the
+  transport layer needs to know.
+- Putting it in `Envelope` (not `OuterRecord`) means DHT observers cannot see that a share is
+  burn-marked — consistent with "ciphertext only on the wire."
+- The `#[serde(skip_serializing_if = "is_false")]` pattern keeps JCS bytes identical to v1.0
+  for non-burn shares.
+
+**Receiver behavior change:** In `run_receive`, after step 12 (sentinel + ledger write), if
+`envelope.burn_after_read == true`:
+- Mark the sentinel file with a `burned` attribute (or write a separate `burned/<share_ref>`
+  file in the state dir).
+- The state-ledger entry gets `burned_at: Some(iso)`.
+- On a second `cipherpost receive` invocation for the same `share_ref`, the sentinel check
+  (step 1) would normally short-circuit with "already accepted." For burned shares, the
+  message should instead say "already accepted and burned."
+- No cryptographic erasure of the DHT record is possible (DHT is append-only with TTL); the
+  burn semantic is purely client-side.
+
+**Interaction with state ledger:** The `check_already_accepted` function returns
+`Some(accepted_at_string)` for previously seen share_refs. For burn-marked shares, the sentinel
+exists and the check still short-circuits. No change to the idempotency mechanism is needed;
+the `burned_at` field in the ledger is informational.
+
+**Does `--burn` require typed payloads?** No. It can ship on `GenericSecret` alone. The
+Envelope field `burn_after_read` is independent of `material`. Recommended: ship Phase 8
+against `GenericSecret` (or all implemented variants at that point), not dependent on Phase 6/7.
+
+### 2.4 Files Modified for `--pin` and `--burn`
+
+- **new: `src/pin.rs`** — PIN KDF functions: `pin_wrap(plaintext, pin_bytes) -> (salt, nonce, ciphertext)`
+  and `pin_unwrap(blob_prefix, pin_bytes) -> Result<Vec<u8>>`. HKDF info: `cipherpost/v1/pin_wrap`.
+  This isolates the PIN crypto from the age crypto layer in `crypto.rs`.
+
+- **modified: `src/payload.rs`** — Add `burn_after_read: bool` field to `Envelope` with
+  `#[serde(default, skip_serializing_if = "std::ops::Not::not")]`.
+
+- **modified: `src/record.rs`** — Add `pin_required: bool` to both `OuterRecord` and
+  `OuterRecordSignable` with `#[serde(default, skip_serializing_if = "std::ops::Not::not")]`.
+
+- **modified: `src/flow.rs`** — `run_send`: branch on `--pin` flag to call `pin.rs` functions
+  and set `pin_required = true` in the record. `run_receive`: detect `record.pin_required`,
+  prompt for PIN via Prompter, call `pin_unwrap` before age-decrypt. Add `burn_after_read`
+  check in step 12.
+
+- **modified: `src/cli.rs`** — Add `pin_file: Option<PathBuf>`, `pin_fd: Option<i32>`,
+  `burn: bool` to `Send` subcommand struct. Add `pin_file: Option<PathBuf>`, `pin_fd:
+  Option<i32>` to `Receive` subcommand struct.
+
+- **modified: `src/main.rs`** — Thread `pin_file`, `pin_fd`, `burn` through dispatch for
+  `Send` and `Receive`.
+
+- **modified: `src/flow.rs` (Prompter trait)** — Add `prompt_for_pin` method to `Prompter`
+  trait, or create a separate `PinPrompter` trait. `TtyPrompter` implements both.
 
 ---
 
-## Integration Points
+## 3. Non-Interactive Passphrase UX (Phase 5)
 
-### External crates
+### 3.1 Current State
 
-| Crate | Integration Pattern | Notes |
-|-------|---------------------|-------|
-| `pkarr` 5.0.3 | `ClientBlocking`, `SignedPacket::builder().txt(label, txt, dns_ttl).sign(&keypair)` | Pinned. Requires `ed25519-dalek =3.0.0-pre.5`. Do not upgrade until pkarr releases on a stable ed25519-dalek 3.x. |
-| `age` 0.11 | `Encryptor::with_recipients` for single X25519 recipient; `Decryptor::new` + `decrypt(iter(identity))` | Do not mix curve25519-dalek types across age + pkarr boundary — always go through raw `[u8;32]`. cclink comments this extensively; preserve the comments. |
-| `ed25519-dalek` =3.0.0-pre.5 | Only for `SigningKey::from_bytes` (for X25519 secret derivation) and `Signature::from_bytes` (for verify_record) | Pre-release version. Pinned. Any version bump breaks signature compatibility — test exhaustively before touching. |
-| `argon2` 0.5 | `Argon2::new(Argon2id, V0x13, Params::new(65536, 3, 1, Some(32)))` | Params go in CIPHPOSK envelope header for forward compat. |
-| `hkdf` 0.12 + `sha2` 0.10 | HKDF-SHA256 with domain-separated `info` strings | Info strings: `cipherpost-key-v1` (key envelope), `cipherpost-pin-v1` (reserved for deferred --pin). |
-| `zeroize` 1 | Wrap all secrets: `Zeroizing<[u8;32]>`, `Zeroizing<String>` for passphrases and PINs | Any Material byte buffer post-decrypt should be Zeroizing. |
-| `clap` 4.5 | derive macros | Mirror cclink's pattern: top-level `Cli` struct, `Commands` subcommand enum. |
-| `dialoguer` 0.12 | `Confirm::new().default(false).interact()` | Hide behind a `Prompter` trait so tests don't spawn subprocesses. |
-| `backon` 1.6 | `ExponentialBuilder::default().with_min_delay(2s).with_max_delay(8s).with_total_delay(30s)` | Apply to `resolve_record` (and new `resolve_receipts`). Skip retry on `CipherpostError::RecordNotFound`. |
-| `base64` 0.22 | `STANDARD` engine | Used for blob, signatures, pin_salt analogue, and receipt nonce. |
-| `serde_json` 1.0 | default (no `preserve_order`) | **Critical.** `preserve_order` would break canonical JSON. Guard with a CI grep if necessary. |
+`identity.rs` already has `resolve_passphrase(inline: Option<&str>, env_var: Option<&str>,
+file: Option<&Path>, fd: Option<i32>, confirm_on_tty: bool) -> Result<Zeroizing<String>>`.
 
-### Internal boundaries
+`identity generate` and `identity show` in `main.rs` already pass all four sources through.
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `flow/` ↔ `transport/` | `&dyn Transport` trait (new in cipherpost vs. cclink) | Only seam that distinguishes cipherpost from cclink architecturally. Enables MockTransport tests. |
-| `flow/` ↔ `payload/` | Function calls: `Envelope::build`, `Envelope::decode`, `canonical_envelope_bytes` | No shared state. |
-| `flow/` ↔ `record/` | Struct construction + `sign_record` / `verify_record` | `record/` never reaches into payload semantics; it only sees opaque `blob` base64. |
-| `flow/` ↔ `receipt/` | Struct construction + `sign` / `verify` + `publish_receipt`/`resolve_all_txt` on transport | `receipt/` does not depend on `payload/` directly — only on the share_ref string. |
-| `crypto/` ↔ everything | Pure functions, Vec<u8>/[u8;32] boundaries | Deliberately has zero dependency on `pkarr`'s types at the API boundary (takes `&pkarr::Keypair` as input but exposes raw bytes out). Keep it that way. |
-| `identity/` ↔ filesystem | `~/.cipherpost/secret_key` (CIPHPOSK-wrapped seed) | 0600 permissions enforced in code, not relied on via umask (per SEC-02 in cclink). |
+`send` and `receive` in `main.rs` today call:
+```rust
+cipherpost::identity::resolve_passphrase(None, Some("CIPHERPOST_PASSPHRASE"), None, None, false)
+```
+
+The `cli.rs` `Send` and `Receive` subcommand structs have no `passphrase_file` or
+`passphrase_fd` fields.
+
+### 3.2 Changes Required
+
+**Modified: `src/cli.rs`** — Add to both `Send` and `Receive` subcommand structs:
+```rust
+#[arg(long, value_name = "PATH")]
+passphrase_file: Option<std::path::PathBuf>,
+#[arg(long, value_name = "N")]
+passphrase_fd: Option<i32>,
+/// REJECTED — see identity generate --help
+#[arg(long, value_name = "VALUE", hide = true)]
+passphrase: Option<String>,
+```
+
+**Modified: `src/main.rs`** — In `Command::Send` and `Command::Receive` dispatch branches,
+destructure the new fields and thread through `resolve_passphrase`:
+```rust
+// Was:
+let pw = cipherpost::identity::resolve_passphrase(None, Some("CIPHERPOST_PASSPHRASE"), None, None, false)?;
+// Becomes:
+let pw = cipherpost::identity::resolve_passphrase(
+    passphrase.as_deref(),
+    Some("CIPHERPOST_PASSPHRASE"),
+    passphrase_file.as_deref(),
+    passphrase_fd,
+    false,
+)?;
+```
+
+**No changes to `flow.rs`** — `run_send` and `run_receive` receive an already-unlocked
+`Identity`; passphrase resolution happens before `flow.rs` is entered.
+
+**No changes to `identity.rs`** — `resolve_passphrase` already supports all four sources.
+
+### 3.3 Precedence Order
+
+The existing `resolve_passphrase` function implements the SPEC §7.1 priority: argv-inline
+(rejected with `PassphraseInvalidInput`) > env var > file > fd > TTY prompt. This precedence
+is already tested for `identity generate/show`; the same tests cover `send`/`receive` once
+the wiring is in place.
+
+### 3.4 Test Serialization
+
+Any test that drives `send` or `receive` via `CIPHERPOST_PASSPHRASE` env already uses
+`#[serial]`. No new `serial_test` requirements — the file/fd paths don't mutate global
+process state the way env var tests do.
+
+### 3.5 Architectural Assessment
+
+This is purely mechanical plumbing. There is no architectural question here — the seam
+(`resolve_passphrase`) was designed for this from the start. The only risk is forgetting to
+add the `passphrase` (hidden, rejected) field to `Send`/`Receive`, which would allow argv
+inline to silently succeed in those subcommands even though `identity generate/show` reject it.
+The hidden-field + runtime-rejection pattern must be replicated exactly.
+
+---
+
+## 4. Real-DHT Test Harness (Phase 9)
+
+### 4.1 Test Architecture Recommendation
+
+**Recommended structure:** `tests/real_dht_e2e.rs` behind the `real-dht` feature flag:
+
+```toml
+# Cargo.toml
+[features]
+mock = []        # existing
+real-dht = []    # new — gates tests/real_dht_e2e.rs
+```
+
+Do NOT use a separate workspace test crate — the single-crate structure is locked and there
+is no second consumer to justify a workspace split. Do NOT use `std::process::Command` binary
+spawning — it requires a built binary in `target/` and is fragile in CI. Use the library API
+(`run_send`, `run_receive`) with `DhtTransport` directly.
+
+```rust
+// tests/real_dht_e2e.rs
+
+#![cfg(feature = "real-dht")]
+
+#[test]
+#[ignore]  // run explicitly: cargo test --features real-dht -- real_dht --ignored
+fn real_dht_cross_identity_round_trip() {
+    // Two random keypairs (not fixed-seed — we're testing the live DHT)
+    let sender_kp = pkarr::Keypair::random();
+    let recipient_kp = pkarr::Keypair::random();
+    // ...
+    let transport = cipherpost::transport::DhtTransport::with_default_timeout().unwrap();
+    // run_send → run_receive → verify receipt
+}
+```
+
+`#[ignore]` is correct here: it prevents the test from running in `cargo test --features
+real-dht` by default (requires `-- --ignored` flag). This matches the pattern used for
+`tests/spec_test_vectors.rs` (already `#[ignore]`).
+
+### 4.2 Propagation Latency Assertions
+
+The Mainline DHT has a p50 lookup latency of ~1 minute with a long tail. The test MUST:
+- Retry resolve with a backoff loop rather than a fixed sleep.
+- Set a maximum retry duration (e.g., 120 seconds) before failing.
+- Log progress to stderr (not panic on partial progress) — use `eprintln!` for diagnostics.
+- Fail the test if the share is not resolvable within the timeout. Do not downgrade to a
+  warning — a timed-out real-DHT test is a real failure, not a flake to ignore.
+
+The backoff can reuse `DhtTransport::with_default_timeout()` (30 seconds per request) with
+multiple attempts. The test should not hard-code `thread::sleep(Duration::from_secs(60))` —
+that is fragile and wastes CI time on fast DHT resolution.
+
+### 4.3 Concurrent-Racer PKARR `cas` Test
+
+The `publish_receipt` uses resolve-merge-republish with `cas` (compare-and-swap). The
+concurrent-racer test validates that two concurrent receipt publications on the same recipient
+key do not corrupt each other.
+
+**Where it lives:** The concurrent-racer test does NOT require a real DHT. It can be a
+`MockTransport` test that spawns two threads, each calling `transport.publish_receipt()` for
+different `share_ref_hex` values on the same keypair, and asserts that after both complete,
+both receipts are resolvable.
+
+```rust
+// tests/concurrent_receipt_racer.rs — NO feature flag needed; uses MockTransport
+// Already gated by `#[cfg(feature = "mock")]` via MockTransport dependency
+
+#[test]
+#[cfg(feature = "mock")]
+fn concurrent_receipt_publish_both_survive() {
+    use std::sync::Arc;
+    let transport = Arc::new(cipherpost::transport::MockTransport::new());
+    let kp = pkarr::Keypair::random();
+    let t1 = { let t = Arc::clone(&transport); let k = kp.clone(); /* publish receipt A */ };
+    let t2 = { let t = Arc::clone(&transport); let k = kp.clone(); /* publish receipt B */ };
+    t1.join().unwrap(); t2.join().unwrap();
+    let receipts = transport.resolve_all_cprcpt(&kp.public_key().to_z32()).unwrap();
+    assert_eq!(receipts.len(), 2);
+}
+```
+
+This test does NOT belong in `tests/real_dht_e2e.rs`. Keep the concurrent-racer test in a
+separate file that runs under `cargo test --features mock` in CI, not gated behind `real-dht`.
+
+**Summary:** Two separate files, two separate concerns:
+- `tests/concurrent_receipt_racer.rs` — `#[cfg(feature = "mock")]`, runs in CI
+- `tests/real_dht_e2e.rs` — `#[cfg(feature = "real-dht")]` + `#[ignore]`, manual only
+
+---
+
+## 5. Traceability-Drift Elimination (Phase 5)
+
+### 5.1 The Problem
+
+REQUIREMENTS.md has two sources of truth: body checkboxes (the actual requirements text with
+`- [ ]` / `- [x]`) and a traceability table (rows of `| REQ-ID | Description | Status |
+Phase |`). In v1.0 these drifted to 29 out-of-sync rows. The table rows retained "Pending"
+while the body checkboxes were checked.
+
+### 5.2 Recommended Option: Drop the Table, Body Checkboxes Are Canonical
+
+Option A (drop the table) is the correct choice for a solo-builder GSD workflow.
+
+Rationale:
+- The body checkboxes are what the developer updates during execution. The table is a
+  secondary artifact that requires a manual sync step which is reliably skipped under
+  time pressure.
+- Phase `VERIFICATION.md` files already own the cross-reference role: each VERIFICATION.md
+  maps acceptance criteria to test names and confirmed-pass status. The table in
+  REQUIREMENTS.md is redundant with that.
+- Option B (generate from checkboxes at commit time) adds CI complexity (a script that parses
+  REQUIREMENTS.md, extracts checkboxes, rebuilds the table, and fails if the table is stale).
+  That script would need to understand the GSD checkbox format and the table format — fragile.
+- Option C (template/macro) requires a custom preprocessing step that is more complex to set
+  up than the value it adds.
+
+**Concrete change:** In REQUIREMENTS.md for v1.1, omit the traceability table section
+entirely. Add a comment at the top: `<!-- Traceability: body checkboxes are canonical.
+Phase verification reports at .planning/milestones/v1.1-*/VERIFICATION.md. -->` The
+roadmapper and plan-phase agent should not attempt to maintain a parallel table.
+
+This is compatible with the GSD `.planning/` workflow: `ROADMAP.md` maps requirements to
+phases via the REQ-ID references in the phase description text, not via a separate table.
+`VERIFICATION.md` files are the per-phase audit trail.
+
+---
+
+## 6. DHT Label Audit (Phase 5)
+
+### 6.1 Current Labels
+
+```
+_cipherpost              — outgoing share (OuterRecord JSON TXT under sender's PKARR key)
+_cprcpt-<share_ref_hex>  — receipt (Receipt JSON TXT under recipient's PKARR key)
+```
+
+### 6.2 Audit Findings
+
+The current labels are adequate and should be kept without change. Rationale:
+
+**`_cipherpost`:**
+- Clearly branded, no ambiguity about what DNS namespace owns it.
+- Alternative `_cpshare` is shorter but loses the branding clarity. The label appears only
+  in code (`DHT_LABEL_OUTER` constant in `lib.rs`) and in SPEC.md — it is not user-facing.
+- Changing it requires updating `lib.rs`, `transport.rs`, `SPEC.md`, any documentation that
+  references the label, AND invalidates all existing shares on the DHT (old receivers resolve
+  under `_cipherpost`; new publishers writing `_cpshare` would be invisible to old receivers).
+  This is a hard protocol break requiring a version bump.
+
+**`_cprcpt-<share_ref_hex>`:**
+- The prefix is short, branded, and structurally distinct from `_cipherpost`.
+- The label encodes the `share_ref_hex` as a suffix, which is the correct design (allows
+  `resolve_all_cprcpt` to enumerate by prefix scan).
+- Alternative `_cprec-` saves two characters with no other benefit.
+- Same protocol-break concern as above.
+
+**Recommendation:** Keep `_cipherpost` and `_cprcpt-<share_ref_hex>` unchanged. Document in
+SPEC.md that these are stable wire identifiers that will not change in v1.x. The label audit
+deliverable for Phase 5 is this written confirmation that no change is warranted, not an
+actual label change.
+
+---
+
+## 7. Integration Points by File (Roadmapper Reference)
+
+| Phase | File | Status | Change |
+|-------|------|--------|--------|
+| 5 | `src/cli.rs` | modified | Add `passphrase_file`, `passphrase_fd`, hidden `passphrase` to `Send` and `Receive` |
+| 5 | `src/main.rs` | modified | Thread new passphrase fields through `resolve_passphrase` calls in Send/Receive dispatch |
+| 5 | `SPEC.md` | modified | Bless `serde_canonical_json 1.0.0`, `pkarr 5.0.4`, 550 B budget; confirm DHT labels stable |
+| 5 | `.planning/REQUIREMENTS.md` | new | Author fresh v1.1 requirements without traceability table |
+| 6 | `src/payload.rs` | modified | Add `{ bytes: Vec<u8> }` field to `X509Cert` variant; update `Debug`, `as_bytes()` |
+| 6 | `src/flow.rs` | modified | Update `material_type_string` for X.509 banner label |
+| 6 | `tests/fixtures/envelope_x509cert.bin` | new | JCS fixture for X.509 envelope |
+| 6 | `tests/` (extend existing) | modified | Property test covering X509Cert round-trip determinism |
+| 7 | `src/payload.rs` | modified | Add `{ bytes: Vec<u8> }` to `PgpKey` and `SshKey`; extend `Debug` |
+| 7 | `tests/fixtures/envelope_pgpkey.bin` | new | JCS fixture |
+| 7 | `tests/fixtures/envelope_sshkey.bin` | new | JCS fixture |
+| 8 | `src/pin.rs` | new | `pin_wrap`, `pin_unwrap`; HKDF info `cipherpost/v1/pin_wrap` |
+| 8 | `src/payload.rs` | modified | Add `burn_after_read: bool` to `Envelope` (skip_serializing_if false) |
+| 8 | `src/record.rs` | modified | Add `pin_required: bool` to `OuterRecord` + `OuterRecordSignable` (skip_serializing_if false) |
+| 8 | `src/flow.rs` | modified | `run_send`: pin-wrap branch; `run_receive`: pin-unwrap before age-decrypt; burn-after-read in step 12 |
+| 8 | `src/cli.rs` | modified | Add `pin_file`, `pin_fd`, `burn` to `Send`; `pin_file`, `pin_fd` to `Receive` |
+| 8 | `src/main.rs` | modified | Thread pin/burn flags through dispatch |
+| 9 | `tests/real_dht_e2e.rs` | new | `#[cfg(feature = "real-dht")]` + `#[ignore]`; cross-identity round trip |
+| 9 | `tests/concurrent_receipt_racer.rs` | new | `#[cfg(feature = "mock")]`; concurrent publish_receipt race |
+| 9 | `Cargo.toml` | modified | Add `real-dht = []` feature |
+
+---
+
+## 8. Recommended Build Order
+
+```
+Phase 5 (automation E2E)
+  └── Mechanical — no new modules. Unblocks scripted CI recipes.
+      Dependency: none (independent of Phases 6-9)
+
+Phase 6 (X509Cert)
+  └── Establishes typed-material pattern.
+      Dependency: Phase 5 (clean baseline before pattern work)
+
+Phase 7 (PgpKey + SshKey)
+  └── Applies Phase 6 pattern twice.
+      Dependency: Phase 6 pattern established and fixtures committed
+
+Phase 8 (--pin and --burn)
+  └── New src/pin.rs; Envelope + OuterRecord field additions.
+      Dependency: Can layer on GenericSecret alone — does NOT require Phases 6 or 7.
+      Can run concurrently with Phases 6+7 if multiple builders; otherwise after Phase 7.
+
+Phase 9 (Real-DHT + racer test)
+  └── concurrent_receipt_racer.rs: depends only on MockTransport (available now)
+      real_dht_e2e.rs: depends on a working binary — any phase can precede it
+      Recommended: run Phase 9 last as a release-gate after all v1.1 features ship
+```
+
+**Parallelism note for solo builder:** The concurrent-racer test (`tests/concurrent_receipt_racer.rs`)
+can be written in Phase 5 or any other phase since it uses only existing MockTransport
+infrastructure. There is no reason to defer it to Phase 9 except for organizational
+convenience. The Phase 9 entry gate is the `real_dht_e2e.rs` test, which requires a
+functionally complete binary.
+
+---
+
+## 9. Load-Bearing Lock-In Checklist (Per v1.1 Change)
+
+Every change in v1.1 must pass this checklist before merge:
+
+| Lock-In | Phase 5 | Phase 6 | Phase 7 | Phase 8 | Phase 9 |
+|---------|---------|---------|---------|---------|---------|
+| JCS via serde_canonical_json, not raw serde_json | n/a | new fixtures commit | new fixtures commit | new Envelope + OuterRecord fields use skip_serializing_if | n/a |
+| HKDF info strings `cipherpost/v1/<context>` | n/a | n/a | n/a | pin_wrap info string added to enumeration test | n/a |
+| No `#[derive(Debug)]` on secret holders | n/a | extend Debug for new variants | extend Debug | PinKey holder uses manual Debug | n/a |
+| Error-oracle: all sig variants share identical Display | n/a | verify NotImplemented not in error surface | same | new error variants (if any) must not distinguish sig paths | n/a |
+| `chacha20poly1305` only via `age` | n/a | n/a | n/a | pin_wrap uses XChaCha20Poly1305 — must go through `age` primitives or the `chacha20poly1305` crate? Clarify before Phase 8 starts. | n/a |
+| No argv-inline passphrase | passphrase hidden field added to Send/Receive | n/a | n/a | pin has same contract; hidden pin field in Send/Receive | n/a |
+| serial_test on env-mutating tests | new env tests (passphrase_file tests may use temp files, not env) | n/a | n/a | CIPHERPOST_PIN env var tests need `#[serial]` | n/a |
+| Outer sig before decrypt before inner sig | n/a | n/a | n/a | pin-unwrap AFTER outer sig verify, BEFORE age-decrypt (insert at step 6 in run_receive) | n/a |
+| No async runtime at cipherpost layer | n/a | n/a | n/a | n/a | real_dht_e2e uses DhtTransport (blocking) |
+
+**Phase 8 open question flagged:** The `chacha20poly1305` usage in `pin_wrap` must go through
+`age` primitives if possible, or explicitly justify a direct crate call in the code comments.
+The existing constraint is "no direct `chacha20poly1305` calls anywhere in `src/`." If the
+PIN wrap layer uses age's streaming interface with a synthetic age stanza, the constraint is
+satisfied. If it requires direct AEAD calls, the constraint must be revisited and the CLAUDE.md
+updated with the rationale before implementation.
 
 ---
 
 ## Sources
 
-- **cclink source (primary):** https://github.com/johnzilla/cclink — direct inspection of `src/` on default branch (2026-04-20). Files read: `Cargo.toml`, `src/lib.rs`, `src/main.rs`, `src/cli.rs`, `src/error.rs`, `src/crypto/mod.rs` (full), `src/record/mod.rs` (full header + structs + sign/verify), `src/transport/mod.rs` (full header + DhtClient impl), `src/keys/store.rs` (partial, enough for identity design), `src/session/mod.rs` (partial, confirmed Claude-specific and not carried forward), `src/commands/publish.rs` and `src/commands/pickup.rs` (partial, enough to understand flow), `tests/integration_round_trip.rs` and `tests/plaintext_leak.rs` (header + test patterns).
-- **Cipherpost PRD:** `/home/john/vault/projects/github.com/cipherpost/cipherpost-prd.md` — Architecture section, scope anchors, non-goals.
-- **Cipherpost PROJECT.md:** `/home/john/vault/projects/github.com/cipherpost/.planning/PROJECT.md` — Active requirements for the walking skeleton, constraints, Key Decisions.
-- **Repo CLAUDE.md:** `/home/john/vault/projects/github.com/cipherpost/CLAUDE.md` — architectural lineage, hard constraints.
-- **PKARR SignedPacket format / DNS TXT record semantics:** inferred from cclink's `transport/mod.rs` usage (`SignedPacket::builder().txt(label, rdata, dns_ttl).sign(kp)`; `resource_records(label)`; CAS via `resolve_most_recent(&pubkey).map(|p| p.timestamp())`; 1000-byte budget asserted in cclink's own fit-in-budget test). No additional PKARR-specific sources consulted — cclink's code is the reference implementation.
-
-**Confidence:** HIGH. Every major claim here is backed by a specific file + line range in cclink's actual code, not by assumption or training data. The three places labeled as open design choices (envelope-level signing decision in §5 Phase 4, share_ref width at 64 bits, receipt storage under recipient's key) are flagged explicitly with rationale for the skeleton scope and the v1.0 decision point.
-
----
-*Architecture research for: Cipherpost walking skeleton*
-*Researched: 2026-04-20*
+- Direct source inspection: `src/payload.rs`, `src/flow.rs`, `src/cli.rs`, `src/main.rs`,
+  `src/transport.rs`, `src/error.rs` (all read 2026-04-23)
+- `.planning/PROJECT.md` — v1.1 scope, constraints, key decisions
+- `.planning/MILESTONES.md` — v1.0 shipped state and deferred items
+- `CLAUDE.md` — load-bearing lock-in list
+- `SPEC.md` §3–§5 — wire format, send/receive flow steps, passphrase contract
+- `.planning/research/ARCHITECTURE.md` (v1.0) — cclink lineage and original module design
+- Confidence: HIGH — all claims grounded in inspected source files, not inference
