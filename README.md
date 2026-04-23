@@ -94,6 +94,7 @@ Full taxonomy in [SPEC.md § Exit Codes](./SPEC.md#6-exit-codes).
 
 ## Documentation
 
+- [FAQ.md](FAQ.md) for common questions and answers.
 - [`SPEC.md`](./SPEC.md) — Protocol specification (wire format, JCS reference vector, share URI, DHT labels, passphrase contract)
 - [`THREAT-MODEL.md`](./THREAT-MODEL.md) — Adversary model and mitigations (identity compromise, DHT adversaries, acceptance UX, receipt replay, passphrase-prompt MITM)
 - [`SECURITY.md`](./SECURITY.md) — Vulnerability disclosure policy (GitHub Security Advisory, 90-day embargo)
