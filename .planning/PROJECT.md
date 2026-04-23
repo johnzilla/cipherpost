@@ -12,6 +12,22 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 
 **Status after v1.0:** Core value shipped end-to-end and exercised by 86 tests, including a two-identity Phase 3 E2E under MockTransport (SC1–SC4 all pass). Real-DHT cross-identity round trip is documented tech debt (see Context).
 
+## Current Milestone: v1.1 Real v1
+
+**Goal:** Close the PRD's full v1 scope (all payload types + pin/burn modes) and de-risk the protocol over real Mainline DHT — so cipherpost is no longer just a walking skeleton under MockTransport.
+
+**Target features** (phases continue from v1.0's Phase 4 → Phases 5–9):
+
+- **Phase 5 — Non-interactive automation E2E**: `--passphrase-file` / `--passphrase-fd` on `send` + `receive` (aligns with identity subcommands); bless shipped pin versions in SPEC/REQUIREMENTS; DHT label audit; collapse traceability-table to single source of truth so "Pending" drift can't recur. User-visible deliverable: scripted send/receive works without a TTY, proved by CI recipe + integration test.
+- **Phase 6 — Typed Material: `X509Cert`**: pattern-establish one variant end-to-end (parse / validate / render / test).
+- **Phase 7 — Typed Material: `PgpKey` + `SshKey`**: apply the X509 pattern. 64 KB plaintext cap held; `PgpKey` = single key, not keyring.
+- **Phase 8 — `--pin` and `--burn` encryption modes**: on top of now-typed payloads. Research must first survey `/home/john/vault/projects/github.com/cclink` for existing pin/burn logic — fork-and-diverge, don't re-derive.
+- **Phase 9 — Real-DHT E2E + merge-update race**: cross-identity Mainline-DHT round trip as release-acceptance gate; explicit concurrent-racer test for PKARR `cas` merge-republish.
+
+**Design rules held over from v1.0:** coarse granularity (every phase ends at a user-visible capability), 64 KB plaintext cap, error-oracle hygiene, tamper-zero invariants, JCS wire-format lock-in, no async runtime at cipherpost layer.
+
+**Solo-builder hygiene:** zero "Pending" rows in traceability — checkboxes and table stay in sync, or one of them goes away.
+
 ## Requirements
 
 ### Validated
@@ -54,30 +70,28 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 
 ### Active
 
-<!-- Next milestone — defined via `/gsd-new-milestone`. Walking skeleton validates the protocol and flow; the next milestone broadens the CLI surface and payload-type coverage toward the PRD's full v1.0. -->
+<!-- Milestone v1.1 "Real v1" — finish the PRD's full v1 scope and de-risk the protocol on real Mainline DHT. Full requirements with REQ-IDs in .planning/REQUIREMENTS.md; phase structure in .planning/ROADMAP.md. -->
 
-Candidate themes carried forward from Out of Scope:
-- `--pin` and `--burn` encryption modes (skeleton validated self + share; flow breadth is the next step)
-- Remaining payload types — `X509Cert`, `PgpKey`, `SshKey` (schema reserved them in Phase 2; implementation deferred)
-- TUI wizard for interactive use
-- Real-DHT cross-identity round trip smoke test as part of release acceptance
-- Exportable local audit log for compliance evidence
+v1.1 delivers (see `## Current Milestone` above for phase structure):
 
-Lock the next milestone's scope via `/gsd-new-milestone` before treating any of the above as committed.
+- **Non-interactive passphrase flags** on `send` / `receive` — `--passphrase-file`, `--passphrase-fd` (align with identity subcommands; `resolve_passphrase()` already supports all four priorities — this is clap surface + plumbing only)
+- **All three remaining `Material` variants** — `X509Cert`, `PgpKey` (single key, not keyring), `SshKey`
+- **`--pin` and `--burn` encryption modes** on typed payloads
+- **Real-DHT cross-identity round trip** + explicit PKARR `cas` merge-update race test as release-acceptance gate
+- **Pin-version reality-check in docs** (`serde_canonical_json 1.0.0`, `pkarr 5.0.4`, 550 B budget — bless shipped reality, don't re-pin)
+- **DHT label audit** (`_cipherpost`, `_cprcpt-<share_ref>`) + **traceability-table drift eliminated** (checkboxes and table stay in sync or one of them goes away)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
-**Deferred to post-walking-skeleton (candidates for the next milestone — see Active):**
-- `--pin` and `--burn` encryption modes — validated the skeleton, flow breadth is next
-- TUI wizard — skeleton was CLI-only to keep the surface small
-- Additional payload types: X.509 cert + private key, PGP keypair, SSH keypair — schema reserves them, implementation is next
-- Exportable audit log for local compliance evidence
-- Three-real-user launch criterion and independent public review — skeleton was personal validation, not a launch
+**Deferred to v1.2+ (reclassified during v1.1 scope-lock 2026-04-23):**
+- TUI wizard — CLI + non-interactive automation cover primary use cases; TUI waits on demand signal
+- Exportable local audit log for compliance evidence — surface depends on first real enterprise contact, not pre-designed
+- Destruction attestation workflow — originally PRD v1.1, shifted because v1.1 filled up with PRD-closure scope (pin/burn + typed payloads + real-DHT)
+- Three-real-user launch criterion and independent public review — v1.1 is still scope completion, not launch
 
-**Deferred to v1.1+:**
-- Destruction attestation workflow — v1.1
+**Deferred further (PRD milestones):**
 - Multi-recipient broadcast shares — v1.2
 - HSM integration for sender-side generation — v1.3
 
@@ -163,4 +177,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-22 at v1.0 (walking skeleton) milestone close — all 4 phases / 15 plans / 49 requirements shipped and validated; next milestone to be defined via `/gsd-new-milestone`.*
+*Last updated: 2026-04-23 at v1.1 "Real v1" milestone kickoff — scope locked via `/gsd-new-milestone` (5 phases: automation E2E + X509 + PGP/SSH + pin/burn + real-DHT gate). v1.0 archived at `.planning/milestones/v1.0-*`.*

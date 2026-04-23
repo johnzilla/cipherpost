@@ -1,70 +1,61 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: completed
-stopped_at: "Milestone v1.0 fully verified — bookkeeping debt resolved (e89fd41, 08bd78b, a56d1d9), UAT-1 executed + confirm-passphrase fix landed (2e29b74 / 7f7750f), UAT-2 completed + double-UTC cosmetic fix landed (e95c95e). Phases 01 and 03 both now `status: passed` with human_verification records. All 4 phases passed, all 49 requirements satisfied, zero outstanding debt."
-last_updated: "2026-04-23T01:16:09.669Z"
+milestone: v1.1
+milestone_name: Real v1
+status: in_progress
+stopped_at: "Milestone v1.1 Real v1 kickoff — PROJECT.md + STATE.md updated via /gsd-new-milestone. Scope locked (5 phases: non-interactive automation E2E → X509Cert → PgpKey+SshKey → --pin/--burn → real-DHT release-acceptance gate). Awaiting research decision, then REQUIREMENTS.md authoring, then roadmap generation."
+last_updated: "2026-04-23T00:00:00.000Z"
 last_activity: 2026-04-23
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-22 at v1.0 milestone close)
+See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickoff)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** v1.0 Walking Skeleton shipped + archived (2026-04-22). Next milestone TBD via `/gsd-new-milestone`.
+**Current focus:** v1.1 "Real v1" — close the PRD's full v1 scope (all payload types + pin/burn modes) and de-risk the protocol over real Mainline DHT. v1.0 Walking Skeleton archived at `.planning/milestones/v1.0-*`.
 
 ## Current Position
 
-Phase: — (between milestones)
+Phase: Not started (defining requirements)
 Plan: —
-Status: Milestone v1.0 archived to `.planning/milestones/v1.0-*`. Phase directories moved to `milestones/v1.0-phases/`. Walking-skeleton scope shipped end-to-end (self + share + signed receipt on generic-secret; SPEC/THREAT-MODEL/SECURITY drafts). Awaiting `/gsd-new-milestone` to define next scope.
-Last activity: 2026-04-22
+Status: Defining requirements
+Last activity: 2026-04-23 — Milestone v1.1 started; PROJECT.md and STATE.md updated, research decision next.
 
-Progress: [████████████████████] 100%
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 9
+- Total plans completed (v1.1): 0
 - Average duration: — (no data yet)
 - Total execution time: 0 hours
 
-**By Phase:**
+**By Phase (v1.1 provisional; roadmapper may refine):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Foundation | 3/3 | — | — |
-| 2. Send/receive/acceptance | 2/3 | — | — |
-| 3. Signed receipt | 0/TBD | — | — |
-| 4. Protocol docs | 0/TBD | — | — |
-| 03 | 4 | - | - |
+| 5. Non-interactive automation E2E | 0/TBD | — | — |
+| 6. Typed Material: X509Cert | 0/TBD | — | — |
+| 7. Typed Material: PgpKey + SshKey | 0/TBD | — | — |
+| 8. --pin and --burn modes | 0/TBD | — | — |
+| 9. Real-DHT E2E + merge-update race | 0/TBD | — | — |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01, 01-02, 01-03, 02-01, 02-02
-- Trend: — (no data)
+- Last 5 plans (v1.0): 04-01, 04-02, 04-03, 04-04, 04-05 (archived)
+- Trend: — (v1.1 begins)
 
-*Updated after each plan completion*
-| Phase 01 P01 | 11 | 3 tasks | 20 files |
-| Phase 01 P02 | 13 | 2 tasks | 14 files |
-| Phase 01 P03 | 8 | 2 tasks | 8 files |
-| Phase 02 P01 | ~20 | 4 tasks | 11 files |
-| Phase 02 P02 | 40 | 2 tasks | 10 files |
-| Phase 02 P03 | 25 min | 4 tasks | 10 files |
-| Phase 04 P01 | 5 | 1 tasks | 2 files |
-| Phase 04 P02 | ~25 min | 2 tasks | 24 files |
-| Phase 04-protocol-documentation-drafts P03 | 5 | 2 tasks | 1 files |
+*Historical v1.0 metrics archived at `.planning/milestones/v1.0-ROADMAP.md` and `.planning/RETROSPECTIVE.md`.*
 
 ## Accumulated Context
 
@@ -73,72 +64,58 @@ Progress: [████████████████████] 100%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Initialization: Fork-and-diverge from mothballed cclink; no shared `cipherpost-core` crate until a second consumer exists.
-- Initialization: Walking-skeleton scope = self + share + signed receipt on generic-secret payloads; TUI and other payload types deferred.
-- Initialization: Default TTL = 24 hours (revised from PRD's 4h) to accommodate Mainline DHT latency distributions.
-- Initialization: Canonical JSON = RFC 8785 (JCS) via `serde_canonical_json`, for cross-language re-implementation resilience.
-- Initialization: `share_ref` width = 128 bits; HKDF info namespace = `cipherpost/v1/<context>`; identity path = `~/.cipherpost/`.
-- serde_canonical_json upgraded to 1.0.0 (0.2 unavailable on crates.io — same CanonicalFormatter API)
-- deny.toml tokio wrapper is async-compat (pkarr direct parent), chacha20poly1305 wrapper is age-core
-- build.rs hand-rolled with git rev-parse — no vergen/built crate added
-- cfg(test) does not propagate to integration tests — functions needed by integration tests must be unconditionally pub
-- hkdf_info_enumeration filters bare prefix by requiring cap.len() > prefix.len()
-- age Encryptor::with_recipients takes Iterator — use std::iter::once not Vec
-- cfg(test) cross-crate: MockTransport requires --features mock for integration tests; [[test]] required-features in Cargo.toml
-- 550-byte blob is BEP44 budget limit for worst-case OuterRecord; 600 exceeds dns_packet 1000-byte limit
-- pkarr PublishError uses typed QueryError::Timeout enum (not string matching); resolve_most_recent returns Option, not Result
-- Plan 02-01: Envelope JCS fixture locked at 119 bytes sha256 8a8ea877f1bce53bede8d721ccab0eee850080a4f173002adc538ae844ef1a8b
-- Plan 02-01: Material serde tag='type' rename_all='snake_case'; wire = {"type":"generic_secret","bytes":"<b64-std-padded>"}
-- Plan 02-01: Envelope::from_jcs_bytes maps parse failure to SignatureCanonicalMismatch (D-RECV-01 step 7; inherits exit 3)
-- Plan 02-01: Rust string literals reject \x80..\xFF escapes; use \u{80}..\u{9F} for C1 controls in test strings
-- Plan 02-01: ShareUri parser is hand-rolled (strip_prefix + split_once), no url crate; strict form per D-URI-03
-- Plan 02-01: Identity::signing_seed() added as clean accessor; secret_key_bytes_for_leak_test preserved for debug_leak_scan.rs
-- Plan 02-02: run_send retries age_encrypt up to 20 times to absorb grease-stanza size variance near the 1000-byte wire budget
-- Plan 02-02: share_ref hashed over raw ciphertext per PAYL-05 (not base64 blob bytes)
-- Plan 02-02: sentinel-first-then-ledger write order for crash-safe idempotency
-- Plan 02-02: PacketTooLarge mapped directly to WireBudgetExceeded (preserves cipherpost-layer error taxonomy)
-- Plan 02-02: share_round_trip test uses deterministic identity seeds (0xAA/0xBB/0xCC) to stabilize wire-budget footprint
-- Plan 02-03: TtyPrompter uses cfg(any(test, feature = "mock"))-gated CIPHERPOST_SKIP_TTY_CHECK; production builds hardcode false — no env-var bypass possible
-- Plan 02-03: chrono NOT added; reused civil_from_days + hand-rolled format_ttl_remaining + format_unix_as_iso_utc for D-ACCEPT-02 banner TTL rendering
-- Plan 02-03: library-level tty_prompter_rejects_non_tty_env unit test is authoritative D-ACCEPT-03 coverage; CLI-level phase2_cli_not_tty_aborts.rs covers only pre-TtyPrompter Config/InvalidShareUri exit-1 paths
-- Plan 02-03: CIPHERPOST_USE_MOCK_TRANSPORT kept in main.rs under cfg(feature = "mock") for future disk-backed mock; currently unused because cross-process MockTransport state is not shared
-- Plan 02-03: no full-CLI binary round-trip test shipped — Plan 02 library-level tests cover the invariant; binary surface covered by version/help/stderr-scan/declined/not-tty tests plus human UAT
-- DOC-03 disclosure channel is GitHub Security Advisory (primary), email, or equivalent — not email-only
-- Phase 4 SC3 round-trip verification is a Security Advisory receipt, not a live email round-trip
-- THREAT-MODEL.md §3 DHT Adversaries uses per-sub-section Mitigations blocks (3.1/3.2/3.3) rather than one aggregate block — each sub-adversary has distinct capability surface
-- THREAT-MODEL.md §7 uses three lettered worked examples (A/B/C) for receipt replay/race/tamper rather than three sub-sections
-- Plan 04-04: SECURITY.md publishes NO email disclosure channel — GHSA URL only per D-SEC-01; re-opening requires explicit decision amendment
-- Plan 04-04: Test advisory GHSA-36x8-r67j-hcw6 left in draft state as permanent reproducibility record; dismissal optional for D-SEC-03
-- Plan 04-04: Timestamp acceptance criterion relaxed from >=3 to >=2 — single-maintainer self-filing has no `notified_at` event (GitHub suppresses self-notifications); amended in-commit with rationale
-- Plan 04-04: D-SEC-03 evidence uses `gh api` REST captures over screenshots for reproducibility; verification commands committed in the evidence file
-- Plan 04-05: lychee-action SHA-pinned to 8646ba30535128ac92d33dfc9133794bfdd9b411 (v2.8.0) — bumped from the plan's suggested v2.0.0 via live GitHub API lookup; plan explicitly said to verify current v2.x before committing
-- Plan 04-05: Local dev lychee pinned to 0.21.0 (not latest 0.23.0) because project rustc is 1.85.1; CI bundles its own lychee via lychee-action so this asymmetry does not affect shipped artifacts
-- Plan 04-05: README Status line intentionally left stale ("Phase 1 underway") — /gsd-transition at milestone close owns README status updates
-- Plan 04-05: .lycheeignore kept minimal — only the auth-gated GitHub Advisory URL pre-populated; fixing source docs is preferred over adding ignore entries (T-04-05-03 mitigation)
-- Milestone v1.0 close (UAT-1 fix): `resolve_passphrase` gained `confirm_on_tty: bool`; `identity generate` prompts twice to prevent irrecoverable passphrase typo; unlock paths (show/send/receive) keep single-prompt (typo surfaces as PassphraseIncorrect, not footgun). Commit 2e29b74.
-- Milestone v1.0 close (UAT-2 fix): removed double-UTC suffix in `cipherpost receipts --share-ref` audit-detail render; `format_unix_as_iso_utc` already appends " UTC". Commit e95c95e.
+**v1.1 milestone kickoff (2026-04-23):**
+- v1.1 milestone locked as "Real v1" — PRD closure + real-DHT de-risking; not a launch milestone
+- Phase structure (provisional, pending roadmapper): 5 phases continuing from v1.0's Phase 4 → Phases 5–9 (no reset)
+- Coarse-granularity rule held from v1.0 retrospective — every phase ends at a user-visible capability
+- Phase 5 bundles housekeeping (pin-version reality-check, DHT label audit, traceability drift fix) with the `--passphrase-file` / `--passphrase-fd` plumbing so the phase lands a user-visible deliverable (scripted send/receive without TTY) rather than housekeeping-only
+- 64 KB plaintext cap held across all typed payloads; `PgpKey` spec = single key, not keyring
+- `--pin` and `--burn` modes: Phase 8 research must first survey `/home/john/vault/projects/github.com/cclink` for existing logic — fork-and-diverge, don't re-derive
+- Real-DHT cross-identity round trip deliberately placed last (Phase 9) so network-class bugs don't cascade back into freshly-shipped payload + encryption-mode code
+- Deferred to v1.2+: TUI wizard, exportable audit log, destruction attestation (PRD said v1.1 for the last one; shifted because v1.1 filled up with PRD-closure scope)
+- Solo-builder hygiene: zero "Pending" rows in traceability — checkboxes and table stay in sync, or one of them goes away
+
+**Inherited from v1.0 (retained for context):**
+- Fork-and-diverge from mothballed cclink; no shared `cipherpost-core` crate until a second consumer exists.
+- Default TTL = 24 hours (revised from PRD's 4h) to accommodate Mainline DHT latency distributions.
+- Canonical JSON = RFC 8785 (JCS) via `serde_canonical_json` (shipped as 1.0.0, API matches planned 0.2).
+- `share_ref` width = 128 bits; HKDF info namespace = `cipherpost/v1/<context>`; identity path = `~/.cipherpost/`.
+- PKARR wire budget measured at 550 bytes (BEP44 limit for worst-case OuterRecord); pkarr transitive-resolved to 5.0.4.
+- `resolve_passphrase(confirm_on_tty: bool)` — true on `identity generate`, false on unlock paths (show/send/receive).
+- `publish_receipt` uses resolve-merge-republish via PKARR `cas`, not overwrite — preserves coexisting TXT records.
+- Tamper-zero-receipts invariant: receipt publication happens strictly after outer verify + inner verify + typed-z32 acceptance.
+- Acceptance requires typed z-base-32 (not y/N) to force fingerprint read off the acceptance banner.
+- Error-oracle hygiene: all signature-verification errors share one identical user-facing Display and exit code 3.
+- `serial_test = "3"` + `#[serial]` on any test that mutates process env (CIPHERPOST_HOME, etc.).
+- `DhtTransport` via `pkarr::ClientBlocking` — no `tokio` dep at cipherpost layer.
 
 ### Pending Todos
 
-None yet.
+None yet — awaiting research decision and REQUIREMENTS.md authoring.
 
 ### Blockers/Concerns
 
-None yet. Research flagged one item to resolve during Phase 3 planning: PKARR SignedPacket merge-update semantics (race conditions on concurrent receipt publication) may warrant a small prototype before `publish_receipt` is implemented.
+None yet. Items to surface during requirements/research:
+- PGP key size vs 64 KB cap — confirm single-key scope covers realistic use cases (subkey-heavy keys + identity UIDs)
+- PKARR merge-update race test (Phase 9) must decide whether to prove via test harness or an explicit tooling invariant
+- Real-DHT test (Phase 9) needs a reliable way to observe propagation without long flaky waits
 
 ## Deferred Items
 
-Items acknowledged and carried forward from previous milestone close:
+Items acknowledged and carried forward:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Tooling | Pre-existing Phase 1 `cargo fmt --check` deviations (see .planning/phases/02-send-receive-and-explicit-acceptance/deferred-items.md) | Deferred to chore(fmt) pass | 2026-04-21 Plan 02-01 |
+| Tooling | Pre-existing Phase 1 `cargo fmt --check` deviations (see archived `.planning/milestones/v1.0-phases/02-send-receive-and-explicit-acceptance/deferred-items.md`) | Deferred to chore(fmt) pass | 2026-04-21 Plan 02-01 |
+| Release-acceptance | Real-DHT A→B→receipt cross-identity round trip — never executed in v1.0, MockTransport only | Scheduled for v1.1 Phase 9 | 2026-04-22 v1.0 close |
+| Concurrency | PKARR SignedPacket merge-update race under concurrent receipt publication — `cas` present but no explicit racer test | Scheduled for v1.1 Phase 9 | 2026-04-22 v1.0 close |
+| Docs | Pin drift in SPEC/REQUIREMENTS (`serde_canonical_json 1.0.0` vs 0.2; `pkarr 5.0.4` vs 5.0.3; 550 B vs 600 B budget) | Scheduled for v1.1 Phase 5 (bless shipped reality) | 2026-04-22 v1.0 close |
 
 ## Session Continuity
 
-Last session: 2026-04-22T15:00:00.000Z
-Stopped at: Milestone v1.0 fully verified — bookkeeping debt resolved (e89fd41, 08bd78b, a56d1d9), UAT-1 executed + confirm-passphrase fix landed (2e29b74 / 7f7750f), UAT-2 completed + double-UTC cosmetic fix landed (e95c95e). Phases 01 and 03 both now `status: passed` with human_verification records. All 4 phases passed, all 49 requirements satisfied, zero outstanding debt.
+Last session: 2026-04-23T00:00:00.000Z
+Stopped at: Milestone v1.1 Real v1 kickoff in progress — PROJECT.md + STATE.md updated, about to commit and then run research decision.
 Resume file: None
 
-**Planned Phase:** 04 (protocol-documentation-drafts) — 5 plans — all complete
-**Next action:** `/gsd-complete-milestone` to archive v1.0 and prepare for the next milestone cycle
+**Planned Phase:** 5 (Non-interactive automation E2E) — plan count TBD after roadmap generation
+**Next action:** Research decision (step 8), then REQUIREMENTS.md authoring (step 9), then gsd-roadmapper spawn (step 10)
