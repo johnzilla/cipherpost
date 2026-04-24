@@ -68,18 +68,26 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 - ✓ `SECURITY.md` documents disclosure channel (live-tested and recorded), 90-day embargo, cclink lineage + `cipherpost/v1/<context>` HKDF prefix reference
 - ✓ `lychee` link-check CI job (pinned 0.21.0 for project rustc 1.85.1) blocks broken cross-references in future doc changes
 
+**Non-interactive automation E2E (Phase 5 — 2026-04-24)**
+- ✓ `--passphrase-file <path>` and `--passphrase-fd <n>` on both `cipherpost send` and `cipherpost receive`; inline `--passphrase <value>` hidden and rejected at runtime with the same Display as identity subcommands (PassphraseInvalidInput, exit 4)
+- ✓ `cipherpost send -` positional shorthand for stdin payload; multi-source passphrase conflict (`--passphrase-file` + `--passphrase-fd`) rejected with `Error::Config` (exit 1); SC1 invocation `cipherpost send - --passphrase-fd 3 < payload.bin 3< passphrase.txt` runs verbatim
+- ✓ `resolve_passphrase` refactored in-place: fd branch switched from `FromRawFd + std::mem::forget` to `BorrowedFd` (Pitfall #31); exact one-newline strip (one `\r\n` if present, else one `\n`, else nothing) replacing greedy `.trim_end_matches` (Pitfall #30); `--passphrase-fd 0` rejected as reserved for stdin (uniform across identity + send + receive)
+- ✓ PASS-09 CI integration test (`tests/pass09_scripted_roundtrip.rs`) — two `#[serial]` MockTransport round trips proving both `--passphrase-file` and `--passphrase-fd` paths end-to-end without a TTY
+- ✓ Precedence locked project-wide: `--passphrase-fd > --passphrase-file > CIPHERPOST_PASSPHRASE > TTY`; SPEC.md §7 and REQUIREMENTS.md PASS-05 rewritten to match shipped code (Pitfall #35)
+- ✓ SPEC.md: new §3.5 "DHT Label Stability" declares `_cipherpost` and `_cprcpt-*` as wire-format constants requiring a `protocol_version` bump to change (Pitfall #33); crate-version prose rewritten to API-range form with Cargo.toml as exact-pin authority (Pitfall #34); PKARR wire budget corrected from 600 B to 550 B (measured)
+- ✓ `tests/dht_label_constants.rs` asserts byte-match between code constants and SPEC strings — the audit is the test
+- ✓ CLAUDE.md `## Planning docs convention` section locks the inline-phase-tag traceability rule project-wide; archived v1.0 REQUIREMENTS.md traceability table dropped (49 Complete rows removed — Pitfall #32)
+- ✓ 98 tests pass under `cargo test --features mock` (86 baseline + 12 new across Plans 05-01/02/03)
+
 ### Active
 
 <!-- Milestone v1.1 "Real v1" — finish the PRD's full v1 scope and de-risk the protocol on real Mainline DHT. Full requirements with REQ-IDs in .planning/REQUIREMENTS.md; phase structure in .planning/ROADMAP.md. -->
 
-v1.1 delivers (see `## Current Milestone` above for phase structure):
+v1.1 remaining work (Phases 6–9):
 
-- **Non-interactive passphrase flags** on `send` / `receive` — `--passphrase-file`, `--passphrase-fd` (align with identity subcommands; `resolve_passphrase()` already supports all four priorities — this is clap surface + plumbing only)
 - **All three remaining `Material` variants** — `X509Cert`, `PgpKey` (single key, not keyring), `SshKey`
 - **`--pin` and `--burn` encryption modes** on typed payloads
 - **Real-DHT cross-identity round trip** + explicit PKARR `cas` merge-update race test as release-acceptance gate
-- **Pin-version reality-check in docs** (`serde_canonical_json 1.0.0`, `pkarr 5.0.4`, 550 B budget — bless shipped reality, don't re-pin)
-- **DHT label audit** (`_cipherpost`, `_cprcpt-<share_ref>`) + **traceability-table drift eliminated** (checkboxes and table stay in sync or one of them goes away)
 
 ### Out of Scope
 
@@ -177,4 +185,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-23 at v1.1 "Real v1" milestone kickoff — scope locked via `/gsd-new-milestone` (5 phases: automation E2E + X509 + PGP/SSH + pin/burn + real-DHT gate). v1.0 archived at `.planning/milestones/v1.0-*`.*
+*Last updated: 2026-04-24 after Phase 5 (Non-interactive automation E2E) — scripted send/receive without TTY shipped; SPEC.md §7 precedence + §3.5 DHT Label Stability + API-range version prose; traceability format locked project-wide. Next: Phase 6 Typed Material — X509Cert.*
