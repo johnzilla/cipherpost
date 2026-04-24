@@ -378,6 +378,7 @@ dependencies = [
  "dirs",
  "ed25519-dalek",
  "hkdf",
+ "libc",
  "pkarr",
  "predicates",
  "proptest",
