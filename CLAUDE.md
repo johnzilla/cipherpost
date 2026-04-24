@@ -123,3 +123,11 @@ Between milestones (current state), `.planning/REQUIREMENTS.md` does **not** exi
 - `/gsd-next` — auto-advance to the next logical step
 
 Planning docs are committed to git (see `.planning/config.json`). Atomic commits per phase/plan are the norm.
+
+## Planning docs convention
+
+**Requirements traceability.** Each requirement in `.planning/REQUIREMENTS.md` carries an
+inline `[Phase N]` tag and a checkbox. Phase `.planning/phases/<NN>/VERIFICATION.md`
+files are authoritative for implementation status. Do not add or regenerate a separate
+traceability table — maintaining a parallel table risks a drift class where table rows
+fall behind the body checkboxes and the per-phase verification reports.
