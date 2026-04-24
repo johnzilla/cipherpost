@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: "Phase 6 Plan 02 complete (preview::render_x509_preview + format_unix_as_iso_utc pub(crate))"
-last_updated: "2026-04-24T18:57:07.614Z"
+stopped_at: Phase 6 Plan 03 complete (CLI surface + run_send/run_receive wiring for X509Cert)
+last_updated: "2026-04-24T19:22:39.433Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
-  percent: 71
+  completed_plans: 6
+  percent: 86
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 ## Current Position
 
 Phase: 06 (typed-material-x509cert) — EXECUTING
-Plan: 3 of 4 (next — CLI surface: `--material` flag + `Receive --armor`)
+Plan: 4 of 4 (next — CLI surface: `--material` flag + `Receive --armor`)
 Status: Ready to execute
 Last activity: 2026-04-24
 
-Progress: [███████░░░] 71%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [███████░░░] 71%
 
 *Historical v1.0 metrics archived at `.planning/milestones/v1.0-ROADMAP.md` and `.planning/RETROSPECTIVE.md`.*
 | Phase 06 P02 | 7min | 1 tasks | 3 files |
+| Phase 06 P03 | 19min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,12 @@ Recent decisions affecting current work:
 - `format_unix_as_iso_utc` bumped from `fn` to `pub(crate) fn` — single source of truth across flow.rs banner emission and preview.rs NotBefore/NotAfter rendering. UAT-2 2026-04-21 pinned test (no double `" UTC"` suffix) still green.
 - `secp256k1` curve uses dotted-OID string match (`"1.3.132.0.10"`) — no exported constant in oid-registry 0.7; documented fallback path per RESEARCH Focus 4.
 - `[EXPIRED]` / `[VALID]` tag fails open on SystemTime clock error (returns `[VALID]`) — NotAfter ISO timestamp is always shown regardless, so the tag is UX decoration, not a block.
+- v1.1 Phase 6 Plan 03 (2026-04-24): AD-1 resolved as Option A (pre-render preview subblock in run_receive caller; TtyPrompter stays ignorant of x509-parser). Prompter trait gains ONE Option<&str> arg; test prompters ignore it. Phase 7 extends via new match arms in run_receive.
+- v1.1 Phase 6 Plan 03 (2026-04-24): AD-3 resolved as Option A (run_send gains material_variant: MaterialVariant param; MaterialSource unchanged). Every existing Phase 2/3/5 integration test needed only a one-line GenericSecret addition — no construct-Material refactor across 13 test files.
+- v1.1 Phase 6 Plan 03 (2026-04-24): OQ-1 resolved to reject --armor on GenericSecret with Error::Config("--armor requires --material x509-cert") (exit 1). Silent-ignore rejected — wastes debug time when user expects PEM and gets raw bytes.
+- v1.1 Phase 6 Plan 03 (2026-04-24): Cap-on-decoded-size pattern established — run_send ingests BEFORE the 64KB cap check, and the cap reads material.plaintext_size() so a 1MB PEM decoding to 100KB DER fails the cap on DECODED size. Phase 7 PGP/SSH inherit the pattern.
+- v1.1 Phase 6 Plan 03 (2026-04-24): Defense-in-depth dispatch rejection for unimplemented typed variants — PgpKey/SshKey rejected at main.rs::dispatch (before identity load) AND at flow::run_send (library-level safety for non-CLI callers). NotImplemented{phase:7} with unified Display surfaces as exit 1.
+- v1.1 Phase 6 Plan 03 (2026-04-24): pem_armor_certificate is hand-rolled (base64-STANDARD + CERTIFICATE header/footer) — no new Cargo dep. base64 0.22 already pulled by Phase 1 for OuterRecord blob. Output matches openssl x509 -in cert.der -inform DER -outform PEM byte-for-byte.
 
 ### Pending Todos
 
@@ -145,9 +152,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-24T18:57:07.608Z
-Stopped at: Phase 6 Plan 02 complete (preview::render_x509_preview + format_unix_as_iso_utc pub(crate))
-Resume file: .planning/phases/06-typed-material-x509cert/06-02-SUMMARY.md
+Last session: 2026-04-24T19:22:20.230Z
+Stopped at: Phase 6 Plan 03 complete (CLI surface + run_send/run_receive wiring for X509Cert)
+Resume file: None
 
 **Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans, 2 shipped — 2026-04-24T18:22:32.720Z
 **Next action:** `/gsd-execute-phase 6` (continues with Plan 03 — CLI `--material` flag + `Receive --armor` + run_send/run_receive wiring)
