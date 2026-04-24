@@ -15,6 +15,7 @@ use secrecy::{ExposeSecret, SecretBox};
 use std::fs;
 use std::io::Write as IoWrite;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::io::BorrowedFd;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
@@ -270,21 +271,27 @@ pub fn resolve_passphrase(
     // Priority 2: fd.
     if let Some(n) = fd {
         use std::io::BufRead;
-        use std::os::unix::io::FromRawFd;
-        // SAFETY: we trust the caller-provided fd. We do NOT close the fd after reading
-        // because the caller (main.rs) might share stdin (fd=0). We rely on the process
-        // exiting to clean up. If n == 0 that's stdin, which is fine.
-        let file = unsafe { fs::File::from_raw_fd(n) };
+        if n == 0 {
+            return Err(Error::Config(
+                "--passphrase-fd 0 reserved for stdin; use fd >= 3 or --passphrase-file".into(),
+            ));
+        }
+        // SAFETY: caller guarantees `n` is an open fd for the duration of this call.
+        // BorrowedFd does NOT take ownership, so the original fd remains valid for the
+        // caller to close (or for the process to clean up). Pitfall #31.
+        let borrowed = unsafe { BorrowedFd::borrow_raw(n) };
+        let file = std::fs::File::from(borrowed.try_clone_to_owned().map_err(Error::Io)?);
         let mut reader = std::io::BufReader::new(file);
-        let mut line = String::new();
-        reader.read_line(&mut line).map_err(Error::Io)?;
-        // Prevent the file from being closed (drop would close the raw fd).
-        std::mem::forget(reader);
-        return Ok(Passphrase::from_string(
-            line.trim_end_matches('\n')
-                .trim_end_matches('\r')
-                .to_string(),
-        ));
+        let mut buf = Vec::new();
+        reader.read_until(b'\n', &mut buf).map_err(Error::Io)?;
+        // Exact one-newline strip (D-P5-08): one \r\n, else one \n, else nothing.
+        if buf.ends_with(b"\r\n") {
+            buf.truncate(buf.len() - 2);
+        } else if buf.ends_with(b"\n") {
+            buf.truncate(buf.len() - 1);
+        }
+        let s = String::from_utf8(buf).map_err(|_| Error::PassphraseInvalidInput)?;
+        return Ok(Passphrase::from_string(s));
     }
 
     // Priority 3: passphrase-file.
@@ -294,10 +301,16 @@ pub fn resolve_passphrase(
         if mode != 0o600 && mode != 0o400 {
             return Err(Error::IdentityPermissions);
         }
-        let s = fs::read_to_string(path).map_err(Error::Io)?;
-        return Ok(Passphrase::from_string(
-            s.trim_end_matches('\n').trim_end_matches('\r').to_string(),
-        ));
+        let bytes = fs::read(path).map_err(Error::Io)?;
+        let mut buf = bytes;
+        // Exact one-newline strip (D-P5-08): one \r\n, else one \n, else nothing.
+        if buf.ends_with(b"\r\n") {
+            buf.truncate(buf.len() - 2);
+        } else if buf.ends_with(b"\n") {
+            buf.truncate(buf.len() - 1);
+        }
+        let s = String::from_utf8(buf).map_err(|_| Error::PassphraseInvalidInput)?;
+        return Ok(Passphrase::from_string(s));
     }
 
     // Priority 4: environment variable.
