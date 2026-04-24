@@ -3,7 +3,7 @@
 //! dispatcher prevents D-15 source-chain leakage.
 
 use anyhow::Result;
-use cipherpost::cli::{Cli, Command, IdentityCmd};
+use cipherpost::cli::{Cli, Command, IdentityCmd, MaterialVariant};
 use cipherpost::error::{exit_code, user_message, Error};
 use clap::Parser;
 
@@ -83,6 +83,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             purpose,
             material_file,
             ttl,
+            material,
             passphrase,
             passphrase_file,
             passphrase_fd,
@@ -118,6 +119,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                     (None, None) => None,
                     (None, Some(_)) => unreachable!("validated above"),
                 };
+
+            // D-P6-01: reject unimplemented typed variants at dispatch, before
+            // any passphrase resolution. Keeps the error-code surface clean
+            // (exit 1 via NotImplemented) and avoids loading identity unnecessarily.
+            if matches!(material, MaterialVariant::PgpKey | MaterialVariant::SshKey) {
+                return Err(cipherpost::Error::NotImplemented { phase: 7 }.into());
+            }
 
             // D-P5-01 precedence (enforced in resolve_passphrase body): fd > file > env > TTY.
             // confirm_on_tty: false — unlock path.
@@ -196,6 +204,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 mode,
                 purpose_str,
                 material_source,
+                material,
                 ttl_seconds,
             )?;
 
@@ -206,6 +215,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             share,
             output,
             dht_timeout: _,
+            armor,
             passphrase,
             passphrase_file,
             passphrase_fd,
@@ -277,6 +287,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 &uri,
                 &mut sink,
                 &prompter,
+                armor,
             )?;
             Ok(())
         }
