@@ -710,7 +710,7 @@ fn truncate_purpose(p: &str, max: usize) -> String {
 fn material_type_string(m: &Material) -> &'static str {
     match m {
         Material::GenericSecret { .. } => "generic_secret",
-        Material::X509Cert => "x509_cert",
+        Material::X509Cert { .. } => "x509_cert",
         Material::PgpKey => "pgp_key",
         Material::SshKey => "ssh_key",
     }
