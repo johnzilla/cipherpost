@@ -199,6 +199,12 @@ path = "tests/material_x509_envelope_round_trip.rs"
 name = "material_x509_ingest"
 path = "tests/material_x509_ingest.rs"
 
+# Phase 6 Plan 04: X509 self-mode round-trip under MockTransport (X509-09).
+[[test]]
+name = "x509_roundtrip"
+path = "tests/x509_roundtrip.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
