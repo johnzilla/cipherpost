@@ -41,7 +41,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   5. REQUIREMENTS.md traceability format is locked to inline phase tags; no separate traceability table exists anywhere in the planning corpus; no "Pending" row survives when implementation is complete
 **Plans**: 3 plans
 - [x] 05-01-PLAN.md — resolve_passphrase refactor (BorrowedFd + exact one-newline strip + fd=0 rejection)
-- [ ] 05-02-PLAN.md — CLI surface + dispatch + PASS-09 scripted-roundtrip CI test
+- [x] 05-02-PLAN.md — CLI surface + dispatch + PASS-09 scripted-roundtrip CI test
 - [x] 05-03-PLAN.md — DOC housekeeping (SPEC.md §7/§3.3/§3-4, CLAUDE.md convention, DHT label test, v1.0 archive cleanup)
 
 ### Phase 6: Typed Material — X509Cert
