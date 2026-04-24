@@ -170,6 +170,11 @@ path = "tests/spec_test_vectors.rs"
 name = "passphrase_strip_rule"
 path = "tests/passphrase_strip_rule.rs"
 
+# Phase 5 Plan 05-01: BorrowedFd fd-lifecycle test + fd=0 rejection (D-P5-03/D-P5-07).
+[[test]]
+name = "passphrase_fd_borrowed"
+path = "tests/passphrase_fd_borrowed.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
@@ -184,6 +189,12 @@ predicates = "3"
 # default parallel test runner races on process-global env; #[serial] forces
 # these tests to run one at a time within their crate.
 serial_test = "3"
+# Phase 5 Plan 05-01: fd-lifecycle test (tests/passphrase_fd_borrowed.rs) uses
+# libc::pipe / libc::write / libc::close / libc::fcntl directly to build a pipe,
+# pass its read-end fd through resolve_passphrase, and then assert fcntl(fd,
+# F_GETFD) != -1 after the call (proves BorrowedFd did not close the caller's
+# fd — Pitfall #31). MIT/Apache-2.0.
+libc = "0.2"
 
 [profile.release]
 panic = "abort"      # prevents panic backtrace from leaking stack contents (Security Mistakes table, PITFALLS.md)
