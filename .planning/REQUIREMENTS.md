@@ -41,7 +41,7 @@ Phase 5. Clears v1.0 bookkeeping debt; locks in anti-drift conventions.
 
 Phase 6. Pattern-establish variant — get the shape right here; Phase 7 is application.
 
-- [ ] **X509-01 [Phase 6]**: `Material::X509Cert { bytes: Vec<u8> }` holds DER bytes only; ASCII-armored PEM rejected at `send` ingest with exit 1 (PEM wrapper non-determinism would break JCS)
+- [ ] **X509-01 [Phase 6]**: `Material::X509Cert { bytes: Vec<u8> }` holds canonical DER bytes only. CLI accepts both DER and PEM inputs; PEM is normalized to DER at ingest (before JCS hashing and Envelope construction) so `share_ref` stays deterministic across re-sends. Indefinite-length BER and malformed DER are rejected at ingest with exit 1. **Open for Phase 7 planning:** whether to mirror this "CLI-accepts-common-encoding, normalize-before-hash" pattern for `PgpKey` (ASCII-armor acceptance → strip to binary packet stream) — defer to Phase 7 plan time.
 - [ ] **X509-02 [Phase 6]**: Wire format: `{"type": "x509_cert", "bytes": "<base64-std-padded>"}`; JCS alphabetical ordering places `bytes` before `type` automatically (same shape as `GenericSecret`)
 - [ ] **X509-03 [Phase 6]**: `cipherpost send --material x509-cert` reads DER from stdin (or file via `-` convention); wraps in Envelope; per-variant 64 KB size check before encryption
 - [ ] **X509-04 [Phase 6]**: `cipherpost receive` on an `X509Cert` share renders acceptance-banner preview POST-decrypt: Subject (truncated), Issuer (truncated), SerialNumber (truncated to 16 hex chars), NotBefore/NotAfter (ISO UTC), key algorithm (e.g., `id-ecPublicKey P-256`), SHA-256 DER fingerprint (full 64 hex chars). Expired cert displays `[EXPIRED]` but is not blocked.

@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Walking Skeleton** — Phases 1–4 (shipped 2026-04-22) — [archive](milestones/v1.0-ROADMAP.md)
+- 🔄 **v1.1 Real v1** — Phases 5–9 (in progress)
 
 ## Phases
 
@@ -18,9 +19,78 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 
 </details>
 
-### 📋 Next Milestone (To be defined)
+### v1.1 Real v1 (Phases 5–9)
 
-The walking skeleton validated the protocol end-to-end. The next milestone will broaden the CLI surface and payload-type coverage toward the PRD's full v1.0 (candidates: `--pin`/`--burn` modes, X.509/PGP/SSH payload types, TUI wizard, real-DHT release acceptance test, exportable audit log). Lock scope via `/gsd-new-milestone`.
+- [ ] **Phase 5: Non-interactive automation E2E** — scripted send/receive without TTY; passphrase-file/fd on send+receive; SPEC pin-version blessing; DHT label audit; traceability format locked
+- [ ] **Phase 6: Typed Material — X509Cert** — pattern-establish: DER-normalized X.509 end-to-end (parse, validate, render acceptance screen, JCS fixture, integration test)
+- [ ] **Phase 7: Typed Material — PgpKey + SshKey** — apply Phase 6 pattern twice; ed25519-dalek conflict pre-flight; JCS fixtures for both variants
+- [ ] **Phase 8: --pin and --burn encryption modes** — cclink-fork PIN crypto (Argon2id+HKDF→X25519→age); burn-after-read state-ledger inversion; THREAT-MODEL.md additions; pin/burn compose orthogonally
+- [ ] **Phase 9: Real-DHT E2E + CAS merge-update race gate** — CAS racer in CI; real-DHT cross-identity round trip as manual release-acceptance gate; RELEASE-CHECKLIST.md
+
+## Phase Details
+
+### Phase 5: Non-interactive automation E2E
+**Goal**: Users can send and receive secret material without any TTY interaction, enabling scripted pipelines and CI automation.
+**Depends on**: Nothing (continues directly from v1.0 Phase 4)
+**Requirements**: PASS-01, PASS-02, PASS-03, PASS-04, PASS-05, PASS-06, PASS-07, PASS-08, PASS-09, DOC-01, DOC-02, DOC-03, DOC-04
+**Success Criteria** (what must be TRUE):
+  1. User can run `cipherpost send - --passphrase-fd 3 < payload.bin 3< passphrase.txt` and `cipherpost receive --passphrase-file ~/.cipherpost/pp.txt` end-to-end without a TTY, proven by a CI integration test
+  2. Passing `--passphrase` inline to `send` or `receive` is rejected with the same error message used by `identity` subcommands; `--help` on both shows all three non-interactive sources with scripting examples
+  3. `--passphrase-file` strips exactly one trailing newline (never greedy `.trim()`), and file mode > 0600 is refused with a message naming the actual mode; `--passphrase-fd` uses `BorrowedFd` (no double-close)
+  4. SPEC.md records actually-shipped crate versions in API-range form (not exact version prose); DHT label constants `_cipherpost` and `_cprcpt-<share_ref_hex>` are confirmed stable and documented as requiring a protocol-version bump to change
+  5. REQUIREMENTS.md traceability format is locked to inline phase tags; no separate traceability table exists anywhere in the planning corpus; no "Pending" row survives when implementation is complete
+**Plans**: TBD
+
+### Phase 6: Typed Material — X509Cert
+**Goal**: Users can securely hand off an X.509 certificate with full context visible on the acceptance screen before decryption commits.
+**Depends on**: Phase 5 (scripted automation CI recipe used by integration tests)
+**Requirements**: X509-01, X509-02, X509-03, X509-04, X509-05, X509-06, X509-07, X509-08, X509-09
+**Success Criteria** (what must be TRUE):
+  1. User can `cipherpost send --material x509-cert` with either a DER or PEM file; PEM is accepted at the CLI surface and normalized to DER **before JCS hashing and storage** (stored bytes are always canonical DER so `share_ref` remains deterministic across re-sends); indefinite-length BER is rejected at ingest with exit 1
+  2. The acceptance screen shows Subject, Issuer, SerialNumber (truncated), NotBefore/NotAfter (UTC), key algorithm, and full SHA-256 DER fingerprint before the typed-z32 prompt; expired certs display `[EXPIRED]` but are not blocked
+  3. Raw DER bytes reach stdout by default; `--armor` produces PEM-wrapped output
+  4. JCS fixture `tests/fixtures/material_x509_signable.bin` is committed and asserted byte-for-byte identical on every CI run (any drift surfaces as a red test)
+  5. Malformed X.509 DER at receive time returns exit 1 with a message naming the variant — never exit 3 (reserved for signature failures)
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 7: Typed Material — PgpKey + SshKey
+**Goal**: Users can securely hand off OpenPGP keys and OpenSSH private keys with full metadata visible on the acceptance screen; both variants apply the Phase 6 pattern.
+**Depends on**: Phase 6 (Material module conventions, per-variant size checks, Debug redaction pattern, JCS fixture discipline — apply here without re-deriving)
+**Requirements**: PGP-01, PGP-02, PGP-03, PGP-04, PGP-05, PGP-06, PGP-07, PGP-08, PGP-09, SSH-01, SSH-02, SSH-03, SSH-04, SSH-05, SSH-06, SSH-07, SSH-08, SSH-09, SSH-10
+**Success Criteria** (what must be TRUE):
+  1. User can `cipherpost send --material pgp-key` with a binary OpenPGP packet stream and receive it; ASCII-armored input is rejected (non-deterministic headers); multi-primary keyrings are rejected with exit 1 naming the count; secret keys display `[WARNING: SECRET key]` on the acceptance screen but are not blocked
+  2. User can `cipherpost send --material ssh-key` with an OpenSSH v1 format key; legacy PEM, RFC 4716, and FIDO-format keys are rejected at ingest; the acceptance screen shows key type, SHA-256 fingerprint (OpenSSH-style), and comment labeled as sender-attested
+  3. JCS fixtures `tests/fixtures/material_pgp_signable.bin` and `tests/fixtures/material_ssh_signable.bin` are committed and asserted byte-for-byte identical on every CI run
+  4. `cargo tree | grep ed25519-dalek` pre-flight result is documented in Phase 7 plan 01 — either "no 2.x leak" or explicit coexistence acceptance recorded before any `ssh-key` code ships
+  5. Malformed PGP packets and malformed SSH bytes at receive time each return exit 1 with a generic message that does not leak crate internals
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 8: --pin and --burn encryption modes
+**Goal**: Senders can require a PIN as a second factor for decryption, and can mark a share as single-consumption; both modes compose orthogonally and layer cleanly on all typed Material variants.
+**Depends on**: Phase 7 (pin/burn have full semantic value over typed payloads; JCS fixture discipline for new Envelope and OuterRecord fields is established; cclink pin/burn survey must be completed before this phase is planned — see SUMMARY.md Open Questions)
+**Requirements**: PIN-01, PIN-02, PIN-03, PIN-04, PIN-05, PIN-06, PIN-07, PIN-08, PIN-09, PIN-10, BURN-01, BURN-02, BURN-03, BURN-04, BURN-05, BURN-06, BURN-07, BURN-08, BURN-09
+**Success Criteria** (what must be TRUE):
+  1. User can `cipherpost send --pin` (TTY prompt, no echo); the PIN crypto stack is **cclink-fork**: Argon2id(PIN + 32-byte random salt) → HKDF-SHA256 `cipherpost/v1/pin` → X25519 scalar → age `Identity` → `age_encrypt` to the derived recipient. Stays inside `age` for AEAD — no direct `chacha20poly1305` calls (CLAUDE.md constraint holds unchanged). PIN AND identity key are both required to decrypt (true second factor).
+  2. A recipient of a `pin_required` share is prompted for PIN before the typed-z32 acceptance banner; wrong PIN returns exit 4 with the identical user-facing message as wrong identity passphrase (error-oracle hygiene); the HKDF info enumeration test is extended to cover `cipherpost/v1/pin`
+  3. User can `cipherpost send --burn`; first receive decrypts and writes a `burned` state-ledger entry; second receive on the same share returns exit 7 "share already consumed"; a receipt IS published after successful burn-receive (burn does not suppress attestation)
+  4. `--pin` and `--burn` compose: a share with both flags set carries `pin_required=true` in OuterRecord and `burn_after_read=true` in Envelope; `skip_serializing_if = is_false` preserves byte-identity with v1.0 for non-pin/non-burn shares
+  5. THREAT-MODEL.md documents PIN mode (second-factor semantics, Argon2id offline-brute-force bound, intentional indistinguishability from wrong-key errors) and burn mode (local-state-only semantics, DHT-ciphertext-survives-TTL caveat, multi-machine race explicitly described)
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 9: Real-DHT E2E + CAS merge-update race gate
+**Goal**: The protocol is validated over real Mainline DHT end-to-end, and concurrent receipt publication is proven safe under contention — so v1.1 ships with confidence it works beyond MockTransport.
+**Depends on**: Phase 8 (all payload types and encryption modes landed; CAS racer tests the most complex merge scenario: concurrent receipt publish after burn + pin share with typed payload)
+**Requirements**: DHT-01, DHT-02, DHT-03, DHT-04, DHT-05, DHT-06, DHT-07
+**Success Criteria** (what must be TRUE):
+  1. MockTransport enforces `cas` semantics for `publish_receipt`: a concurrent racer test (two threads, `std::sync::Barrier` synchronized) asserts exactly one wins on first attempt, the loser retries-and-merges, and the final PKARR state contains both receipts — runs in CI under `cargo test --features mock`
+  2. A real-DHT cross-identity round trip test exists behind `#[cfg(feature = "real-dht-e2e")]` + `#[ignore]`; it spawns two in-process clients with independent identities, publishes via client A, resolves via client B with 120-second exponential-backoff ceiling, decrypts, publishes receipt via B, fetches via A; UDP pre-flight skips gracefully if bootstrap is unreachable
+  3. `RELEASE-CHECKLIST.md` at repo root documents the manual real-DHT invocation command, expected output pattern, and explicit pass/fail criteria; every v1.1+ release requires a human to run and pass this checklist
+  4. A wire-budget coexistence test asserts that a share with `pin_required=true` + `burn_after_read=true` carrying a realistic PGP payload (~2 KB) produces a clean `Error::WireBudgetExceeded` at send time (not a PKARR-internal panic) if the payload exceeds the 550-byte `OuterRecord` budget
+**Plans**: TBD
+**UI hint**: no
 
 ## Progress
 
@@ -30,6 +100,11 @@ The walking skeleton validated the protocol end-to-end. The next milestone will 
 | 2. Send/receive/acceptance | v1.0 | 3/3 | Complete | 2026-04-21 |
 | 3. Signed receipt | v1.0 | 4/4 | Complete | 2026-04-21 |
 | 4. Protocol docs | v1.0 | 5/5 | Complete | 2026-04-22 |
+| 5. Non-interactive automation E2E | v1.1 | 0/TBD | Not started | - |
+| 6. Typed Material: X509Cert | v1.1 | 0/TBD | Not started | - |
+| 7. Typed Material: PgpKey + SshKey | v1.1 | 0/TBD | Not started | - |
+| 8. --pin and --burn modes | v1.1 | 0/TBD | Not started | - |
+| 9. Real-DHT E2E + CAS race gate | v1.1 | 0/TBD | Not started | - |
 
 ---
-*Last reorganized: 2026-04-22 at v1.0 milestone close*
+*Last updated: 2026-04-23 at v1.1 "Real v1" roadmap generation — 5 phases (Phases 5–9), 67 requirements mapped, coverage 67/67.*
