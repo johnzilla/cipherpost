@@ -1012,7 +1012,13 @@ fn format_ttl_remaining(seconds: u64) -> String {
 
 /// Format a unix-seconds timestamp as `YYYY-MM-DD HH:MM UTC`. Reuses the
 /// civil-from-days helper already in this file (Plan 02).
-fn format_unix_as_iso_utc(unix: i64) -> String {
+///
+/// Phase 6 Plan 02: visibility bumped from private to `pub(crate)` so
+/// `src/preview.rs::render_x509_preview` can reuse it for NotBefore/NotAfter
+/// rendering (D-P6-12). Callers MUST NOT append a second `" UTC"` suffix —
+/// the returned string already ends in ` UTC` (see `format_unix_as_iso_utc_epoch`
+/// pinned test in this file for the UAT-2 2026-04-21 double-UTC bug).
+pub(crate) fn format_unix_as_iso_utc(unix: i64) -> String {
     let days = unix.div_euclid(86400);
     let rem = unix.rem_euclid(86400);
     let (y, m, d) = civil_from_days(days);

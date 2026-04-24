@@ -11,6 +11,7 @@ pub mod error;
 pub mod flow;
 pub mod identity;
 pub mod payload;
+pub mod preview;
 pub mod receipt;
 pub mod record;
 pub mod transport;
