@@ -5,6 +5,7 @@
 //! the 1000-byte wire-budget boundary). The flow is still exercised end-to-end;
 //! the substitution is purely about repeatable DNS-packet sizing.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
@@ -72,6 +73,7 @@ fn share_round_trip_recipient_decrypts_third_party_fails() {
         },
         "t",
         MaterialSource::Bytes(plaintext.clone()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("run_send share-mode");
@@ -87,6 +89,7 @@ fn share_round_trip_recipient_decrypts_third_party_fails() {
         &uri,
         &mut sink_b,
         &AutoConfirmPrompter,
+        false,
     )
     .expect("B decrypts");
     match sink_b {
@@ -104,6 +107,7 @@ fn share_round_trip_recipient_decrypts_third_party_fails() {
         &uri,
         &mut sink_c,
         &AutoConfirmPrompter,
+        false,
     )
     .unwrap_err();
     assert!(

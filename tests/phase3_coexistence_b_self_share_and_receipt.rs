@@ -6,6 +6,7 @@
 
 #![cfg(feature = "mock")]
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
@@ -68,6 +69,7 @@ fn bs_self_share_survives_publish_receipt() {
         SendMode::SelfMode,
         "b self",
         MaterialSource::Bytes(b"b self note".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("B self-send");
@@ -88,6 +90,7 @@ fn bs_self_share_survives_publish_receipt() {
         },
         "a to b",
         MaterialSource::Bytes(b"a-to-b share".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("A run_send share mode");
@@ -103,6 +106,7 @@ fn bs_self_share_survives_publish_receipt() {
         &uri,
         &mut sink,
         &AutoConfirmPrompter,
+        false,
     )
     .expect("B run_receive");
 

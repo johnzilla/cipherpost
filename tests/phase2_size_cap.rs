@@ -7,6 +7,7 @@
 //!     `WireBudgetExceeded` whose Display contains all three of: encoded,
 //!     budget, plaintext sizes.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::flow::{run_send, MaterialSource, SendMode, DEFAULT_TTL_SECONDS};
 use cipherpost::transport::MockTransport;
 use secrecy::SecretBox;
@@ -37,6 +38,7 @@ fn plaintext_above_64k_rejected_with_actual_and_cap_in_display() {
         SendMode::SelfMode,
         "too big",
         MaterialSource::Bytes(huge),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .unwrap_err();
@@ -85,6 +87,7 @@ fn plaintext_under_64k_but_over_wire_budget_rejected_with_wire_budget_error() {
         SendMode::SelfMode,
         "wire-budget test",
         MaterialSource::Bytes(big),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .unwrap_err();

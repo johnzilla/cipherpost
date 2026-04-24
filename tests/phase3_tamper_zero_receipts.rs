@@ -111,6 +111,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
         &uri,
         &mut sink,
         &AutoConfirmPrompter,
+        false,
     )
     .expect_err("tampered ciphertext must reject before step 13");
     // Accept any non-success error — the important invariant is ZERO-RECEIPTS below.

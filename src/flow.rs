@@ -16,10 +16,12 @@
 //!   #11 — TTL is inner-signed `created_at + ttl_seconds` (not DHT packet TTL)
 //!   #12 — purpose stripped of control chars at send-time
 
+use crate::cli::MaterialVariant;
 use crate::crypto;
 use crate::error::Error;
 use crate::identity::Identity;
 use crate::payload::{self, Envelope, Material};
+use crate::preview;
 use crate::record::{self, OuterRecord, OuterRecordSignable};
 use crate::transport::Transport;
 use crate::{ShareUri, DHT_LABEL_OUTER, PROTOCOL_VERSION};
@@ -88,6 +90,7 @@ pub trait Prompter {
         share_ref_hex: &str,
         material_type: &str,
         size_bytes: usize,
+        preview_subblock: Option<&str>,
         ttl_remaining_seconds: u64,
         expires_unix_seconds: i64,
     ) -> Result<(), Error>;
@@ -217,6 +220,7 @@ fn read_material(src: MaterialSource) -> Result<Zeroizing<Vec<u8>>, Error> {
 ///     `Error::WireBudgetExceeded { encoded, budget, plaintext }`
 /// 13. `transport.publish(&keypair, &record)`
 /// 14. return `ShareUri::format(sender_z32, &share_ref)`
+#[allow(clippy::too_many_arguments)]
 pub fn run_send(
     identity: &Identity,
     transport: &dyn Transport,
@@ -224,22 +228,39 @@ pub fn run_send(
     mode: SendMode,
     purpose: &str,
     material_source: MaterialSource,
+    material_variant: MaterialVariant,
     ttl_seconds: u64,
 ) -> Result<String, Error> {
-    // 1. read material
+    // 1. read material bytes (unchanged)
     let plaintext_bytes: Zeroizing<Vec<u8>> = read_material(material_source)?;
 
-    // 2. plaintext cap (pre-encrypt; D-PS-01)
-    payload::enforce_plaintext_cap(plaintext_bytes.len())?;
+    // 2. ingest: normalize raw bytes into a typed Material. The DECODED size
+    // (e.g. PEM→DER) is what gets capped in step 3 — a 1 MB PEM that decodes
+    // to 100 KB DER fails the cap on the decoded size, not the input size.
+    // D-P6-01 + D-P6-18.
+    let material = match material_variant {
+        MaterialVariant::GenericSecret => {
+            payload::ingest::generic_secret(plaintext_bytes.to_vec())?
+        }
+        MaterialVariant::X509Cert => payload::ingest::x509_cert(&plaintext_bytes)?,
+        MaterialVariant::PgpKey | MaterialVariant::SshKey => {
+            return Err(Error::NotImplemented { phase: 7 });
+        }
+    };
 
-    // 3. strip purpose control chars (D-WIRE-05)
+    // 3. plaintext cap (pre-encrypt; D-PS-01 / D-P6-16). Uses the typed
+    // Material's `plaintext_size()` so the DECODED DER length is capped, not
+    // the raw PEM-input length.
+    payload::enforce_plaintext_cap(material.plaintext_size())?;
+
+    // 4. strip purpose control chars (D-WIRE-05)
     let stripped_purpose = payload::strip_control_chars(purpose);
 
-    // 4. build Envelope + JCS-serialize
+    // 5. build Envelope + JCS-serialize
     let created_at = now_unix_seconds()?;
     let envelope = Envelope {
         created_at,
-        material: Material::generic_secret(plaintext_bytes.to_vec()),
+        material,
         protocol_version: PROTOCOL_VERSION,
         purpose: stripped_purpose,
     };
@@ -395,6 +416,7 @@ fn check_wire_budget(
 /// Invariant: no payload field is surfaced between step 2 and step 8. The in-body
 /// `STEP N` comments document the exact order; any change there must preserve the
 /// no-surface-before-accept guarantee.
+#[allow(clippy::too_many_arguments)]
 pub fn run_receive(
     identity: &Identity,
     transport: &dyn Transport,
@@ -402,6 +424,7 @@ pub fn run_receive(
     uri: &ShareUri,
     output: &mut OutputSink,
     prompter: &dyn Prompter,
+    armor: bool,
 ) -> Result<(), Error> {
     // STEP 1: sentinel-check (no network, no passphrase)
     if let Some(accepted_at) = check_already_accepted(&uri.share_ref_hex) {
@@ -456,8 +479,32 @@ pub fn run_receive(
     // printed. The Prompter sees the full fields and renders the screen + reads
     // confirmation.
     let (sender_openssh_fp, _z32_again) = sender_openssh_fingerprint_and_z32(&record.pubkey)?;
-    // Non-generic material variants return NotImplemented (exit 1).
-    let material_bytes = envelope.material.as_generic_secret_bytes()?;
+
+    // D-P6-09 / AD-1: match on envelope.material to select the correct accessor
+    // AND (for typed variants) pre-render a preview subblock for the Prompter.
+    // --armor rejection also happens here: it requires a typed material variant
+    // (X509Cert in Phase 6; Phase 7 extends to PGP/SSH).
+    let (material_bytes, preview_subblock): (&[u8], Option<String>) = match &envelope.material {
+        Material::GenericSecret { .. } => {
+            if armor {
+                return Err(Error::Config(
+                    "--armor requires --material x509-cert".into(),
+                ));
+            }
+            (envelope.material.as_generic_secret_bytes()?, None)
+        }
+        Material::X509Cert { .. } => {
+            let bytes = envelope.material.as_x509_cert_bytes()?;
+            let sub = preview::render_x509_preview(bytes)?;
+            (bytes, Some(sub))
+        }
+        Material::PgpKey | Material::SshKey => {
+            // Reserved — Phase 7. as_x509_cert_bytes on these would also fail;
+            // surface the clean NotImplemented error instead of InvalidMaterial.
+            return Err(Error::NotImplemented { phase: 7 });
+        }
+    };
+
     let ttl_remaining = (expires_at - now).max(0) as u64;
     prompter.render_and_confirm(
         &envelope.purpose,
@@ -466,14 +513,23 @@ pub fn run_receive(
         &record.share_ref,
         material_type_string(&envelope.material),
         material_bytes.len(),
+        preview_subblock.as_deref(),
         ttl_remaining,
         expires_at,
     )?; // Err(Error::Declined) on mismatch → exit 7
 
     // STEPS 9-10 are encapsulated inside Prompter.
 
-    // STEP 11: write material to output sink
-    write_output(output, material_bytes)?;
+    // STEP 11: write material to output sink. D-P6-05 / X509-05: if --armor
+    // and the variant is X509Cert, emit PEM-armored bytes; else raw bytes.
+    // The armor → non-X509 combination was already rejected at the material
+    // match above; if we reach here with armor=true, variant is X509Cert.
+    let output_bytes: Vec<u8> = if armor {
+        pem_armor_certificate(material_bytes)
+    } else {
+        material_bytes.to_vec()
+    };
+    write_output(output, &output_bytes)?;
 
     // STEP 12: sentinel FIRST, ledger SECOND (crash-safe; see fn-doc rationale).
     create_sentinel(&record.share_ref)?;
@@ -730,6 +786,22 @@ fn write_output(sink: &mut OutputSink, bytes: &[u8]) -> Result<(), Error> {
     }
 }
 
+/// Wrap canonical DER cert bytes in a PEM armor envelope. X509-05.
+/// Hand-rolled (no new dep): `-----BEGIN CERTIFICATE-----\n` + 64-char-wrapped
+/// base64-STANDARD + `\n-----END CERTIFICATE-----\n`.
+fn pem_armor_certificate(der: &[u8]) -> Vec<u8> {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(der);
+    let mut out = String::with_capacity(encoded.len() + 80);
+    out.push_str("-----BEGIN CERTIFICATE-----\n");
+    for chunk in encoded.as_bytes().chunks(64) {
+        out.push_str(std::str::from_utf8(chunk).expect("base64 output is ASCII"));
+        out.push('\n');
+    }
+    out.push_str("-----END CERTIFICATE-----\n");
+    out.into_bytes()
+}
+
 // ---- State: sentinel + ledger ---------------------------------------------
 
 fn ensure_state_dirs() -> Result<(), Error> {
@@ -928,6 +1000,7 @@ pub mod test_helpers {
             _share_ref_hex: &str,
             _material_type: &str,
             _size_bytes: usize,
+            _preview_subblock: Option<&str>,
             _ttl_remaining_seconds: u64,
             _expires_unix_seconds: i64,
         ) -> Result<(), Error> {
@@ -947,6 +1020,7 @@ pub mod test_helpers {
             _share_ref_hex: &str,
             _material_type: &str,
             _size_bytes: usize,
+            _preview_subblock: Option<&str>,
             _ttl_remaining_seconds: u64,
             _expires_unix_seconds: i64,
         ) -> Result<(), Error> {
@@ -1048,6 +1122,7 @@ impl Prompter for TtyPrompter {
         share_ref_hex: &str,
         material_type: &str,
         size_bytes: usize,
+        preview_subblock: Option<&str>,
         ttl_remaining_seconds: u64,
         expires_unix_seconds: i64,
     ) -> Result<(), Error> {
@@ -1076,6 +1151,12 @@ impl Prompter for TtyPrompter {
         eprintln!("Share ref:   {}", share_ref_hex);
         eprintln!("Type:        {}", material_type);
         eprintln!("Size:        {} bytes", size_bytes);
+        // D-P6-09: typed-variant subblock between Size and TTL.
+        // Caller (run_receive) pre-renders the multi-line string; this arm
+        // is agnostic to the variant.
+        if let Some(sub) = preview_subblock {
+            eprintln!("{}", sub);
+        }
         eprintln!(
             "TTL:         {} remaining (expires {} / {} local)",
             ttl_str, expires_utc, expires_local
@@ -1192,6 +1273,7 @@ mod tests {
             "deadbeef",         // share_ref_hex
             "generic_blob",     // material_type
             42,                 // size_bytes
+            None,               // preview_subblock
             3600,               // ttl_remaining_seconds
             0,                  // expires_unix_seconds
         );

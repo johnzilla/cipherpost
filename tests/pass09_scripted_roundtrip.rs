@@ -8,6 +8,7 @@
 //!
 //! Runs under MockTransport — no real DHT in CI. See D-P5-09.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
@@ -60,6 +61,7 @@ fn run_roundtrip(id_a: &Identity, kp_a: &pkarr::Keypair, id_b: &Identity, kp_b: 
         },
         "pass09",
         MaterialSource::Bytes(b"secret".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("A run_send");
@@ -73,6 +75,7 @@ fn run_roundtrip(id_a: &Identity, kp_a: &pkarr::Keypair, id_b: &Identity, kp_b: 
         &uri,
         &mut sink,
         &AutoConfirmPrompter,
+        false,
     )
     .expect("B run_receive");
     match sink {

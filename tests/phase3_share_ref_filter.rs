@@ -4,6 +4,7 @@
 
 #![cfg(feature = "mock")]
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
@@ -71,6 +72,7 @@ fn receipts_filter_and_senders_own_share_coexists() {
         },
         "p1",
         MaterialSource::Bytes(b"payload one distinct".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("A send 1");
@@ -85,6 +87,7 @@ fn receipts_filter_and_senders_own_share_coexists() {
         &uri1,
         &mut sink1,
         &AutoConfirmPrompter,
+        false,
     )
     .expect("B accept 1");
 
@@ -105,6 +108,7 @@ fn receipts_filter_and_senders_own_share_coexists() {
         },
         "p2",
         MaterialSource::Bytes(b"payload two different".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("A send 2");
@@ -123,6 +127,7 @@ fn receipts_filter_and_senders_own_share_coexists() {
         &uri2,
         &mut sink2,
         &AutoConfirmPrompter,
+        false,
     )
     .expect("B accept 2");
 

@@ -1,6 +1,7 @@
 //! RECV-06: second receive on the same accepted share_ref must short-circuit
 //! (no network, no re-decrypt, no second ledger line).
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
@@ -31,6 +32,7 @@ fn second_receive_on_same_share_ref_short_circuits() {
         SendMode::SelfMode,
         "i",
         MaterialSource::Bytes(plaintext.clone()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .unwrap();
@@ -38,7 +40,16 @@ fn second_receive_on_same_share_ref_short_circuits() {
 
     // First receive — should succeed and write material + ledger + sentinel.
     let mut sink1 = OutputSink::InMemory(Vec::new());
-    run_receive(&id, &transport, &kp, &uri, &mut sink1, &AutoConfirmPrompter).unwrap();
+    run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink1,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .unwrap();
     match sink1 {
         OutputSink::InMemory(buf) => assert_eq!(buf, plaintext),
         _ => panic!(),
@@ -60,7 +71,16 @@ fn second_receive_on_same_share_ref_short_circuits() {
     // Second receive — must short-circuit: returns Ok, no ledger line added,
     // no material written.
     let mut sink2 = OutputSink::InMemory(Vec::new());
-    run_receive(&id, &transport, &kp, &uri, &mut sink2, &AutoConfirmPrompter).unwrap();
+    run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink2,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .unwrap();
     match sink2 {
         OutputSink::InMemory(buf) => {
             assert!(buf.is_empty(), "second receive must not write material")

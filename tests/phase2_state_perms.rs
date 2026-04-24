@@ -1,6 +1,7 @@
 //! D-STATE-02: state dir mode 0700, accepted/ mode 0700, accepted.jsonl mode
 //! 0600, accepted/<share_ref> sentinel mode 0600.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
@@ -30,13 +31,23 @@ fn state_permissions_are_0700_and_0600_after_receive() {
         SendMode::SelfMode,
         "perm test",
         MaterialSource::Bytes(b"x".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .unwrap();
     let uri = ShareUri::parse(&uri_str).unwrap();
 
     let mut sink = OutputSink::InMemory(Vec::new());
-    run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter).unwrap();
+    run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .unwrap();
 
     let state = dir.path().join("state");
     let accepted = state.join("accepted");

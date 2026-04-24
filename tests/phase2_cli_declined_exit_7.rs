@@ -11,6 +11,7 @@
 //! own in-memory HashMap). The library-level test covers the full run_receive
 //! decline semantics including the "no material written" invariant.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::flow::test_helpers::DeclinePrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
@@ -40,14 +41,23 @@ fn receive_declined_returns_error_declined_exit_7() {
         SendMode::SelfMode,
         "decline test",
         MaterialSource::Bytes(b"secret".to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("run_send self-mode");
     let uri = ShareUri::parse(&uri_str).unwrap();
 
     let mut sink = OutputSink::InMemory(Vec::new());
-    let err = run_receive(&id, &transport, &kp, &uri, &mut sink, &DeclinePrompter)
-        .expect_err("DeclinePrompter must cause run_receive to Err");
+    let err = run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink,
+        &DeclinePrompter,
+        false,
+    )
+    .expect_err("DeclinePrompter must cause run_receive to Err");
 
     // The error must be Error::Declined (not some other sig/decrypt failure).
     assert!(

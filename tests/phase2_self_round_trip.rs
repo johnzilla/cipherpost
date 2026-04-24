@@ -1,6 +1,7 @@
 //! SC1 self-mode: cipherpost send --self + cipherpost receive (same identity)
 //! round-trips the plaintext byte-for-byte via MockTransport.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
@@ -40,6 +41,7 @@ fn self_round_trip_recovers_plaintext() {
         SendMode::SelfMode,
         "k",
         MaterialSource::Bytes(plaintext.clone()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("run_send self-mode");
@@ -47,8 +49,16 @@ fn self_round_trip_recovers_plaintext() {
     let uri = ShareUri::parse(&uri_str).expect("run_send must return a valid URI");
 
     let mut sink = OutputSink::InMemory(Vec::new());
-    run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter)
-        .expect("run_receive self-mode");
+    run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .expect("run_receive self-mode");
 
     match sink {
         OutputSink::InMemory(buf) => {

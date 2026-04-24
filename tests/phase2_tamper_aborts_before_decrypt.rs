@@ -4,6 +4,7 @@
 //! No envelope field (purpose, material bytes) appears in any captured output
 //! before the sig check passes.
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
@@ -37,6 +38,7 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
         SendMode::SelfMode,
         secret_purpose,
         MaterialSource::Bytes(plaintext.clone()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .unwrap();
@@ -59,7 +61,16 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
 
     // Now run_receive; the corrupt signature must fail verify inside resolve()
     let mut sink = OutputSink::InMemory(Vec::new());
-    let err = run_receive(&id, &transport, &kp, &uri, &mut sink, &AutoConfirmPrompter).unwrap_err();
+    let err = run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .unwrap_err();
     assert!(
         matches!(
             err,

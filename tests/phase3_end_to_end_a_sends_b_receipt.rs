@@ -6,6 +6,7 @@
 
 #![cfg(feature = "mock")]
 
+use cipherpost::cli::MaterialVariant;
 use cipherpost::crypto;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
@@ -71,6 +72,7 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         },
         "e2e test",
         MaterialSource::Bytes(material_bytes.to_vec()),
+        MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
     )
     .expect("A run_send");
@@ -86,6 +88,7 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         &uri,
         &mut sink,
         &AutoConfirmPrompter,
+        false,
     )
     .expect("B run_receive with AutoConfirm");
 
