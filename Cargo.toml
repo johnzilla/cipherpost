@@ -175,6 +175,14 @@ path = "tests/passphrase_strip_rule.rs"
 name = "passphrase_fd_borrowed"
 path = "tests/passphrase_fd_borrowed.rs"
 
+# Phase 5 Plan 05-02: PASS-09 scripted-roundtrip integration test under MockTransport
+# (D-P5-09). Requires the `mock` feature; gates the CI guarantee that scripted
+# send→receive works end-to-end with no TTY, via --passphrase-file and --passphrase-fd.
+[[test]]
+name = "pass09_scripted_roundtrip"
+path = "tests/pass09_scripted_roundtrip.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
