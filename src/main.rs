@@ -83,15 +83,49 @@ fn dispatch(cli: Cli) -> Result<()> {
             purpose,
             material_file,
             ttl,
+            passphrase,
+            passphrase_file,
+            passphrase_fd,
+            material_stdin,
         } => {
-            // Phase 2 does not add passphrase flags to Send — pulls from env / TTY only.
-            // (cli.rs is locked per Phase 1 D-11; a future plan may add --passphrase-file / --fd.)
+            // D-P5-04: reject --passphrase-file AND --passphrase-fd together.
+            if passphrase_file.is_some() && passphrase_fd.is_some() {
+                return Err(cipherpost::Error::Config(
+                    "--passphrase-file and --passphrase-fd are mutually exclusive".into(),
+                )
+                .into());
+            }
+            // D-P5-05: positional must be `-` (or absent); anything else is a user error.
+            if let Some(ref v) = material_stdin {
+                if v != "-" {
+                    return Err(cipherpost::Error::Config(
+                        "positional argument must be `-` (stdin); use --material-file <path> for files".into(),
+                    )
+                    .into());
+                }
+            }
+            // D-P5-05: positional `-` maps to --material-file "-" unless --material-file also set.
+            let effective_material: Option<String> =
+                match (material_file.as_deref(), material_stdin.as_deref()) {
+                    (Some(_), Some(_)) => {
+                        return Err(cipherpost::Error::Config(
+                            "--material-file and positional `-` are mutually exclusive".into(),
+                        )
+                        .into())
+                    }
+                    (Some(p), None) => Some(p.to_string()),
+                    (None, Some("-")) => Some("-".to_string()),
+                    (None, None) => None,
+                    (None, Some(_)) => unreachable!("validated above"),
+                };
+
+            // D-P5-01 precedence (enforced in resolve_passphrase body): fd > file > env > TTY.
             // confirm_on_tty: false — unlock path.
             let pw = cipherpost::identity::resolve_passphrase(
-                None,
+                passphrase.as_deref(),
                 Some("CIPHERPOST_PASSPHRASE"),
-                None,
-                None,
+                passphrase_file.as_deref(),
+                passphrase_fd,
                 false,
             )?;
             let id = cipherpost::identity::load(pw.as_secret())?;
@@ -120,12 +154,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             };
 
-            // Material source: --material-file value ('-' = stdin; path = file; absent = error).
-            let material_source = match material_file.as_deref() {
+            // Material source: effective value from --material-file OR positional `-`.
+            let material_source = match effective_material.as_deref() {
                 None => {
                     return Err(cipherpost::Error::Config(
-                        "--material-file <path> or - required (Phase 2: stdin only, no prompt)"
-                            .into(),
+                        "--material-file <path> or positional `-` required".into(),
                     )
                     .into())
                 }
@@ -173,7 +206,18 @@ fn dispatch(cli: Cli) -> Result<()> {
             share,
             output,
             dht_timeout: _,
+            passphrase,
+            passphrase_file,
+            passphrase_fd,
         } => {
+            // D-P5-04: reject --passphrase-file AND --passphrase-fd together.
+            if passphrase_file.is_some() && passphrase_fd.is_some() {
+                return Err(cipherpost::Error::Config(
+                    "--passphrase-file and --passphrase-fd are mutually exclusive".into(),
+                )
+                .into());
+            }
+
             // Parse the URI first (cheap, no I/O) so invalid input fails before
             // we ask the user for a passphrase.
             let share_str =
@@ -187,12 +231,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
 
+            // D-P5-01 precedence (enforced in resolve_passphrase body): fd > file > env > TTY.
             // confirm_on_tty: false — unlock path.
             let pw = cipherpost::identity::resolve_passphrase(
-                None,
+                passphrase.as_deref(),
                 Some("CIPHERPOST_PASSPHRASE"),
-                None,
-                None,
+                passphrase_file.as_deref(),
+                passphrase_fd,
                 false,
             )?;
             let id = cipherpost::identity::load(pw.as_secret())?;
