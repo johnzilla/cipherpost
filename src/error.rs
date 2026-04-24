@@ -61,6 +61,17 @@ pub enum Error {
         plaintext: usize,
     },
 
+    /// D-P6-03 (Phase 6): typed-material ingest failure OR variant-accessor mismatch.
+    /// `variant` is the snake-case wire tag (e.g. `"x509_cert"`); `reason` is a curated
+    /// short string — NEVER wraps an x509-parser / nom / parse-position string.
+    /// Maps to exit 1 per X509-08 (distinct from exit 3 signature failures).
+    ///
+    /// Do NOT use `#[source]` or `#[from]` here — that would bait a Display-chain leak
+    /// of `X509Error::InvalidCertificate` etc. via `err.source()`. The `reason: String`
+    /// is the sanitation gate.
+    #[error("invalid material: variant={variant}, reason={reason}")]
+    InvalidMaterial { variant: String, reason: String },
+
     #[error("invalid share URI: {0}")]
     InvalidShareUri(String),
 
@@ -94,6 +105,7 @@ pub fn exit_code(err: &Error) -> i32 {
         Error::Network => 6,
         Error::Declined => 7,
         Error::ShareRefMismatch | Error::WireBudgetExceeded { .. } | Error::InvalidShareUri(_) => 1,
+        Error::InvalidMaterial { .. } => 1, // X509-08: content error, NOT sig (exit 3)
         _ => 1,
     }
 }
