@@ -205,6 +205,11 @@ name = "x509_roundtrip"
 path = "tests/x509_roundtrip.rs"
 required-features = ["mock"]
 
+# Phase 6 Plan 04: X509 banner render golden-string test.
+[[test]]
+name = "x509_banner_render"
+path = "tests/x509_banner_render.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

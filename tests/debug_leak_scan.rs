@@ -59,3 +59,55 @@ fn passphrase_debug_does_not_leak() {
         debug_str
     );
 }
+
+// -----------------------------------------------------------------------------
+// Phase 6 Plan 04: extend leak-scan to cover all 4 Material variants.
+// The redaction rule is blanket — no byte-holding variant may Debug-print its
+// contents, regardless of secrecy class. X509Cert carries public bytes but
+// the same Debug shell holds PGP/SSH secret keys in Phase 7 (Pitfall #7).
+// -----------------------------------------------------------------------------
+
+#[test]
+fn material_generic_secret_debug_redacts_bytes() {
+    use cipherpost::payload::Material;
+    let m = Material::generic_secret(vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]);
+    let dbg = format!("{:?}", m);
+    assert!(
+        dbg.contains("REDACTED"),
+        "GenericSecret Debug must show REDACTED, got: {:?}",
+        dbg
+    );
+    // No 8-byte window of the input in hex (the input is exactly 8 bytes).
+    assert!(
+        !dbg.contains("deadbeefcafebabe"),
+        "GenericSecret Debug leaked bytes: {:?}",
+        dbg
+    );
+}
+
+#[test]
+fn material_x509_cert_debug_redacts_bytes() {
+    use cipherpost::payload::Material;
+    let m = Material::X509Cert {
+        bytes: vec![0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A],
+    };
+    let dbg = format!("{:?}", m);
+    assert!(
+        dbg.contains("REDACTED"),
+        "X509Cert Debug must show REDACTED, got: {:?}",
+        dbg
+    );
+    assert!(
+        !dbg.contains("abcdef123456789a"),
+        "X509Cert Debug leaked bytes: {:?}",
+        dbg
+    );
+}
+
+#[test]
+fn material_pgp_and_ssh_unit_variant_debug_no_bytes() {
+    use cipherpost::payload::Material;
+    // Unit variants have nothing to leak — the Debug string is just the variant name.
+    assert_eq!(format!("{:?}", Material::PgpKey), "PgpKey");
+    assert_eq!(format!("{:?}", Material::SshKey), "SshKey");
+}
