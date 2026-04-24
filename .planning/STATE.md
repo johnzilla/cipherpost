@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: Phase 6 Plan 01 complete (typed Material + ingest + InvalidMaterial)
-last_updated: "2026-04-24T18:39:26Z"
-last_activity: 2026-04-24 -- Phase 06 Plan 01 shipped
+stopped_at: "Phase 6 Plan 02 complete (preview::render_x509_preview + format_unix_as_iso_utc pub(crate))"
+last_updated: "2026-04-24T18:57:07.614Z"
+last_activity: 2026-04-24
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 4
-  percent: 57
+  completed_plans: 5
+  percent: 71
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 ## Current Position
 
 Phase: 06 (typed-material-x509cert) — EXECUTING
-Plan: 2 of 4 (next — CLI surface: `--material` flag + `Receive --armor`)
-Status: Plan 01 complete
-Last activity: 2026-04-24 -- Phase 06 Plan 01 shipped (typed Material + ingest + InvalidMaterial)
+Plan: 3 of 4 (next — CLI surface: `--material` flag + `Receive --armor`)
+Status: Ready to execute
+Last activity: 2026-04-24
 
-Progress: [█████░░░░░░░░░░░░░░░] 25%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -45,7 +45,7 @@ Progress: [█████░░░░░░░░░░░░░░░] 25%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 5. Non-interactive automation E2E | 0/TBD | — | — |
-| 6. Typed Material: X509Cert | 1/4 | 17min | 17min |
+| 6. Typed Material: X509Cert | 2/4 | 24min | 12min |
 | 7. Typed Material: PgpKey + SshKey | 0/TBD | — | — |
 | 8. --pin and --burn modes | 0/TBD | — | — |
 | 9. Real-DHT E2E + CAS race gate | 0/TBD | — | — |
@@ -57,6 +57,7 @@ Progress: [█████░░░░░░░░░░░░░░░] 25%
 - Trend: — (v1.1 begins)
 
 *Historical v1.0 metrics archived at `.planning/milestones/v1.0-ROADMAP.md` and `.planning/RETROSPECTIVE.md`.*
+| Phase 06 P02 | 7min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,15 @@ Recent decisions affecting current work:
 - `serial_test = "3"` + `#[serial]` on any test that mutates process env (CIPHERPOST_HOME, CIPHERPOST_PIN, etc.).
 - `DhtTransport` via `pkarr::ClientBlocking` — no `tokio` dep at cipherpost layer.
 
+**v1.1 Phase 6 Plan 02 (2026-04-24):**
+
+- preview::render_x509_preview lives in a new src/preview.rs module (D-P6-17) with pure-function contract — no side effects, caller owns emission. x509-parser imports kept out of payload/ and flow.rs per architectural-responsibility map.
+- DN rendering uses x509-parser's Display impl (OpenSSL-forward order) — RESEARCH CORRECTION 1 resolved OQ-3. The built-in Display matches `openssl x509 -noout -subject` output; no hand-rolled RDN reversal.
+- Key-algorithm dispatch is OID-based (spki.algorithm.algorithm), not PublicKey-enum-based — RESEARCH CORRECTION 2. Ed25519/Ed448 come through PublicKey::Unknown so the enum would miss them; OID-first dispatch covers all top-10 algorithms with dotted-OID fallback for unknown.
+- `format_unix_as_iso_utc` bumped from `fn` to `pub(crate) fn` — single source of truth across flow.rs banner emission and preview.rs NotBefore/NotAfter rendering. UAT-2 2026-04-21 pinned test (no double `" UTC"` suffix) still green.
+- `secp256k1` curve uses dotted-OID string match (`"1.3.132.0.10"`) — no exported constant in oid-registry 0.7; documented fallback path per RESEARCH Focus 4.
+- `[EXPIRED]` / `[VALID]` tag fails open on SystemTime clock error (returns `[VALID]`) — NotAfter ISO timestamp is always shown regardless, so the tag is UX decoration, not a block.
+
 ### Pending Todos
 
 - Complete cclink pin/burn survey before planning Phase 8 (see SUMMARY.md Open Questions — manual bash commands provided)
@@ -135,9 +145,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-24T18:39:26Z
-Stopped at: Phase 6 Plan 01 complete (typed Material::X509Cert + payload::ingest + Error::InvalidMaterial)
-Resume file: .planning/phases/06-typed-material-x509cert/06-01-SUMMARY.md
+Last session: 2026-04-24T18:57:07.608Z
+Stopped at: Phase 6 Plan 02 complete (preview::render_x509_preview + format_unix_as_iso_utc pub(crate))
+Resume file: .planning/phases/06-typed-material-x509cert/06-02-SUMMARY.md
 
-**Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans, 1 shipped — 2026-04-24T18:22:32.720Z
-**Next action:** `/gsd-execute-phase 6` (continues with Plan 02 — CLI `--material` flag + `Receive --armor`)
+**Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans, 2 shipped — 2026-04-24T18:22:32.720Z
+**Next action:** `/gsd-execute-phase 6` (continues with Plan 03 — CLI `--material` flag + `Receive --armor` + run_send/run_receive wiring)
