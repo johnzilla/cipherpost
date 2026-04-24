@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: planning
-stopped_at: Phase 6 context gathered
-last_updated: "2026-04-24T18:22:32.725Z"
-last_activity: 2026-04-24
+status: executing
+stopped_at: Phase 6 Plan 01 complete (typed Material + ingest + InvalidMaterial)
+last_updated: "2026-04-24T18:39:26Z"
+last_activity: 2026-04-24 -- Phase 06 Plan 01 shipped
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 3
-  percent: 43
+  completed_plans: 4
+  percent: 57
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickoff)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase 5 — Non-interactive automation E2E
+**Current focus:** Phase 06 — typed-material-x509cert
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-04-24
+Phase: 06 (typed-material-x509cert) — EXECUTING
+Plan: 2 of 4 (next — CLI surface: `--material` flag + `Receive --armor`)
+Status: Plan 01 complete
+Last activity: 2026-04-24 -- Phase 06 Plan 01 shipped (typed Material + ingest + InvalidMaterial)
 
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
+Progress: [█████░░░░░░░░░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -45,7 +45,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 5. Non-interactive automation E2E | 0/TBD | — | — |
-| 6. Typed Material: X509Cert | 0/TBD | — | — |
+| 6. Typed Material: X509Cert | 1/4 | 17min | 17min |
 | 7. Typed Material: PgpKey + SshKey | 0/TBD | — | — |
 | 8. --pin and --burn modes | 0/TBD | — | — |
 | 9. Real-DHT E2E + CAS race gate | 0/TBD | — | — |
@@ -64,6 +64,16 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
+
+**v1.1 Phase 6 Plan 01 (2026-04-24):**
+
+- `Material::X509Cert` promoted from unit variant to `{ bytes: Vec<u8> }` struct variant; wire shape `{"type":"x509_cert","bytes":"<base64-std>"}` reuses existing `base64_std` serde helper with no configuration change
+- AD-2 resolved: new `src/payload/ingest.rs` file (not inline `pub mod ingest { ... }`); `src/payload.rs` → `src/payload/mod.rs` directory module — first multi-file module under `src/`. Phase 7 adds `ingest::pgp_key()` + `ingest::ssh_key()` peer functions there
+- `Error::InvalidMaterial { variant: String, reason: String }` with generic Display literal; no `#[source]` or `#[from]` — the `reason: String` is the oracle-hygiene gate (D-P6-03 / X509-08); exit 1 (distinct from exit 3 sig failures)
+- `Error::InvalidMaterial` reason strings locked in code as short curated literals: `"malformed DER"`, `"PEM body decode failed"`, `"PEM label is not CERTIFICATE"`, `"trailing bytes after certificate"`, `"accessor called on wrong variant"` — Plan 04's enumeration test constructs these explicitly
+- x509-parser 0.16.0 pulled with `default-features = false`, `verify` feature OFF; `cargo tree | grep -E "ring|aws-lc"` empty (verified T-06-06 mitigation)
+- MSRV blocker: x509-parser 0.16's transitive `time 0.3.47` requires rustc 1.88.0 — cipherpost MSRV is 1.85; pinned `time 0.3.41` via Cargo.lock (Cargo.toml dep spec unchanged). Inform Phase 7 planners: any new crate addition should run `cargo build` against the project toolchain before committing
+- Debug redaction uniform: `X509Cert([REDACTED N bytes])` mirrors `GenericSecret` shape — one rule for all byte-carrying variants (Pitfall #7)
 
 **v1.1 roadmap generation (2026-04-23):**
 
@@ -125,9 +135,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 6 context gathered
-Resume file: --resume-file
+Last session: 2026-04-24T18:39:26Z
+Stopped at: Phase 6 Plan 01 complete (typed Material::X509Cert + payload::ingest + Error::InvalidMaterial)
+Resume file: .planning/phases/06-typed-material-x509cert/06-01-SUMMARY.md
 
-**Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans — 2026-04-24T18:22:32.720Z
-**Next action:** `/gsd-plan-phase 5`
+**Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans, 1 shipped — 2026-04-24T18:22:32.720Z
+**Next action:** `/gsd-execute-phase 6` (continues with Plan 02 — CLI `--material` flag + `Receive --armor`)

@@ -54,8 +54,8 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   3. Raw DER bytes reach stdout by default; `--armor` produces PEM-wrapped output
   4. JCS fixture `tests/fixtures/material_x509_signable.bin` is committed and asserted byte-for-byte identical on every CI run (any drift surfaces as a red test)
   5. Malformed X.509 DER at receive time returns exit 1 with a message naming the variant — never exit 3 (reserved for signature failures)
-**Plans**: 4 plans
-- [ ] 06-01-PLAN.md — Foundation: x509-parser dep + Material::X509Cert struct variant + as_x509_cert_bytes + plaintext_size + Error::InvalidMaterial + payload::ingest module
+**Plans**: 4 plans (1 / 4 complete)
+- [x] 06-01-PLAN.md — Foundation: x509-parser dep + Material::X509Cert struct variant + as_x509_cert_bytes + plaintext_size + Error::InvalidMaterial + payload::ingest module [2026-04-24]
 - [ ] 06-02-PLAN.md — preview.rs module: render_x509_preview with DN/Serial/fingerprint/key-alg rendering + format_unix_as_iso_utc visibility bump
 - [ ] 06-03-PLAN.md — CLI surface + dispatch: --material flag + --armor flag + run_send/run_receive wiring + Prompter trait extension
 - [ ] 06-04-PLAN.md — Fixtures + integration tests + error-oracle enumeration + leak-scan extension + dep-tree guard + SPEC.md update
