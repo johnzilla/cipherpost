@@ -54,7 +54,11 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   3. Raw DER bytes reach stdout by default; `--armor` produces PEM-wrapped output
   4. JCS fixture `tests/fixtures/material_x509_signable.bin` is committed and asserted byte-for-byte identical on every CI run (any drift surfaces as a red test)
   5. Malformed X.509 DER at receive time returns exit 1 with a message naming the variant — never exit 3 (reserved for signature failures)
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 06-01-PLAN.md — Foundation: x509-parser dep + Material::X509Cert struct variant + as_x509_cert_bytes + plaintext_size + Error::InvalidMaterial + payload::ingest module
+- [ ] 06-02-PLAN.md — preview.rs module: render_x509_preview with DN/Serial/fingerprint/key-alg rendering + format_unix_as_iso_utc visibility bump
+- [ ] 06-03-PLAN.md — CLI surface + dispatch: --material flag + --armor flag + run_send/run_receive wiring + Prompter trait extension
+- [ ] 06-04-PLAN.md — Fixtures + integration tests + error-oracle enumeration + leak-scan extension + dep-tree guard + SPEC.md update
 **UI hint**: no
 
 ### Phase 7: Typed Material — PgpKey + SshKey
@@ -104,10 +108,10 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 3. Signed receipt | v1.0 | 4/4 | Complete | 2026-04-21 |
 | 4. Protocol docs | v1.0 | 5/5 | Complete | 2026-04-22 |
 | 5. Non-interactive automation E2E | v1.1 | 3/3 | Complete    | 2026-04-24 |
-| 6. Typed Material: X509Cert | v1.1 | 0/TBD | Not started | - |
+| 6. Typed Material: X509Cert | v1.1 | 0/4 | Planned | - |
 | 7. Typed Material: PgpKey + SshKey | v1.1 | 0/TBD | Not started | - |
 | 8. --pin and --burn modes | v1.1 | 0/TBD | Not started | - |
 | 9. Real-DHT E2E + CAS race gate | v1.1 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-04-23 at v1.1 "Real v1" roadmap generation — 5 phases (Phases 5–9), 67 requirements mapped, coverage 67/67.*
+*Last updated: 2026-04-24 at Phase 6 plan generation — 4 plans across 4 waves, 9 X509 REQ-IDs fully covered.*
