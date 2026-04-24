@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: in_progress
-stopped_at: "Roadmap generated for v1.1 — 5 phases (Phases 5–9), 67/67 requirements mapped. Ready to plan Phase 5."
-last_updated: "2026-04-23T00:00:00.000Z"
-last_activity: 2026-04-23
+status: planning
+stopped_at: Phase 5 context gathered
+last_updated: "2026-04-24T02:01:16.889Z"
+last_activity: 2026-04-23 — Roadmap generated; 67/67 requirements mapped across Phases 5–9.
 progress:
   total_phases: 5
   completed_phases: 0
@@ -65,6 +65,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
 **v1.1 roadmap generation (2026-04-23):**
+
 - Phase grouping locked: PASS+DOC → Phase 5; X509 → Phase 6; PGP+SSH → Phase 7; PIN+BURN → Phase 8; DHT → Phase 9
 - Traceability format locked project-wide (DOC-03): inline phase tags on each requirement are canonical; no separate traceability table; phase VERIFICATION.md files are authoritative for implementation status
 - Phase 6 before Phase 7: X509 pattern-establishes (Material module, JCS fixture discipline, per-variant size check, Debug redaction); Phase 7 applies mechanically
@@ -75,6 +76,7 @@ Recent decisions affecting current work:
 - Burn+receipt decision recorded: Option A — receipt IS published after successful burn-receive (receipt = delivery confirmation; burn does not suppress attestation)
 
 **v1.1 milestone kickoff (2026-04-23):**
+
 - v1.1 milestone locked as "Real v1" — PRD closure + real-DHT de-risking; not a launch milestone
 - Phase structure confirmed: 5 phases continuing from v1.0's Phase 4 → Phases 5–9 (no phase-number reset)
 - Coarse-granularity rule held from v1.0 retrospective — every phase ends at a user-visible capability
@@ -85,6 +87,7 @@ Recent decisions affecting current work:
 - Solo-builder hygiene: zero "Pending" rows in traceability — checkboxes and table stay in sync, or one of them goes away
 
 **Inherited from v1.0 (retained for context):**
+
 - Fork-and-diverge from mothballed cclink; no shared `cipherpost-core` crate until a second consumer exists.
 - Default TTL = 24 hours (revised from PRD's 4h) to accommodate Mainline DHT latency distributions.
 - Canonical JSON = RFC 8785 (JCS) via `serde_canonical_json` (shipped as 1.0.0, API matches planned 0.2).
@@ -121,9 +124,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-23T00:00:00.000Z
-Stopped at: v1.1 roadmap generated — ROADMAP.md and STATE.md written; 67/67 requirements mapped. Ready to plan Phase 5.
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 5 context gathered
+Resume file: --resume-file
 
 **Planned Phase:** 5 (Non-interactive automation E2E) — plan count TBD after `/gsd-plan-phase 5`
 **Next action:** `/gsd-plan-phase 5`
