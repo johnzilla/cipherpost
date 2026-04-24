@@ -10,6 +10,25 @@
 
 use clap::{Parser, Subcommand};
 
+/// Typed Material variant selector for `cipherpost send --material` (D-P6-01).
+///
+/// Clap renders kebab-case values (`generic-secret`, `x509-cert`, `pgp-key`, `ssh-key`)
+/// for the CLI surface; the wire shape (`generic_secret`, `x509_cert`, ...) is owned by
+/// `payload.rs`'s `#[serde(tag = "type", rename_all = "snake_case")]` — no coupling.
+///
+/// `PgpKey` / `SshKey` parse at clap level for UX polish but dispatch returns
+/// `Error::NotImplemented { phase: 7 }`. Accepting them here lets the runtime error
+/// be a clean typed message rather than clap's "unknown value for --material".
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[clap(rename_all = "kebab-case")]
+pub enum MaterialVariant {
+    #[default]
+    GenericSecret,
+    X509Cert,
+    PgpKey,
+    SshKey,
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "cipherpost",
@@ -35,6 +54,7 @@ pub enum Command {
     #[command(long_about = "Send a payload.\n\nEXAMPLES:\n  \
               cipherpost send --self -p 'backup signing key' --material-file ./key.age\n  \
               cipherpost send --share <z32-pubkey> -p 'onboarding token' -\n  \
+              cipherpost send --self -p 'onboarding leaf cert' --material x509-cert --material-file ./leaf.pem\n  \
               CIPHERPOST_PASSPHRASE=hunter2 cipherpost send --self -p 'x' -\n  \
               cipherpost send --self -p 'x' --passphrase-file ./pw.txt -\n  \
               cipherpost send --self -p 'x' --passphrase-fd 3 - 3</tmp/pw")]
@@ -59,6 +79,10 @@ pub enum Command {
         #[arg(long)]
         ttl: Option<u64>,
 
+        /// Typed material variant. Default `generic-secret` preserves every Phase 5 script.
+        #[arg(long, value_enum, default_value_t = MaterialVariant::GenericSecret)]
+        material: MaterialVariant,
+
         /// Read passphrase from the given file (newline-terminated, file must be mode 0600 or 0400)
         #[arg(long, value_name = "PATH")]
         passphrase_file: Option<std::path::PathBuf>,
@@ -80,6 +104,7 @@ pub enum Command {
     #[command(long_about = "Receive a share.\n\nEXAMPLES:\n  \
               cipherpost receive <share-uri>\n  \
               cipherpost receive <share-uri> -o ./recovered.key\n  \
+              cipherpost receive <share-uri> --armor -o ./leaf.pem\n  \
               CIPHERPOST_PASSPHRASE=hunter2 cipherpost receive <share-uri>\n  \
               cipherpost receive <share-uri> --passphrase-file ./pw.txt\n  \
               cipherpost receive <share-uri> --passphrase-fd 3 3</tmp/pw")]
@@ -94,6 +119,11 @@ pub enum Command {
         /// Override default DHT resolve timeout (seconds)
         #[arg(long)]
         dht_timeout: Option<u64>,
+
+        /// Emit PEM-armored certificate output (`-----BEGIN CERTIFICATE-----` envelope).
+        /// Only valid when the share's Material is `x509_cert`; rejected otherwise.
+        #[arg(long)]
+        armor: bool,
 
         /// Read passphrase from the given file (newline-terminated, file must be mode 0600 or 0400)
         #[arg(long, value_name = "PATH")]
