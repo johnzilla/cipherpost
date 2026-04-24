@@ -104,6 +104,63 @@ fn x509_cert_trailing_bytes_rejected() {
 }
 
 #[test]
+fn x509_cert_pem_with_trailing_second_cert_rejected() {
+    // WR-01 regression: the PEM path must reject trailing bytes after the
+    // first `-----END CERTIFICATE-----`. Before the fix, `parse_x509_pem`
+    // decoded only the first PEM block and the remainder was silently
+    // discarded — contradicting the D-P6-07 trailing-bytes invariant the
+    // ingest module docstring promises across BOTH DER and PEM paths.
+    //
+    // Concatenated two valid PEM-armored certs of the same fixture; ingest
+    // must return Error::InvalidMaterial with reason "trailing bytes after
+    // certificate" (the same generic reason the DER path uses — preserves
+    // oracle hygiene, matches EXPECTED_REASONS in x509_error_oracle.rs).
+    let mut pem = pem_armor_der(FIXTURE_DER);
+    pem.extend_from_slice(&pem_armor_der(FIXTURE_DER));
+    let err = ingest::x509_cert(&pem).unwrap_err();
+    match err {
+        Error::InvalidMaterial { variant, reason } => {
+            assert_eq!(variant, "x509_cert");
+            assert_eq!(reason, "trailing bytes after certificate");
+        }
+        other => panic!("expected InvalidMaterial, got {:?}", other),
+    }
+}
+
+#[test]
+fn x509_cert_pem_with_trailing_junk_rejected() {
+    // WR-01 regression: non-whitespace garbage after `-----END CERTIFICATE-----`
+    // must also be rejected. Trailing ASCII whitespace (newlines, spaces) is
+    // permitted — matches OpenSSL / standard PEM conventions.
+    let mut pem = pem_armor_der(FIXTURE_DER);
+    pem.extend_from_slice(b"garbage trailing bytes\n");
+    let err = ingest::x509_cert(&pem).unwrap_err();
+    match err {
+        Error::InvalidMaterial { variant, reason } => {
+            assert_eq!(variant, "x509_cert");
+            assert_eq!(reason, "trailing bytes after certificate");
+        }
+        other => panic!("expected InvalidMaterial, got {:?}", other),
+    }
+}
+
+#[test]
+fn x509_cert_pem_with_trailing_whitespace_accepted() {
+    // WR-01 boundary: the fix only rejects *non-whitespace* trailing bytes.
+    // Extra blank lines after `-----END CERTIFICATE-----` must still parse,
+    // otherwise real-world PEM files produced by OpenSSL (which often append
+    // a trailing LF) would break. pem_armor_der already appends one `\n`;
+    // add more whitespace and assert it still ingests.
+    let mut pem = pem_armor_der(FIXTURE_DER);
+    pem.extend_from_slice(b"\n\n   \r\n\t");
+    let m = ingest::x509_cert(&pem).expect("trailing whitespace must be tolerated");
+    match m {
+        Material::X509Cert { bytes } => assert_eq!(bytes, FIXTURE_DER),
+        other => panic!("expected X509Cert, got {:?}", other),
+    }
+}
+
+#[test]
 fn x509_cert_pem_body_garbage_rejected() {
     let pem = b"-----BEGIN CERTIFICATE-----\n!!!not base64!!!\n-----END CERTIFICATE-----\n";
     let err = ingest::x509_cert(pem).unwrap_err();

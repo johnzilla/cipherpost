@@ -53,7 +53,7 @@ pub fn x509_cert(raw: &[u8]) -> Result<Material, Error> {
 
     let der_bytes: Vec<u8> = if is_pem {
         // PEM path
-        let (_pem_rem, pem) =
+        let (pem_rem, pem) =
             x509_parser::pem::parse_x509_pem(raw).map_err(|_| Error::InvalidMaterial {
                 variant: "x509_cert".into(),
                 reason: "PEM body decode failed".into(),
@@ -62,6 +62,18 @@ pub fn x509_cert(raw: &[u8]) -> Result<Material, Error> {
             return Err(Error::InvalidMaterial {
                 variant: "x509_cert".into(),
                 reason: "PEM label is not CERTIFICATE".into(),
+            });
+        }
+        // D-P6-07 for the PEM path: reject trailing bytes after the first
+        // `-----END CERTIFICATE-----`. `parse_x509_pem` decodes only the first
+        // PEM block; without this check a concatenated-cert input like
+        // `<cert-A-PEM>\n<cert-B-PEM>\n` would silently ingest cert A and
+        // discard cert B, contradicting the trailing-bytes invariant the
+        // module docstring promises across BOTH DER and PEM paths.
+        if pem_rem.iter().any(|b| !b.is_ascii_whitespace()) {
+            return Err(Error::InvalidMaterial {
+                variant: "x509_cert".into(),
+                reason: "trailing bytes after certificate".into(),
             });
         }
         pem.contents
