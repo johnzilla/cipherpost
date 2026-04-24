@@ -22,7 +22,7 @@ Phase 5. Aligns `send`/`receive` with the `identity` subcommand non-interactive 
 - [ ] **PASS-02 [Phase 5]**: User can pass `--passphrase-fd <fd>` to `cipherpost send`; implementation uses `BorrowedFd`, not `FromRawFd` (no double-close)
 - [ ] **PASS-03 [Phase 5]**: User can pass `--passphrase-file <path>` to `cipherpost receive` with identical semantics to `send`
 - [ ] **PASS-04 [Phase 5]**: User can pass `--passphrase-fd <fd>` to `cipherpost receive` with identical semantics to `send`
-- [ ] **PASS-05 [Phase 5]**: Passphrase source precedence on `send`/`receive` matches `identity generate`/`show`: inline-rejected > env (`CIPHERPOST_PASSPHRASE`) > `--passphrase-file` > `--passphrase-fd` > TTY prompt
+- [ ] **PASS-05 [Phase 5]**: Passphrase source precedence on `send`/`receive` matches the shipped `resolve_passphrase` contract: `--passphrase-fd > --passphrase-file > CIPHERPOST_PASSPHRASE > TTY`. Argv-inline `--passphrase <value>` is rejected at parse and at runtime. Identity subcommands (`generate`/`show`) use the same ordering.
 - [ ] **PASS-06 [Phase 5]**: `--passphrase <value>` inline flag on `send`/`receive` is `hide = true` and rejected at runtime with same message as identity subcommands
 - [ ] **PASS-07 [Phase 5]**: Newline-strip contract: `--passphrase-file` and `--passphrase-fd` strip exactly one trailing `\n` or `\r\n`, never `.trim()` (which silently corrupts passphrases ending in space). Documented in SPEC.md and `--help`.
 - [ ] **PASS-08 [Phase 5]**: `send`/`receive` `--help` lists all three non-interactive sources with scripting examples (env-var, file-with-mode, fd-with-pass_fds)
