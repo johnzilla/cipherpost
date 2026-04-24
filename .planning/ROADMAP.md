@@ -21,7 +21,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 
 ### v1.1 Real v1 (Phases 5–9)
 
-- [ ] **Phase 5: Non-interactive automation E2E** — scripted send/receive without TTY; passphrase-file/fd on send+receive; SPEC pin-version blessing; DHT label audit; traceability format locked
+- [x] **Phase 5: Non-interactive automation E2E** — scripted send/receive without TTY; passphrase-file/fd on send+receive; SPEC pin-version blessing; DHT label audit; traceability format locked (completed 2026-04-24)
 - [ ] **Phase 6: Typed Material — X509Cert** — pattern-establish: DER-normalized X.509 end-to-end (parse, validate, render acceptance screen, JCS fixture, integration test)
 - [ ] **Phase 7: Typed Material — PgpKey + SshKey** — apply Phase 6 pattern twice; ed25519-dalek conflict pre-flight; JCS fixtures for both variants
 - [ ] **Phase 8: --pin and --burn encryption modes** — cclink-fork PIN crypto (Argon2id+HKDF→X25519→age); burn-after-read state-ledger inversion; THREAT-MODEL.md additions; pin/burn compose orthogonally
@@ -103,7 +103,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 2. Send/receive/acceptance | v1.0 | 3/3 | Complete | 2026-04-21 |
 | 3. Signed receipt | v1.0 | 4/4 | Complete | 2026-04-21 |
 | 4. Protocol docs | v1.0 | 5/5 | Complete | 2026-04-22 |
-| 5. Non-interactive automation E2E | v1.1 | 0/TBD | Not started | - |
+| 5. Non-interactive automation E2E | v1.1 | 3/3 | Complete    | 2026-04-24 |
 | 6. Typed Material: X509Cert | v1.1 | 0/TBD | Not started | - |
 | 7. Typed Material: PgpKey + SshKey | v1.1 | 0/TBD | Not started | - |
 | 8. --pin and --burn modes | v1.1 | 0/TBD | Not started | - |
