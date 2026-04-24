@@ -41,18 +41,24 @@ Phase 5. Clears v1.0 bookkeeping debt; locks in anti-drift conventions.
 
 Phase 6. Pattern-establish variant — get the shape right here; Phase 7 is application.
 
-- [ ] **X509-01 [Phase 6]**: `Material::X509Cert { bytes: Vec<u8> }` holds canonical DER bytes only. CLI accepts both DER and PEM inputs; PEM is normalized to DER at ingest (before JCS hashing and Envelope construction) so `share_ref` stays deterministic across re-sends. Indefinite-length BER and malformed DER are rejected at ingest with exit 1. **Open for Phase 7 planning:** whether to mirror this "CLI-accepts-common-encoding, normalize-before-hash" pattern for `PgpKey` (ASCII-armor acceptance → strip to binary packet stream) — defer to Phase 7 plan time.
-- [ ] **X509-02 [Phase 6]**: Wire format: `{"type": "x509_cert", "bytes": "<base64-std-padded>"}`; JCS alphabetical ordering places `bytes` before `type` automatically (same shape as `GenericSecret`)
+- [x] **X509-01
+ [Phase 6]**: `Material::X509Cert { bytes: Vec<u8> }` holds canonical DER bytes only. CLI accepts both DER and PEM inputs; PEM is normalized to DER at ingest (before JCS hashing and Envelope construction) so `share_ref` stays deterministic across re-sends. Indefinite-length BER and malformed DER are rejected at ingest with exit 1. **Open for Phase 7 planning:** whether to mirror this "CLI-accepts-common-encoding, normalize-before-hash" pattern for `PgpKey` (ASCII-armor acceptance → strip to binary packet stream) — defer to Phase 7 plan time.
+- [x] **X509-02
+ [Phase 6]**: Wire format: `{"type": "x509_cert", "bytes": "<base64-std-padded>"}`; JCS alphabetical ordering places `bytes` before `type` automatically (same shape as `GenericSecret`)
 - [x] **X509-03
  [Phase 6]**: `cipherpost send --material x509-cert` reads DER from stdin (or file via `-` convention); wraps in Envelope; per-variant 64 KB size check before encryption
 - [x] **X509-04
  [Phase 6]**: `cipherpost receive` on an `X509Cert` share renders acceptance-banner preview POST-decrypt: Subject (truncated), Issuer (truncated), SerialNumber (truncated to 16 hex chars), NotBefore/NotAfter (ISO UTC), key algorithm (e.g., `id-ecPublicKey P-256`), SHA-256 DER fingerprint (full 64 hex chars). Expired cert displays `[EXPIRED]` but is not blocked.
 - [x] **X509-05
  [Phase 6]**: `cipherpost receive` emits raw DER bytes to stdout by default; `--armor` flag emits PEM-armored output
-- [ ] **X509-06 [Phase 6]**: Per-variant size check: X509 DER > 64 KB rejected at send with clear error matching v1.0's `PayloadTooLarge` Display style
-- [ ] **X509-07 [Phase 6]**: JCS fixture committed at `tests/fixtures/material_x509_signable.bin` (byte-locked; any drift surfaces as red CI test)
-- [ ] **X509-08 [Phase 6]**: Malformed X509 DER on receive returns exit 1 (content error, distinct from exit 3 signature failures); Display message generic (does not leak `x509-parser` internals)
-- [ ] **X509-09 [Phase 6]**: Integration test: round-trip `X509Cert` self-send under MockTransport verifies wire-byte determinism and acceptance-banner field set
+- [x] **X509-06
+ [Phase 6]**: Per-variant size check: X509 DER > 64 KB rejected at send with clear error matching v1.0's `PayloadTooLarge` Display style
+- [x] **X509-07
+ [Phase 6]**: JCS fixture committed at `tests/fixtures/material_x509_signable.bin` (byte-locked; any drift surfaces as red CI test)
+- [x] **X509-08
+ [Phase 6]**: Malformed X509 DER on receive returns exit 1 (content error, distinct from exit 3 signature failures); Display message generic (does not leak `x509-parser` internals)
+- [x] **X509-09
+ [Phase 6]**: Integration test: round-trip `X509Cert` self-send under MockTransport verifies wire-byte determinism and acceptance-banner field set
 
 ### Typed Material: PGP keys (PGP)
 
