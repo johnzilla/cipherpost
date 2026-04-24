@@ -46,6 +46,12 @@ rand = "0.8"
 # `clock` feature pulls in `iana-time-zone` for local-offset lookup. std alone
 # has no stable tz-aware local-time API.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Phase 6: X.509 DER/PEM parsing. `verify` feature STAYS OFF — would pull `ring`
+# which is on the supply-chain rejected list (see .planning/research/SUMMARY.md
+# §Phase 6). `default-features = false` is belt-and-suspenders: 0.16 has
+# `default = []` so the result is identical, but explicit intent aids audit.
+# Do NOT bump to 0.17 — that version breaks to nom 8.0.
+x509-parser = { version = "0.16", default-features = false }
 
 [[test]]
 name = "mock_transport_roundtrip"
