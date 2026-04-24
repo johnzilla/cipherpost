@@ -148,8 +148,11 @@ happens once at `send` time so sender and recipient compute identical JCS bytes.
 
 Tagged enum; Rust-level serde directives: `#[serde(tag = "type", rename_all = "snake_case")]`
 (D-WIRE-03). Variant names on the wire: `generic_secret`, `x509_cert`, `pgp_key`, `ssh_key`.
-Only `generic_secret` is implemented in cipherpost/v1; other variants are reserved and return
-`Error::NotImplemented` on encode or decode (D-WIRE-03, PAYL-02).
+
+**cipherpost/v1.0 shipped:** `generic_secret` only.
+**cipherpost/v1.1 (Phase 6) adds:** `x509_cert { bytes }`.
+**Reserved for Phase 7:** `pgp_key`, `ssh_key` (dispatch returns `Error::NotImplemented { phase: 7 }`
+at both `main.rs::dispatch` and `flow::run_send` — exit 1).
 
 **`generic_secret` wire form:**
 ```json
@@ -161,9 +164,57 @@ Only `generic_secret` is implemented in cipherpost/v1; other variants are reserv
 | `type` | String | literal `"generic_secret"` | Variant discriminator | D-WIRE-03 |
 | `bytes` | String | base64-STANDARD, padded | Arbitrary byte payload | D-WIRE-04 |
 
-Reserved variants (`x509_cert`, `pgp_key`, `ssh_key`) have no fields defined in cipherpost/v1
-and will produce `Error::NotImplemented` on any attempt to encode or decode them. A future
-`cipherpost/v2` MAY define their field shapes; such a change requires a `protocol_version` bump.
+**`x509_cert` wire form (cipherpost/v1.1):**
+```json
+{"type": "x509_cert", "bytes": "<base64-STANDARD-padded>"}
+```
+
+| Field | Type | Wire encoding | Description | Source decision |
+|-------|------|---------------|-------------|-----------------|
+| `type` | String | literal `"x509_cert"` | Variant discriminator | D-WIRE-03 |
+| `bytes` | String | base64-STANDARD, padded — **canonical DER** per RFC 5280 strict profile | X.509 certificate bytes | D-P6-01, X509-01 |
+
+The `bytes` field carries **canonical DER** (RFC 5280 strict profile, definite-length
+encoding). CLI input MAY be DER or PEM; PEM is normalized to DER at ingest before JCS
+hashing and Envelope construction so `share_ref` remains deterministic across re-sends
+of semantically identical certificates (X509-01). Indefinite-length BER is rejected at
+ingest (exit 1) with a generic user-facing message — NOT exit 3 (which is reserved for
+signature failures per X509-08).
+
+**Parser:** `x509-parser 0.16` with `default-features = false` and the `verify` feature
+explicitly OFF. Enabling `verify` would pull `ring`, which is rejected by the supply-chain
+policy (`.planning/research/SUMMARY.md §Phase 6`). A CI test
+(`tests/x509_dep_tree_guard.rs`) runs `cargo tree` and fails the build if `ring` or
+`aws-lc` ever appears in the dep graph — catches feature-flag regressions before they ship.
+
+**DN rendering convention (OQ-3 resolved):** Subject / Issuer rendering in the
+acceptance-banner subblock (§5.2) uses x509-parser's `Display` impl, which produces
+**OpenSSL-forward ordering** (`C=US, O=..., CN=leaf`, matching `openssl x509 -noout -subject`)
+— NOT strict RFC 4514 backward ordering. This matches security engineers' mental model.
+
+**Oracle hygiene (X509-08):** Every parse / normalization / variant-mismatch failure path
+returns `Error::InvalidMaterial { variant, reason }` with a short curated `reason` literal
+(e.g., `"malformed DER"`, `"trailing bytes after certificate"`, `"PEM body decode failed"`,
+`"PEM label is not CERTIFICATE"`, `"accessor called on wrong variant"`). The `reason` is
+NEVER an `x509-parser` / `nom::` / `asn1-rs` / `der-parser` internal string — the enum
+does not use `#[source]` or `#[from]` to prevent Display-chain leakage via `err.source()`.
+A test (`tests/x509_error_oracle.rs`) enumerates every constructed reason across 4 variants
+and asserts Display contains none of {`X509Error`, `parse error at`, `nom::`, `Incomplete`,
+`Needed`, `PEMError`, `asn1-rs`, `der-parser`, `x509_parser::`}.
+
+**Wire-budget note (cipherpost/v1.1 Phase 6 deferral — Pitfall #22):** Realistic X.509
+certificates (Ed25519 minimum ~234 bytes DER) exceed the 1000-byte BEP44 SignedPacket
+ceiling when wrapped as `Envelope → age ciphertext → OuterRecord JSON → SignedPacket`.
+Cipherpost surfaces this as a clean `Error::WireBudgetExceeded { encoded, budget: 1000,
+plaintext }` at send time with the cert plaintext size reported — NOT as an
+`InvalidMaterial` or PKARR-internal panic. Two-tier storage (small envelope in DHT
+pointing to external blob) is the architectural fix and is scoped to a later phase.
+
+**Reserved variants (`pgp_key`, `ssh_key`)** have no `bytes` field in cipherpost/v1.1 —
+they are unit-style in the Rust enum and encode as just `{"type": "pgp_key"}` for
+protocol fingerprinting. Any ingest or decode attempt returns `Error::NotImplemented
+{ phase: 7 }`. Phase 7 will promote both to `{ bytes }` struct variants with serde form
+matching `x509_cert`.
 
 ### 3.3 OuterRecord
 
@@ -279,18 +330,36 @@ syntax under a bumped protocol version.
 
 ### 5.1 Send
 
-1. Read payload from `<path>` or `-` (stdin). Reject if > 64 KB (D-PS-01). (SEND-01, PAYL-03)
-2. Build `Envelope { purpose, material, created_at, protocol_version }` with `purpose` control-
+1. Read payload from `<path>` or `-` (stdin). (SEND-01, PAYL-03)
+2. **Ingest (cipherpost/v1.1):** dispatch on `--material <variant>` (default
+   `generic-secret`). Accepted values: `generic-secret`, `x509-cert`,
+   `pgp-key` (Phase 7 — rejects at dispatch), `ssh-key` (Phase 7 — rejects at
+   dispatch). `payload::ingest::x509_cert(raw)` sniffs PEM vs DER (ASCII-whitespace-
+   trim + `-----BEGIN CERTIFICATE-----` header check), normalizes PEM → canonical
+   DER, and validates via `x509-parser` strict profile with an explicit
+   trailing-bytes check. Parse failure → `Error::InvalidMaterial { variant,
+   reason }` exit 1.
+3. **Plaintext cap (D-P6-16 / X509-06):** reject if `material.plaintext_size() >
+   65 536`. For `x509_cert`, this is the **decoded DER length** — a 1 MB
+   PEM input that decodes to 100 KB DER fails the cap on the decoded size,
+   not the input size (PAYL-03).
+4. Build `Envelope { purpose, material, created_at, protocol_version }` with `purpose` control-
    stripped (D-WIRE-05). JCS-serialize.
-3. age-encrypt the JCS bytes to the recipient's X25519 (derived from their Ed25519 pubkey) or
+5. age-encrypt the JCS bytes to the recipient's X25519 (derived from their Ed25519 pubkey) or
    to the sender's own X25519 for `--self` (SEND-01, SEND-02). Base64-STANDARD-encode to produce `blob`.
-4. Compute `share_ref = sha256(ciphertext_blob_bytes || created_at.to_be_bytes())[..16]` (D-06).
-5. Build `OuterRecordSignable { blob, created_at, protocol_version, pubkey, recipient, share_ref, ttl_seconds }`.
-6. JCS-serialize `OuterRecordSignable`; Ed25519-sign with the sender's identity key; base64-
+6. Compute `share_ref = sha256(ciphertext_blob_bytes || created_at.to_be_bytes())[..16]` (D-06).
+7. Build `OuterRecordSignable { blob, created_at, protocol_version, pubkey, recipient, share_ref, ttl_seconds }`.
+8. JCS-serialize `OuterRecordSignable`; Ed25519-sign with the sender's identity key; base64-
    encode to produce `signature`. Assemble `OuterRecord` (D-WIRE-03, SEND-04).
-7. Build PKARR SignedPacket with TXT record under `_cipherpost` carrying the `OuterRecord` JSON.
+9. Build PKARR SignedPacket with TXT record under `_cipherpost` carrying the `OuterRecord` JSON.
    Verify encoded SignedPacket size ≤ ~1000 bytes (BEP44 budget, SEND-05). Overflow = `Error::WireBudgetExceeded`.
-8. `Transport::publish(signed_packet)`. Print the share URI (`cipherpost://<z32>/<hex>`) to stdout (D-URI-01, SEND-01).
+10. `Transport::publish(signed_packet)`. Print the share URI (`cipherpost://<z32>/<hex>`) to stdout (D-URI-01, SEND-01).
+
+**CLI flags (cipherpost/v1.1):**
+- `--material <variant>` (default `generic-secret`) — selects the typed
+  Material variant. Phase 6 supports `generic-secret` and `x509-cert`. Phase 7
+  will add `pgp-key` and `ssh-key`; currently both parse at the CLI level
+  but dispatch returns `Error::NotImplemented { phase: 7 }` (exit 1).
 
 ### 5.2 Receive
 
@@ -322,10 +391,35 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    To accept, paste the sender's z32 pubkey and press Enter:
    >
    ```
+
+   **cipherpost/v1.1: X.509 subblock** — when `Type: x509_cert`, a typed subblock
+   is inserted between the `Size:` and `TTL:` lines (Phase 6 D-P6-09 / X509-04):
+   ```
+   --- X.509 -------------------------------------------------
+   Subject:     CN=..., O=..., C=...           (OpenSSL-forward; truncated ≤80 chars)
+   Issuer:      CN=..., O=..., C=...           (OpenSSL-forward; truncated ≤80 chars)
+   Serial:      0x<hex>                         (truncated at 16 hex w/ `… (truncated)` if long)
+   NotBefore:   YYYY-MM-DD HH:MM UTC
+   NotAfter:    YYYY-MM-DD HH:MM UTC  [VALID]   (or `[EXPIRED]`)
+   Key:         <human-readable>                (Ed25519, RSA-2048, ECDSA P-256, ...)
+   SHA-256:     <64 hex chars lowercase>        (over canonical DER)
+   ```
+   The separator line is exactly `--- X.509 ` + 57 dashes = 61 chars, matching the
+   `===` banner border width. Phase 7 will add analogous `--- OpenPGP ---` and
+   `--- SSH ---` subblocks using the same structural pattern. Parse failures on
+   the banner render return `Error::InvalidMaterial { variant: "x509_cert",
+   reason: "<short>" }` with the same generic-reason set as ingest.
+
    Stdin AND stderr MUST both be TTYs; else `Error::Config`, exit 1 (D-ACCEPT-03).
 10. Read user input; compare byte-equal (after `trim()`) to the sender's full 52-char z-base-32
     pubkey. Mismatch → `Error::Declined`, exit 7 (D-ACCEPT-01, RECV-04).
 11. Write decrypted payload to `--output <path>` or stdout (default) (RECV-05).
+    With `--armor` (cipherpost/v1.1), a typed X.509 variant output is wrapped as
+    PEM (`-----BEGIN CERTIFICATE-----` + base64-STANDARD body 64-char-wrapped +
+    `-----END CERTIFICATE-----\n`) — byte-compatible with
+    `openssl x509 -in <der> -inform DER -outform PEM`. `--armor` on a
+    `generic_secret` variant is rejected with
+    `Error::Config("--armor requires --material x509-cert")` at exit 1 (OQ-1).
 12. Create sentinel `~/.cipherpost/state/accepted/<share_ref>` (mode 0600); append a ledger
     line to `~/.cipherpost/state/accepted.jsonl` (mode 0600) with `receipt_published_at: null` (D-STATE-01, D-SEQ-04).
 13. Construct `Receipt`, sign with recipient's Ed25519 key, call `Transport::publish_receipt`.
@@ -362,7 +456,7 @@ attacks (D-16).
 | Code | Meaning | User-facing message | Error variants (internal) |
 |------|---------|---------------------|---------------------------|
 | 0 | Success | — | — |
-| 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, any unclassified |
+| 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), any unclassified |
 | 2 | TTL expired | `share expired` | `Expired` |
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
 | 4 | Passphrase / decryption failure | `passphrase failed` | `Passphrase`, `Decrypt` |
