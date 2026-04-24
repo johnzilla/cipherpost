@@ -165,6 +165,11 @@ required-features = ["mock"]
 name = "spec_test_vectors"
 path = "tests/spec_test_vectors.rs"
 
+# Phase 5 Plan 05-01: exact one-newline strip rule (D-P5-08) exercised via file-branch.
+[[test]]
+name = "passphrase_strip_rule"
+path = "tests/passphrase_strip_rule.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
