@@ -75,7 +75,7 @@ and provides attestation that the recipient accepted the specific share at a spe
 - **Mainline DHT** — the BitTorrent Distributed Hash Table used as rendezvous.
 - **PKARR** — Public-Key Addressable Resource Records; a scheme for storing DNS-shaped
   records (TXT, etc.) signed by an Ed25519 key and resolved via Mainline DHT. Cipherpost uses
-  `pkarr 5.0.3`.
+  `pkarr (>= 5.0.0)`; see `Cargo.toml` for the exact pin in effect.
 - **sender-attested purpose** — the human-readable `purpose` string is signed by the sender
   but is NOT independently verified by any third party (D-WIRE-05, PITFALL #12).
 - **Share** — one published `OuterRecord` carrying an age-encrypted payload.
@@ -95,10 +95,25 @@ JCS bytes of the `-Signable` projection of the wire struct (the wire struct minu
 
 **Source-of-truth code:** `src/record.rs`, `src/receipt.rs`, `src/payload.rs`, `src/crypto.rs::jcs_serialize`.
 **Canonical rules:** See RFC 8785 (`rfc-editor.org/rfc/rfc8785`).
-**Hash algorithm:** SHA-256 via `sha2 0.10`; hash outputs rendered as lowercase hex.
+**Canonical JSON implementation:** `serde_canonical_json (>= 1.0.0, RFC 8785 JCS)`; see
+`Cargo.toml` for the exact pin in effect.
+**Hash algorithm:** SHA-256 via the `sha2` crate; see `Cargo.toml` for the exact pin in
+effect. Hash outputs are rendered as lowercase hex.
+**Signature algorithm:** Ed25519 via `ed25519-dalek`. The exact version pin is a build
+constraint, not a protocol guarantee — it is locked in `Cargo.toml` to match `pkarr`'s
+transitive `ed25519-dalek` dependency; see CLAUDE.md §Load-bearing lock-ins for the
+rationale.
+**Payload encryption:** `age (>= 0.10)`; see `Cargo.toml` for the exact pin in effect.
+`age` is the only reachable path to `chacha20poly1305`; no direct calls are permitted.
 **Base64 codec:** `base64::engine::general_purpose::STANDARD` (with padding) — applied
 uniformly for signatures and for `OuterRecord.blob` and `Material::GenericSecret.bytes`
 (D-WIRE-04). `URL_SAFE_NO_PAD` is banned at the wire layer.
+
+**PKARR wire budget:** A representative `OuterRecord` blob (base64-encoded `age`
+ciphertext) must fit within **550 bytes** (measured at v1.0 cut; see
+`tests/signed_packet_budget.rs`). Within the ~1000-byte BEP44 DNS-packet envelope this
+leaves room for the JSON structure and the recipient z-base-32. A blob exceeding this
+ceiling surfaces `Error::WireBudgetExceeded` at publish time (§3.3, §3.4, §5.1 step 7).
 
 ### 3.1 Envelope
 
@@ -218,6 +233,19 @@ to the merged packet; overflow surfaces `Error::WireBudgetExceeded { encoded, bu
 commits (sentinel file + ledger line). Publish failure is degraded to a stderr warning with
 exit code 0 (D-SEQ-02) — the material was delivered safely; receipt loss is a sender-visible
 degradation. No auto-retry in cipherpost/v1 (D-SEQ-03).
+
+### 3.5 DHT Label Stability
+
+The DNS TXT record labels used in the wire format are part of the protocol surface:
+- `_cipherpost` — published by senders carrying `OuterRecord` (§3.3)
+- `_cprcpt-<share_ref_hex>` — published by recipients carrying `Receipt` (§3.4)
+
+These label strings are part of the wire format. Renaming either — in whole or in part
+— requires a `protocol_version` bump and a migration section in this SPEC. They are
+not changed silently.
+
+Code constants enforcing these labels are covered by a constant-match test
+(`tests/dht_label_constants.rs`) that fails if code and SPEC drift.
 
 ## 4. Share URI
 
@@ -362,36 +390,58 @@ Cipherpost's identity file is encrypted with a passphrase-derived key (Argon2id 
 age). Passphrases are the only secret the user must remember; cipherpost enforces a strict
 contract to prevent leaks.
 
-### 7.1 Acceptable passphrase sources
+### 7.1 Precedence
 
-In priority order (highest wins):
+Passphrase sources are consulted in priority order: `fd > file > env > TTY`. Inline
+`--passphrase <value>` is **rejected** at parse/runtime.
 
-1. `CIPHERPOST_PASSPHRASE` environment variable (for automated test/CI use).
-2. `--passphrase-file <path>` reads the passphrase from a file (newline-trimmed).
-3. `--passphrase-fd <n>` reads the passphrase from file descriptor `<n>`.
-4. Interactive TTY prompt (default, when stdin is a TTY and none of the above is set).
+1. **`--passphrase-fd <N>`** — no process-table exposure; file descriptor inherited from
+   the caller. Fd `0` (stdin) is reserved for payload I/O and is rejected with exit `1`.
+2. **`--passphrase-file <PATH>`** — no process-table exposure; file must be mode `0600`
+   or `0400` (inode permission gate). Wider permissions return `Error::IdentityPermissions`.
+3. **`CIPHERPOST_PASSPHRASE` environment variable** — visible via `/proc/<pid>/environ`
+   and `ps auxe` (PITFALL #35); use sparingly. Available primarily for CI contexts.
+4. **TTY prompt** — interactive only; cannot be scripted. Requires both stdin and stderr
+   to be TTYs; otherwise cipherpost exits with `Error::Config` and exit code `1` rather
+   than falling back to piped stdin (which would conflate payload input with passphrase
+   input).
 
-### 7.2 Rejected passphrase sources
+Inline `--passphrase <value>` is **rejected** at parse time (via a hidden-from-help flag
+whose value triggers `Error::PassphraseInvalidInput` at dispatch, exit `4`) and at runtime.
+Inline argv bytes leak via `/proc/<pid>/cmdline`, `ps`, and shell history.
 
-- `--passphrase <value>` inline argv is **refused at parse time**. Inline argv values
-  appear in `ps` output and in shell history, so cipherpost will not accept them even if
-  provided. Rejection message: a clap-level error explaining the rejection; exit via clap
-  (non-zero).
+Setting both `--passphrase-file` and `--passphrase-fd` in a single invocation is rejected
+with `Error::Config` and exit `1`. `CIPHERPOST_PASSPHRASE` plus one of the two flags is
+permitted — the flag takes precedence per the ordering above.
 
-### 7.3 TTY requirement
+### 7.2 Newline-strip rule
 
-The interactive prompt requires stdin to be a TTY. In non-interactive contexts where none
-of the env / file / fd sources is set, cipherpost exits with `Error::Config` and exit code
-`1`; it does not fall back to reading piped stdin (which would conflate payload input with
-passphrase input).
+Both `--passphrase-fd` and `--passphrase-file` strip **exactly one** trailing newline:
+one `\r\n`, else one `\n`, else nothing. Never a greedy `.trim()` (which would silently
+corrupt passphrases ending in a space — PITFALL #30).
 
-### 7.4 Wrong passphrase
+Truth table:
+
+| Input bytes     | Stripped output |
+|-----------------|-----------------|
+| `hunter2\r\n`   | `hunter2`       |
+| `hunter2\n`     | `hunter2`       |
+| `hunter2\n\n`   | `hunter2\n`     |
+| `hunter2 `      | `hunter2 `      |
+| `hunter2`       | `hunter2`       |
+| `hunter2\r`     | `hunter2\r`     |
+
+The bare `\r` case is deliberately preserved (not stripped) — a passphrase file authored
+by a text editor that emits CR-only line endings is a user-environment bug to fix at the
+editor, not something cipherpost silently mutates.
+
+### 7.3 Wrong passphrase
 
 Incorrect passphrase yields exit code `4` with the user-facing message `passphrase failed`.
 No hint about which character was wrong, no timing disclosure; the Argon2id KDF cost means
 each wrong attempt takes ~0.3 seconds regardless.
 
-### 7.5 Identity file permissions
+### 7.4 Identity file permissions
 
 `~/.cipherpost/secret_key` MUST be at mode `0600`. Identity files at wider permissions are
 refused at open time with a clear error and exit code (IDENT-03, PITFALL #15). The identity
