@@ -189,6 +189,11 @@ name = "pass09_scripted_roundtrip"
 path = "tests/pass09_scripted_roundtrip.rs"
 required-features = ["mock"]
 
+# Phase 6 Plan 04: X509 Envelope JCS fixture byte-identity.
+[[test]]
+name = "material_x509_envelope_round_trip"
+path = "tests/material_x509_envelope_round_trip.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
