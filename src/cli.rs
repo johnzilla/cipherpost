@@ -34,7 +34,10 @@ pub enum Command {
     /// Send a cryptographic-material payload (phase 2)
     #[command(long_about = "Send a payload.\n\nEXAMPLES:\n  \
               cipherpost send --self -p 'backup signing key' --material-file ./key.age\n  \
-              cipherpost send --share <z32-pubkey> -p 'onboarding token' -")]
+              cipherpost send --share <z32-pubkey> -p 'onboarding token' -\n  \
+              CIPHERPOST_PASSPHRASE=hunter2 cipherpost send --self -p 'x' -\n  \
+              cipherpost send --self -p 'x' --passphrase-file ./pw.txt -\n  \
+              cipherpost send --self -p 'x' --passphrase-fd 3 - 3</tmp/pw")]
     Send {
         /// Encrypt to self (recipient = own identity)
         #[arg(long, conflicts_with = "share")]
@@ -55,12 +58,31 @@ pub enum Command {
         /// TTL in seconds (default 86400 = 24h)
         #[arg(long)]
         ttl: Option<u64>,
+
+        /// Read passphrase from the given file (newline-terminated, file must be mode 0600 or 0400)
+        #[arg(long, value_name = "PATH")]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Read passphrase from the given file descriptor (for scripting)
+        #[arg(long, value_name = "N")]
+        passphrase_fd: Option<i32>,
+        /// REJECTED — inline passphrases leak via argv / /proc/<pid>/cmdline / ps.
+        /// Use CIPHERPOST_PASSPHRASE env, --passphrase-file, or --passphrase-fd instead.
+        /// This flag exists only so the runtime rejection path returns a clear error (exit 4).
+        #[arg(long, value_name = "VALUE", hide = true)]
+        passphrase: Option<String>,
+        /// Positional `-` means "read payload from stdin" (shorthand for --material-file -).
+        /// Any value other than `-` is rejected at dispatch.
+        #[arg(value_name = "STDIN")]
+        material_stdin: Option<String>,
     },
 
     /// Receive and decrypt a share (phase 2)
     #[command(long_about = "Receive a share.\n\nEXAMPLES:\n  \
               cipherpost receive <share-uri>\n  \
-              cipherpost receive <share-uri> -o ./recovered.key")]
+              cipherpost receive <share-uri> -o ./recovered.key\n  \
+              CIPHERPOST_PASSPHRASE=hunter2 cipherpost receive <share-uri>\n  \
+              cipherpost receive <share-uri> --passphrase-file ./pw.txt\n  \
+              cipherpost receive <share-uri> --passphrase-fd 3 3</tmp/pw")]
     Receive {
         /// Share URI or sender z-base-32 pubkey
         share: Option<String>,
@@ -72,6 +94,18 @@ pub enum Command {
         /// Override default DHT resolve timeout (seconds)
         #[arg(long)]
         dht_timeout: Option<u64>,
+
+        /// Read passphrase from the given file (newline-terminated, file must be mode 0600 or 0400)
+        #[arg(long, value_name = "PATH")]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Read passphrase from the given file descriptor (for scripting)
+        #[arg(long, value_name = "N")]
+        passphrase_fd: Option<i32>,
+        /// REJECTED — inline passphrases leak via argv / /proc/<pid>/cmdline / ps.
+        /// Use CIPHERPOST_PASSPHRASE env, --passphrase-file, or --passphrase-fd instead.
+        /// This flag exists only so the runtime rejection path returns a clear error (exit 4).
+        #[arg(long, value_name = "VALUE", hide = true)]
+        passphrase: Option<String>,
     },
 
     /// Fetch signed receipts for shares you sent (phase 3)
