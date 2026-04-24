@@ -40,9 +40,9 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   4. SPEC.md records actually-shipped crate versions in API-range form (not exact version prose); DHT label constants `_cipherpost` and `_cprcpt-<share_ref_hex>` are confirmed stable and documented as requiring a protocol-version bump to change
   5. REQUIREMENTS.md traceability format is locked to inline phase tags; no separate traceability table exists anywhere in the planning corpus; no "Pending" row survives when implementation is complete
 **Plans**: 3 plans
-- [ ] 05-01-PLAN.md — resolve_passphrase refactor (BorrowedFd + exact one-newline strip + fd=0 rejection)
+- [x] 05-01-PLAN.md — resolve_passphrase refactor (BorrowedFd + exact one-newline strip + fd=0 rejection)
 - [ ] 05-02-PLAN.md — CLI surface + dispatch + PASS-09 scripted-roundtrip CI test
-- [ ] 05-03-PLAN.md — DOC housekeeping (SPEC.md §7/§3.3/§3-4, CLAUDE.md convention, DHT label test, v1.0 archive cleanup)
+- [x] 05-03-PLAN.md — DOC housekeeping (SPEC.md §7/§3.3/§3-4, CLAUDE.md convention, DHT label test, v1.0 archive cleanup)
 
 ### Phase 6: Typed Material — X509Cert
 **Goal**: Users can securely hand off an X.509 certificate with full context visible on the acceptance screen before decryption commits.
