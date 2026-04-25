@@ -1,50 +1,78 @@
 ---
 phase: 07-typed-material-pgpkey-sshkey
-verified: 2026-04-24T00:00:00Z
-status: gaps_found
-score: 4/5 must-haves verified
+verified: 2026-04-25T12:30:00Z
+status: passed
+score: 5/5 must-haves verified
 overrides_applied: 0
 re_verification:
-  previous_status: null
-  previous_score: null
-  initial_verification: true
+  previous_status: gaps_found
+  previous_score: 4/5
+  initial_verification: false
+  gaps_closed:
+    - "SPEC.md §3.2 documents ssh_key as still LIVE in Phase 7 (not 'reserved' or returning NotImplemented{phase:7})"
+  gaps_remaining: []
+  regressions: []
 gaps:
   - truth: "SPEC.md §3.2 documents ssh_key as still LIVE in Phase 7 (not 'reserved' or returning NotImplemented{phase:7})"
-    status: failed
-    reason: "SPEC.md still has two stale doc-drift references that contradict shipped code: §3.2 (lines 154-155) calls ssh_key 'Reserved for Phase 7 Plan 05+' and claims dispatch returns Error::NotImplemented{phase:7}; §9 Lineage (line 1010) calls all three typed variants 'reserved for v1.0+'. Both are factually wrong post-Plan-05/Plan-08 (ssh-key dispatches LIVE in run_send AND run_receive; all four variants are in v1.1, not v1.0+). The 07-REVIEW.md from 2026-04-24 flagged these as WR-01 + WR-02 with proposed fixes; the fixes were not applied before phase-close. This is the same drift class CLAUDE.md §'Planning docs convention' warns against."
+    status: resolved
+    reason: "Resolved in commit f4750a5 (2026-04-25) via verbatim application of 07-REVIEW.md WR-01 + WR-02 fixes. SPEC.md §3.2 (line 154) now reads 'cipherpost/v1.1 (Phase 7) adds: pgp_key { bytes } and ssh_key { bytes }.' with no stale 'Reserved for Phase 7 Plan 05+' or 'NotImplemented{phase:7}' clauses. SPEC.md §9 Lineage (lines 1007-1008) now reads 'Envelope with Material enum (generic_secret shipped in v1.0; x509_cert added in v1.1 Phase 6; pgp_key and ssh_key added in v1.1 Phase 7).' with no stale 'reserved for v1.0+' phrasing. Regression grep confirms zero remaining occurrences of the stale patterns; full test suite (253 pass / 0 fail / 14 ignored) green; lychee --offline SPEC.md clean per commit message."
     artifacts:
       - path: SPEC.md
-        issue: "Lines 154-155 say 'Reserved for Phase 7 Plan 05+: ssh_key (dispatch returns Error::NotImplemented { phase: 7 } at both main.rs::dispatch and flow::run_send — exit 1)'. Code is contrary: src/flow.rs:251 dispatches MaterialVariant::SshKey live; src/main.rs has no NotImplemented guard; ingest::ssh_key is live. The same file at line 254 contradicts itself with 'ssh_key wire form (cipherpost/v1.1, Phase 7 Plan 05+)' and at lines 442+ with 'ssh-key (Phase 7 Plan 05-08 — LIVE)'."
-      - path: SPEC.md
-        issue: "Line 1010 says 'x509_cert, pgp_key, ssh_key reserved for v1.0+' — wrong both for milestone (v1.1, not v1.0+) AND status (all three are implemented in v1.1)."
-    missing:
-      - "Replace SPEC.md lines 152-156 with: '**cipherpost/v1.0 shipped:** generic_secret only.\\n**cipherpost/v1.1 (Phase 6) adds:** x509_cert { bytes }.\\n**cipherpost/v1.1 (Phase 7) adds:** pgp_key { bytes } and ssh_key { bytes }.' (per 07-REVIEW WR-01 fix)"
-      - "Update SPEC.md line 1009-1010 to: '1. **Typed payload schema** — Envelope with Material enum (generic_secret shipped in v1.0; x509_cert added in v1.1 Phase 6; pgp_key and ssh_key added in v1.1 Phase 7).' (per 07-REVIEW WR-02 fix)"
+        issue: "RESOLVED — see commit f4750a5 (8 lines changed: -5 / +3)"
+    missing: []
 ---
 
 # Phase 7: Typed Material — PgpKey + SshKey Verification Report
 
 **Phase Goal:** Users can securely hand off OpenPGP keys and OpenSSH private keys with full metadata visible on the acceptance screen; both variants apply the Phase 6 pattern.
 
-**Verified:** 2026-04-24
-**Status:** gaps_found (1 doc-drift gap; all code-level success criteria met)
-**Re-verification:** No — initial verification
+**Verified:** 2026-04-25
+**Status:** passed (re-verification after gap closure)
+**Re-verification:** Yes — second pass after commit f4750a5 closed the WR-01/WR-02 SPEC doc-drift gap
+
+## Re-verification Summary
+
+The initial verification on 2026-04-24 returned `gaps_found` with **score 4/5** because of one Warning-class SPEC.md doc-drift gap (WR-01 lines 154-155 stale "Reserved for Phase 7 Plan 05+" claim about ssh_key + WR-02 line 1010 stale "reserved for v1.0+" claim about all three typed variants). All five ROADMAP success criteria were code-verified; the gap was purely documentation-narrative drift that contradicted shipped code.
+
+**Closure evidence (commit f4750a5, 2026-04-25):**
+
+```
+SPEC.md §3.2 line 154 now reads:
+  cipherpost/v1.1 (Phase 7) adds: pgp_key { bytes } and ssh_key { bytes }.
+
+SPEC.md §9 Lineage lines 1007-1008 now read:
+  Typed payload schema — Envelope with Material enum (generic_secret shipped in v1.0;
+  x509_cert added in v1.1 Phase 6; pgp_key and ssh_key added in v1.1 Phase 7).
+```
+
+The fixes match the verbatim wording proposed in 07-REVIEW.md WR-01 + WR-02 and the `missing:` clauses of the prior VERIFICATION.md. The diff is exactly 8 lines (5 deletions, 3 additions) — pure text edits to the two stale narrative blocks; no code changes, no other SPEC sections modified.
+
+**Regression checks performed during re-verification:**
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Stale phrases removed | `grep -nE "Reserved for Phase\|reserved for v1\.0\|NotImplemented \{ phase: 7" SPEC.md` | 0 matches (exit 1) |
+| Stale `v1.0+` callouts removed | `grep -nE "v1\.0\+\|NotImplemented\{phase:7" SPEC.md` | 0 matches (exit 1) |
+| Full test suite still green | `cargo test --features mock` | 253 passed / 0 failed / 14 ignored |
+| `ssh_key` references coherent in SPEC | `grep -nE "ssh_key\|ssh-key" SPEC.md` | All remaining references are factually correct (LIVE Phase 7 Plan 05-08, wire shape, error oracle, dep-tree guard test names) |
+
+**No regressions introduced.** Test count and ignored-test set are identical to the initial verification's snapshot. All other code-level evidence from the initial pass remains valid (artifacts unchanged, key links unchanged, data-flow unchanged).
 
 ## Goal Achievement
 
-Phase 7 ships eight plans (01-08) across two parallel waves (PGP plans 01-04 + SSH plans 05-08) implementing both `Material::PgpKey` and `Material::SshKey` end-to-end. The code-level implementation is complete and ship-quality: all four variants live in `run_send` + `run_receive`, both renderers emit the documented banner subblocks, supply-chain invariants hold, and the full test suite (253 passing tests + 14 documented `#[ignore]`'d wire-budget tests) is green. The single failing must-have is a SPEC.md documentation-drift gap flagged by 07-REVIEW that was not fixed before phase-close.
+Phase 7 ships eight plans (01-08) across two parallel waves (PGP plans 01-04 + SSH plans 05-08) implementing both `Material::PgpKey` and `Material::SshKey` end-to-end. The code-level implementation is complete and ship-quality: all four variants live in `run_send` + `run_receive`, both renderers emit the documented banner subblocks, supply-chain invariants hold, and the full test suite (253 passing tests + 14 documented `#[ignore]`'d wire-budget tests) is green. The single gap from the initial verification — SPEC.md doc-drift on ssh_key status — is now resolved in commit f4750a5.
 
 ### Observable Truths
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | User can `cipherpost send --material pgp-key` with a binary OpenPGP packet stream and receive it; ASCII-armored input is rejected (non-deterministic headers); multi-primary keyrings are rejected with exit 1 naming the count; secret keys display `[WARNING: SECRET key]` on the acceptance screen but are not blocked | ✓ VERIFIED | `src/payload/ingest.rs:132-264 pub fn pgp_key` rejects armor (line 152: `"ASCII-armored input rejected — supply binary packet stream"`), rejects multi-primary with N substituted (`"PgpKey must contain exactly one primary key; keyrings are not supported in v1.1 (found {N} primary keys)"`), enforces trailing-bytes invariant. `src/preview.rs:284-528 render_pgp_preview` emits `[WARNING: SECRET key — unlocks cryptographic operations]` first-line for tag-5 primaries (line 311). All 11 `tests/material_pgp_ingest.rs` tests pass; `tests/pgp_banner_render.rs` (7 tests) pin the SECRET-warning placement. |
-| 2 | User can `cipherpost send --material ssh-key` with an OpenSSH v1 format key; legacy PEM, RFC 4716, and FIDO-format keys are rejected at ingest; the acceptance screen shows key type, SHA-256 fingerprint (OpenSSH-style), and comment labeled as sender-attested | ✓ VERIFIED | `src/payload/ingest.rs:269+ pub fn ssh_key` strict-rejects non-OpenSSH-v1 input via prefix sniff (`Error::SshKeyFormatNotSupported`); 5 format-rejection tests in `tests/material_ssh_ingest.rs` (rsa/dsa/ec/rfc4716/fido). `src/preview.rs:683+ render_ssh_preview` emits Key + SHA-256 fingerprint (`SHA256:<base64-unpadded>`) + `[sender-attested]`-labeled comment per Plan 06; 7 `tests/ssh_banner_render.rs` golden-string tests pass. |
-| 3 | JCS fixtures `tests/fixtures/material_pgp_signable.bin` and `tests/fixtures/material_ssh_signable.bin` are committed and asserted byte-for-byte identical on every CI run | ✓ VERIFIED | `tests/fixtures/material_pgp_signable.bin` (376 B) committed; `tests/material_pgp_envelope_round_trip.rs::material_pgp_envelope_fixture_bytes_match` byte-identity test passes. `tests/fixtures/material_ssh_signable.bin` (620 B) committed; `tests/material_ssh_envelope_round_trip.rs` (3 active tests) all pass. |
+| 1 | User can `cipherpost send --material pgp-key` with a binary OpenPGP packet stream and receive it; ASCII-armored input is rejected (non-deterministic headers); multi-primary keyrings are rejected with exit 1 naming the count; secret keys display `[WARNING: SECRET key]` on the acceptance screen but are not blocked | ✓ VERIFIED | `src/payload/ingest.rs:132-264 pub fn pgp_key` rejects armor (line 152: `"ASCII-armored input rejected — supply binary packet stream"`), rejects multi-primary with N substituted (`"PgpKey must contain exactly one primary key; keyrings are not supported in v1.1 (found {N} primary keys)"`), enforces trailing-bytes invariant. `src/preview.rs:284-528 render_pgp_preview` emits `[WARNING: SECRET key — unlocks cryptographic operations]` first-line for tag-5 primaries (line 311). All 11 `tests/material_pgp_ingest.rs` tests pass; `tests/pgp_banner_render.rs` (7 tests) pin the SECRET-warning placement. (Re-verified: regression spot-check confirmed.) |
+| 2 | User can `cipherpost send --material ssh-key` with an OpenSSH v1 format key; legacy PEM, RFC 4716, and FIDO-format keys are rejected at ingest; the acceptance screen shows key type, SHA-256 fingerprint (OpenSSH-style), and comment labeled as sender-attested | ✓ VERIFIED | `src/payload/ingest.rs:269+ pub fn ssh_key` strict-rejects non-OpenSSH-v1 input via prefix sniff (`Error::SshKeyFormatNotSupported`); 5 format-rejection tests in `tests/material_ssh_ingest.rs` (rsa/dsa/ec/rfc4716/fido). `src/preview.rs:683+ render_ssh_preview` emits Key + SHA-256 fingerprint (`SHA256:<base64-unpadded>`) + `[sender-attested]`-labeled comment per Plan 06; 7 `tests/ssh_banner_render.rs` golden-string tests pass. (Re-verified: regression spot-check confirmed.) |
+| 3 | JCS fixtures `tests/fixtures/material_pgp_signable.bin` and `tests/fixtures/material_ssh_signable.bin` are committed and asserted byte-for-byte identical on every CI run | ✓ VERIFIED | `tests/fixtures/material_pgp_signable.bin` (376 B) committed; `tests/material_pgp_envelope_round_trip.rs::material_pgp_envelope_fixture_bytes_match` byte-identity test passes. `tests/fixtures/material_ssh_signable.bin` (620 B) committed; `tests/material_ssh_envelope_round_trip.rs` (3 active tests) all pass. (Re-verified: still green.) |
 | 4 | `cargo tree | grep ed25519-dalek` pre-flight result is documented in Phase 7 plan 01 — either "no 2.x leak" or explicit coexistence acceptance recorded before any `ssh-key` code ships | ✓ VERIFIED | `.planning/phases/07-typed-material-pgpkey-sshkey/07-01-ed25519-dalek-tree.txt` (134-line evidence) + `07-05-ed25519-dalek-tree.txt` (regression check) commit explicit coexistence acceptance. Two versions present: `ed25519-dalek v2.2.0` (from pgp 0.19.0, transitive) + `ed25519-dalek v3.0.0-pre.5` (from pkarr direct). `tests/x509_dep_tree_guard.rs` (7 tests, 2 added in Plan 04 + 2 in Plan 08) runtime-enforces this shape — including a dedicated `dep_tree_ssh_key_does_not_pull_ed25519_dalek_2_x_independently` test catching SSH-induced regressions. SSH-10 satisfied. |
 | 5 | Malformed PGP packets and malformed SSH bytes at receive time each return exit 1 with a generic message that does not leak crate internals | ✓ VERIFIED | `tests/pgp_error_oracle.rs` (3 tests) + `tests/ssh_error_oracle.rs` (5 tests) enumerate every InvalidMaterial reason × variant × forbidden-token combination (15 PGP forbidden tokens + 6 SSH-specific forbidden tokens); all assert Display contains zero crate internals. `Error::InvalidMaterial { variant: "pgp_key" \| "ssh_key", reason: "malformed PGP packet stream" \| "malformed OpenSSH v1 blob" }` is the curated reason; `exit_code` returns 1. `Error::SshKeyFormatNotSupported` (Plan 05 / D-P7-12 distinct variant for the SSH-format-conversion remediation hint) also maps to exit 1. |
 
-**Score:** 5/5 truths verified at the implementation level. The single FAILED gap is documentation-drift in SPEC.md (an artifact required by the supporting infrastructure, not an observable truth) — counted as a partial gap below.
+**Score:** 5/5 truths verified. The gap from the initial pass is now resolved.
 
 ### Required Artifacts
 
@@ -60,7 +88,7 @@ Phase 7 ships eight plans (01-08) across two parallel waves (PGP plans 01-04 + S
 | `tests/fixtures/material_pgp_*` | PGP fixtures (public + secret + realistic + JCS envelope) | ✓ VERIFIED | 4 fixtures committed: `material_pgp_fixture.pgp` (202 B rpgp Ed25519 public), `material_pgp_secret_fixture.pgp` (239 B), `material_pgp_fixture_realistic.pgp` (935 B gpg RSA-3072 for WireBudgetExceeded test), `material_pgp_signable.bin` (376 B JCS envelope). Reproduction note documents recipes + SHA-256s. |
 | `tests/fixtures/material_ssh_*` | SSH fixtures (Ed25519 + RSA-1024 + JCS envelope) | ✓ VERIFIED | 3 fixtures committed: `material_ssh_fixture.openssh-v1` (387 B Ed25519 from Plan 05), `material_ssh_fixture_rsa1024.openssh-v1` (1020 B for [DEPRECATED] test from Plan 08), `material_ssh_signable.bin` (620 B JCS envelope). DSA fixture intentionally skipped per D-P7-10 supply-chain hygiene; DSA-deprecation logic covered by Plan 06's predicate unit test. |
 | Test files (10 new + 2 extended) | `tests/material_pgp_*` × 2, `tests/pgp_*` × 3, `tests/material_ssh_*` × 2, `tests/ssh_*` × 3, `tests/x509_dep_tree_guard.rs` extended, `tests/debug_leak_scan.rs` extended | ✓ VERIFIED | All 10 new files present + 2 extensions; full suites green: material_pgp_ingest=10/10, material_ssh_ingest=13/13, pgp_banner_render=7/7, ssh_banner_render=7/7, pgp_error_oracle=3/3, ssh_error_oracle=5/5, pgp_roundtrip=3 active + 2 ignored, ssh_roundtrip=4 active + 1 ignored, material_pgp_envelope_round_trip=3 active + 1 ignored regenerator, material_ssh_envelope_round_trip=3 active + 1 ignored regenerator, x509_dep_tree_guard=7/7 (was 3, +2 PGP + 2 SSH), debug_leak_scan=6/6. |
-| `SPEC.md` | §3.2 PgpKey + SshKey wire shapes, §5.1 CLI matrix, §5.2 banner subblocks, §6 exit codes, §Pitfall #22 consolidated wire-budget matrix | ⚠️ PARTIAL | Most updates landed (§3.2 PGP, §3.2 SSH at line 254+, §5.1 CLI matrix, §5.2 banner subblocks, §6 SshKeyFormatNotSupported row, §Pitfall #22 consolidated matrix). However, two stale references remain (lines 154-155 calling ssh_key 'Reserved' + line 1010 calling all typed variants 'reserved for v1.0+'). Flagged in 07-REVIEW.md WR-01 + WR-02; not fixed at phase-close. See gap. |
+| `SPEC.md` | §3.2 PgpKey + SshKey wire shapes, §5.1 CLI matrix, §5.2 banner subblocks, §6 exit codes, §Pitfall #22 consolidated wire-budget matrix | ✓ VERIFIED | All updates landed: §3.2 PGP, §3.2 SSH at line 252+, §5.1 CLI matrix, §5.2 banner subblocks, §6 SshKeyFormatNotSupported row, §Pitfall #22 consolidated matrix. The previously-stale lines 154-155 and 1010 are FIXED in commit f4750a5: §3.2 line 154 now correctly reads `cipherpost/v1.1 (Phase 7) adds: pgp_key { bytes } and ssh_key { bytes }.`; §9 Lineage lines 1007-1008 now correctly read `Envelope with Material enum (generic_secret shipped in v1.0; x509_cert added in v1.1 Phase 6; pgp_key and ssh_key added in v1.1 Phase 7).`. Regression grep for `"Reserved for Phase\|reserved for v1\.0\|NotImplemented \{ phase: 7"` returns 0 matches. |
 
 ### Key Link Verification
 
@@ -92,21 +120,17 @@ Phase 7 ships eight plans (01-08) across two parallel waves (PGP plans 01-04 + S
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Code compiles cleanly | `cargo build --all-targets` | exit 0; "Finished `dev` profile" | ✓ PASS |
-| Full test suite passes | `cargo test --features mock` | 253 passed / 0 failed / 14 ignored (12 pre-existing wire-budget #[ignore]'s + 2 new SSH wire-budget #[ignore]'s) | ✓ PASS |
-| PGP ingest matrix | `cargo test --test material_pgp_ingest` | 10/10 pass | ✓ PASS |
-| SSH ingest matrix | `cargo test --test material_ssh_ingest` | 13/13 pass | ✓ PASS |
-| PGP banner golden-string | `cargo test --test pgp_banner_render` | 7/7 pass | ✓ PASS |
-| SSH banner golden-string | `cargo test --test ssh_banner_render` | 7/7 pass | ✓ PASS |
-| PGP error oracle | `cargo test --test pgp_error_oracle` | 3/3 pass | ✓ PASS |
-| SSH error oracle | `cargo test --test ssh_error_oracle` | 5/5 pass | ✓ PASS |
-| PGP round-trip + WireBudgetExceeded | `cargo test --features mock --test pgp_roundtrip` | 3 active pass / 0 fail / 2 ignored (round-trip + armor — wire-budget per D-P7-03; matches Pitfall #22 matrix) | ✓ PASS |
-| SSH round-trip + WireBudgetExceeded | `cargo test --features mock --test ssh_roundtrip` | 4 active pass / 0 fail / 1 ignored (round-trip — wire-budget per D-P7-03) | ✓ PASS |
-| Dep-tree guard (PGP + SSH + ed25519-dalek coexistence) | `cargo test --test x509_dep_tree_guard` | 7/7 pass (was 3 pre-Phase-7; +2 Plan 04 PGP + 2 Plan 08 SSH) | ✓ PASS |
-| Debug leak-scan all 4 variants | `cargo test --test debug_leak_scan` | 6/6 pass | ✓ PASS |
+| Code compiles cleanly | `cargo build --all-targets` | exit 0 | ✓ PASS |
+| Full test suite passes | `cargo test --features mock` | 253 passed / 0 failed / 14 ignored — IDENTICAL to initial verification snapshot | ✓ PASS (no regression) |
+| SPEC.md stale-phrase regression check | `grep -nE "Reserved for Phase\|reserved for v1\.0\|NotImplemented \{ phase: 7" SPEC.md` | exit 1 (0 matches) | ✓ PASS |
+| SPEC.md `v1.0+` callout regression check | `grep -nE "v1\.0\+\|NotImplemented\{phase:7" SPEC.md` | exit 1 (0 matches) | ✓ PASS |
+| §3.2 fix landed verbatim | `sed -n '152,154p' SPEC.md` | Lines 152-154 match the WR-01 proposed fix exactly | ✓ PASS |
+| §9 Lineage fix landed verbatim | `sed -n '1007,1008p' SPEC.md` | Lines 1007-1008 match the WR-02 proposed fix exactly | ✓ PASS |
 | Supply chain — no forbidden crates | `cargo tree \| grep -E "ring v\|aws-lc v\|openssl-sys v"` | exit 1 (no matches) | ✓ PASS |
 | ed25519-dalek coexistence shape | `cargo tree \| grep "ed25519-dalek v"` | shows v2.2.0 (from pgp) + v3.0.0-pre.5 (from pkarr); no third version | ✓ PASS |
 | D-P7-09 + D-P7-16 import scope | `grep -rE "^use pgp\|pgp::\|^use ssh_key\|ssh_key::" src/ \| grep -v "src/preview.rs\|src/payload/ingest.rs"` | empty (0 matches) | ✓ PASS |
+
+In re-verification mode the failed must-have got the deepest scrutiny; passing must-haves received quick regression sanity checks (full test suite, supply-chain, import-scope) — all unchanged from the initial pass.
 
 ### Requirements Coverage
 
@@ -120,7 +144,7 @@ Phase 7 ships eight plans (01-08) across two parallel waves (PGP plans 01-04 + S
 | PGP-06 | 07-01, 07-04 | Plaintext cap (64 KB) for PgpKey | ✓ SATISFIED | `Material::plaintext_size()` for PgpKey returns `bytes.len()`; Phase 6 cap machinery sees real PGP byte counts; tests/pgp_roundtrip.rs::pgp_send_realistic_key_surfaces_wire_budget_exceeded_cleanly active |
 | PGP-07 | 07-04 | JCS fixture committed at tests/fixtures/material_pgp_signable.bin | ✓ SATISFIED | 376 B fixture committed; tests/material_pgp_envelope_round_trip.rs byte-identity test passes |
 | PGP-08 | 07-01, 07-02, 07-04 | Malformed PGP returns exit 1; generic Display (no crate internals) | ✓ SATISFIED | tests/pgp_error_oracle.rs (3 tests) enumerates 6 reasons × 4 variants × 15 forbidden tokens; oracle hygiene verified |
-| PGP-09 | 07-04 | Round-trip integration test | ⚠️ DEFERRED — but acceptable per D-P7-03 honest-messaging discipline | tests/pgp_roundtrip.rs::pgp_self_round_trip_recovers_packet_stream is `#[ignore]`'d due to measured wire-budget overflow (1236 B encoded for 202 B fixture vs 1000 B budget); D-P7-03 amendment carved this fallback for SSH and Plan 04 extended it to PGP; SPEC.md §Pitfall #22 consolidated matrix documents the deferral with measured numbers; v1.2 two-tier storage milestone re-enables. NOT a real gap because the deferral is documented infrastructure-level reality, not implementation absence. |
+| PGP-09 | 07-04 | Round-trip integration test | ⚠️ DEFERRED — acceptable per D-P7-03 honest-messaging discipline | tests/pgp_roundtrip.rs::pgp_self_round_trip_recovers_packet_stream is `#[ignore]`'d due to measured wire-budget overflow (1236 B encoded for 202 B fixture vs 1000 B budget); D-P7-03 amendment carved this fallback for SSH and Plan 04 extended it to PGP; SPEC.md §Pitfall #22 consolidated matrix documents the deferral with measured numbers; v1.2 two-tier storage milestone re-enables. NOT a real gap because the deferral is documented infrastructure-level reality, not implementation absence. |
 | SSH-01 | 07-05, 07-08 | OpenSSH v1 only; legacy PEM/RFC4716/FIDO → SshKeyFormatNotSupported exit 1 | ✓ SATISFIED | `payload::ingest::ssh_key` strict prefix sniff; 5 format-rejection tests in tests/material_ssh_ingest.rs (rsa/dsa/ec/rfc4716/fido all return SshKeyFormatNotSupported); Error::SshKeyFormatNotSupported exit 1 verified |
 | SSH-02 | 07-05, 07-08 | Wire format + canonical wire blob | ✓ SATISFIED | `Material::SshKey { bytes }` with `to_openssh(LineEnding::LF)` canonical re-encode (D-P7-11); tests/material_ssh_ingest.rs::ssh_key_canonical_re_encode_round_trip pins the invariant; empirical byte-determinism PASS |
 | SSH-03 | 07-05 | send --material ssh-key reads OpenSSH v1 bytes | ✓ SATISFIED | `run_send` MaterialVariant::SshKey arm dispatches live to `payload::ingest::ssh_key` (Plan 05) |
@@ -138,35 +162,35 @@ Phase 7 ships eight plans (01-08) across two parallel waves (PGP plans 01-04 + S
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| SPEC.md | 154-155 | Stale doc claim: "Reserved for Phase 7 Plan 05+: ssh_key (dispatch returns Error::NotImplemented{phase:7})" | ⚠️ Warning | Documentation contradicts shipped behavior; future readers will be confused |
-| SPEC.md | 1010 | Stale doc claim: "x509_cert, pgp_key, ssh_key reserved for v1.0+" | ⚠️ Warning | Wrong both for milestone label (v1.1 not v1.0+) and status (all three are implemented in v1.1) |
-| src/preview.rs | 427-429 | Duplicate `strip_control_chars` private fn (also at src/payload/mod.rs:196-198) | ℹ️ Info | DRY violation flagged in 07-REVIEW IN-01; low-grade — both impls have identical bodies, real risk of drift if one is later "tightened" inconsistently |
-| src/flow.rs | 1241-1242 | Stale MSRV comment "Rust 1.70+; MSRV 1.85" — should be 1.88 (Phase 7 Plan 01 bump) | ℹ️ Info | Flagged in 07-REVIEW IN-02; comment-only drift; no behavioral impact |
+| ~~SPEC.md~~ | ~~154-155~~ | ~~Stale doc claim: "Reserved for Phase 7 Plan 05+: ssh_key (dispatch returns Error::NotImplemented{phase:7})"~~ | ~~⚠️ Warning~~ | ✓ FIXED in commit f4750a5 |
+| ~~SPEC.md~~ | ~~1010~~ | ~~Stale doc claim: "x509_cert, pgp_key, ssh_key reserved for v1.0+"~~ | ~~⚠️ Warning~~ | ✓ FIXED in commit f4750a5 |
+| src/preview.rs | 427-429 | Duplicate `strip_control_chars` private fn (also at src/payload/mod.rs:196-198) | ℹ️ Info | DRY violation flagged in 07-REVIEW IN-01; low-grade — both impls have identical bodies, real risk of drift if one is later "tightened" inconsistently. Not a goal-blocker; cleanup deferred. |
+| src/flow.rs | 1241-1242 | Stale MSRV comment "Rust 1.70+; MSRV 1.85" — should be 1.88 (Phase 7 Plan 01 bump) | ℹ️ Info | Flagged in 07-REVIEW IN-02; comment-only drift; no behavioral impact. Not a goal-blocker; cleanup deferred. |
 | src/preview.rs | 530-554 + src/flow.rs | `pgp_armor` re-parses bytes already parsed by preview (3× parse cost on --armor + PgpKey path) | ℹ️ Info | Flagged in 07-REVIEW IN-03; performance optimization deferred to v1.2 (review charter explicitly defers performance work for v1) |
 
-The two ⚠️ Warnings are the doc-drift gap; the three ℹ️ Info items are nice-to-have cleanup that does not block goal achievement and was explicitly deferred per the review's own categorization.
+The two ⚠️ Warnings (SPEC.md doc-drift) are now resolved. The three ℹ️ Info items are nice-to-have cleanup that does not block goal achievement and was explicitly deferred per the review's own categorization. They do not change the verdict.
 
 ### Human Verification Required
 
-None. All success criteria are programmatically verifiable — the implementation is verified by the comprehensive test suite + dep-tree guards + golden-string banner tests + error-oracle enumeration. No visual/UX/external-service items require human spot-check beyond what the test suite already covers.
+None. All success criteria are programmatically verifiable — the implementation is verified by the comprehensive test suite + dep-tree guards + golden-string banner tests + error-oracle enumeration. The doc-drift fix is a pure text edit verifiable by regression grep + lychee. No visual/UX/external-service items require human spot-check beyond what the test suite already covers.
 
 ### Gaps Summary
 
-**One material gap blocks full goal achievement: SPEC.md doc-drift on ssh_key status.**
+**No remaining gaps.** Phase 7 goal is fully achieved.
 
-The 07-REVIEW.md (2026-04-24) explicitly flagged WR-01 (SPEC.md:154-155 stale "Reserved for Phase 7 Plan 05+" claim) and WR-02 (SPEC.md:1010 stale "reserved for v1.0+" claim). Both are clear contradictions with the shipped code (which dispatches ssh_key live and supports all four typed variants). The fixes are mechanical text edits proposed verbatim in the review. They were not applied before the phase closed.
+The single gap from the initial verification — SPEC.md doc-drift on ssh_key status (WR-01 + WR-02) — was closed by commit f4750a5 ("docs(07): fix SPEC.md ssh_key + lineage drift") on 2026-04-25. The fixes match the verbatim wording proposed in 07-REVIEW.md and the `missing:` clauses of the prior VERIFICATION.md. Regression checks confirm:
 
-CLAUDE.md's "Planning docs convention" section explicitly warns against this drift class:
+- Zero remaining occurrences of `Reserved for Phase`, `reserved for v1.0`, or `NotImplemented { phase: 7` in SPEC.md
+- Zero remaining occurrences of `v1.0+` callouts referencing typed variants
+- Full test suite still green (253 passed / 0 failed / 14 ignored — identical to initial snapshot)
+- Lychee --offline SPEC.md still clean (per commit message: "0 errors / 11 OK / 1 excluded")
+- No regressions in any other code-level evidence (artifacts, key links, data-flow, supply-chain, import-scope all unchanged)
 
-> Phase `.planning/phases/<NN>/VERIFICATION.md` files are authoritative for implementation status. Do not add or regenerate a separate traceability table — maintaining a parallel table risks a drift class where table rows fall behind the body checkboxes and the per-phase verification reports.
+All 5 ROADMAP success criteria are implementation-verified. All 19 PGP+SSH requirement IDs are accounted for. The supply-chain invariants (D-P7-09 PGP scope, D-P7-16 SSH scope, ed25519-dalek coexistence shape) hold. The wire-budget round-trip `#[ignore]`'s for PGP-09 + SSH-09 remain documented per D-P7-03 with measured numbers in SPEC.md §Pitfall #22 — the correct shipping posture per the explicit honest-messaging discipline, not a hidden defect.
 
-The same drift hazard applies to SPEC.md narrative sections that hand-curate variant status: when shipping code outpaces the SPEC.md narrative, future readers (and especially security auditors) cannot tell which is current. SPEC.md is the canonical user-facing reference per CLAUDE.md "GSD workflow" — divergence between it and the code is a Warning-class issue, not Info-class.
-
-**Recommendation:** Apply the verbatim fixes proposed in 07-REVIEW.md WR-01 + WR-02 in a small `chore: SPEC.md ssh_key status fixes` commit before declaring Phase 7 done. The fixes are pure text edits; no code changes; lychee --offline SPEC.md will re-run cleanly.
-
-**Everything else is solid.** All 19 PGP+SSH requirement IDs are accounted for. The 5 ROADMAP success criteria all have implementation-level evidence. The supply-chain invariants (D-P7-09 PGP scope, D-P7-16 SSH scope, ed25519-dalek coexistence shape) hold. The 253-test suite is green. The wire-budget round-trip `#[ignore]`'s are documented per D-P7-03 with measured numbers in SPEC.md §Pitfall #22 — the correct shipping posture, not a hidden defect.
+**Phase 7 is ready to proceed.** SPEC.md narrative is now consistent with shipped code; CLAUDE.md "Planning docs convention" drift hazard is closed for this phase.
 
 ---
 
-_Verified: 2026-04-24_
+_Verified: 2026-04-25 (re-verification after commit f4750a5)_
 _Verifier: Claude (gsd-verifier)_
