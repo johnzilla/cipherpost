@@ -255,6 +255,11 @@ name = "pgp_roundtrip"
 path = "tests/pgp_roundtrip.rs"
 required-features = ["mock"]
 
+# Phase 7 Plan 04: PGP banner golden-string render tests.
+[[test]]
+name = "pgp_banner_render"
+path = "tests/pgp_banner_render.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

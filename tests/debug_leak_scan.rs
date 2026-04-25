@@ -109,6 +109,27 @@ fn material_ssh_unit_variant_debug_no_bytes() {
     use cipherpost::payload::Material;
     // SshKey is still a unit variant until Plan 05.
     assert_eq!(format!("{:?}", Material::SshKey), "SshKey");
-    // PgpKey moved to material_pgp_key_debug_redacts_bytes (Plan 04 will add
-    // the dedicated extern leak-scan test once tests/material_pgp_ingest.rs ships).
+}
+
+// Phase 7 Plan 04: Material::PgpKey is a struct variant carrying bytes
+// (upgraded in Plan 01). Full leak-scan matches X509Cert / GenericSecret
+// pattern — PgpKey may carry SECRET key material (RFC 4880 tag-5 packets),
+// so the redaction rule is critical-functionality, not display polish.
+#[test]
+fn material_pgp_key_debug_redacts_bytes() {
+    use cipherpost::payload::Material;
+    let m = Material::PgpKey {
+        bytes: vec![0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A],
+    };
+    let dbg = format!("{:?}", m);
+    assert!(
+        dbg.contains("REDACTED"),
+        "PgpKey Debug must show REDACTED, got: {:?}",
+        dbg
+    );
+    assert!(
+        !dbg.contains("abcdef123456789a"),
+        "PgpKey Debug leaked bytes: {:?}",
+        dbg
+    );
 }
