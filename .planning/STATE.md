@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: planning
-stopped_at: Phase 8 context gathered — cclink survey closed; conflicts resolved; 6-plan PIN-first sequencing locked
-last_updated: "2026-04-25T20:24:44.780Z"
-last_activity: 2026-04-25
+status: executing
+stopped_at: "Completed 08-01: PIN crypto core + wire fields"
+last_updated: "2026-04-25T22:44:50.558Z"
+last_activity: 2026-04-25 -- Phase --phase execution started
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 15
-  percent: 71
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickoff)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase 8 — --pin and --burn encryption modes (next up)
+**Current focus:** Phase --phase — 08
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-04-25
+Phase: 08 (pin-and-burn-encryption-modes) — EXECUTING
+Plan: 1 / 6 complete (08-01 PIN crypto core landed)
+Status: Executing Phase 08 — Plan 02 next (PIN ship-gate)
+Last activity: 2026-04-25 -- Plan 08-01 complete
 
-Progress: [██████████] 100%
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 06 P02 | 7min | 1 tasks | 3 files |
 | Phase 06 P03 | 19min | 3 tasks | 16 files |
 | Phase 06 P04 | 21min | 6 tasks | 11 files |
+| Phase 8 P1 | 20 | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,8 @@ Recent decisions affecting current work:
 - v1.1 Phase 6 Plan 04 (2026-04-24): X509 full MockTransport round-trip tests marked #[ignore] due to BEP44 1000-byte ceiling — realistic Ed25519 cert (388 B DER) produces 1616 B packet; two-tier storage architectural fix scoped to later phase. Added positive WireBudgetExceeded-surfaces-cleanly test covering Pitfall #22.
 - v1.1 Phase 6 Plan 04 (2026-04-24): Phase 6 ship-gate bundle pattern established for Phase 7 reuse — fixture DER + JCS byte-identity test + ingest negative matrix + golden-string banner + oracle-hygiene enumeration + leak-scan extension + CI dep-tree assertion + SPEC.md update.
 - v1.1 Phase 6 Plan 04 (2026-04-24): Wire-budget deferral pattern (Option A): #[ignore] round-trip tests + add positive test asserting error surfaces as WireBudgetExceeded cleanly. Phase 7 PGP/SSH will hit the same ceiling; wire-budget escape hatch (two-tier storage / chunking / out-of-band) must be decided at Phase 7 plan time.
+- PIN crypto landed (Phase 8 Plan 01): cclink KDF shape forked verbatim; HKDF info adapted cclink-pin-v1 → cipherpost/v1/pin; direct chacha20poly1305 rejected → nested age (CLAUDE.md load-bearing); zero new direct deps verified by 08-01-pin-deps-tree.txt
+- Phase 8 Plan 01 wire-budget reality (parallels Phase 6/7): pin-protected shares exceed 1000-byte BEP44 ceiling for any non-trivial plaintext; happy-path round-trip #[ignore]'d, WireBudgetExceeded clean-surface test added; escape hatch deferred to Phase 9
 
 ### Pending Todos
 
@@ -157,9 +160,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 8 context gathered — cclink survey closed; conflicts resolved; 6-plan PIN-first sequencing locked
-Resume file: --resume-file
+Last session: 2026-04-25T22:44:41.636Z
+Stopped at: Completed 08-01: PIN crypto core + wire fields
+Resume file: None
 
 **Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
 **Next action:** `/gsd-execute-phase 6` (continues with Plan 03 — CLI `--material` flag + `Receive --armor` + run_send/run_receive wiring)

@@ -95,14 +95,19 @@ Phase 8. Forks cclink's PIN crypto shape; stays inside `age` for AEAD.
 
 - [ ] **PIN-01 [Phase 8]**: `cipherpost send --pin` enables PIN-required mode; PIN prompted interactively on TTY at send time; non-interactive PIN input (`--pin-file`/`--pin-fd`) deliberately deferred to v1.2+ (human-in-the-loop second factor is intentional)
 - [ ] **PIN-02 [Phase 8]**: PIN validation at send time (matching cclink's `validate_pin`): minimum 8 characters, rejects all-same (`"aaaaaaaa"`, `"00000000"`), rejects sequential (`"12345678"`, `"abcdefgh"` ascending or descending). Rejection returns exit 1 with specific reason (min length, all-same, sequential).
-- [ ] **PIN-03 [Phase 8]**: PIN crypto stack: Argon2id(PIN + 32-byte random salt) → HKDF-SHA256 with info `cipherpost/v1/pin` → 32-byte X25519 scalar → age `Identity` built from scalar → `age::Encryptor::with_recipients([pin_recipient])`. Matches cclink shape; HKDF namespace adapted from `cclink-pin-v1` to `cipherpost/v1/pin` per existing domain-separation convention. No direct `chacha20poly1305` calls — CLAUDE.md constraint holds unchanged.
-- [ ] **PIN-04 [Phase 8]**: `OuterRecord`/`OuterRecordSignable` gains `pin_required: bool` field (outer-signed, pre-decrypt readable); `#[serde(default, skip_serializing_if = "is_false")]` preserves byte-identity with v1.0 for non-pin shares (no protocol_version bump for this field alone)
-- [ ] **PIN-05 [Phase 8]**: PIN salt (32 bytes random per send) embedded in the blob: `blob = base64(salt || age_ciphertext)`. Salt is stored inside the outer-signed data so it's authenticated.
+- [x] **PIN-03
+ [Phase 8]**: PIN crypto stack: Argon2id(PIN + 32-byte random salt) → HKDF-SHA256 with info `cipherpost/v1/pin` → 32-byte X25519 scalar → age `Identity` built from scalar → `age::Encryptor::with_recipients([pin_recipient])`. Matches cclink shape; HKDF namespace adapted from `cclink-pin-v1` to `cipherpost/v1/pin` per existing domain-separation convention. No direct `chacha20poly1305` calls — CLAUDE.md constraint holds unchanged.
+- [x] **PIN-04
+ [Phase 8]**: `OuterRecord`/`OuterRecordSignable` gains `pin_required: bool` field (outer-signed, pre-decrypt readable); `#[serde(default, skip_serializing_if = "is_false")]` preserves byte-identity with v1.0 for non-pin shares (no protocol_version bump for this field alone)
+- [x] **PIN-05
+ [Phase 8]**: PIN salt (32 bytes random per send) embedded in the blob: `blob = base64(salt || age_ciphertext)`. Salt is stored inside the outer-signed data so it's authenticated.
 - [ ] **PIN-06 [Phase 8]**: `cipherpost receive` on a `pin_required` share prompts for PIN on TTY BEFORE the typed-z32 acceptance banner; wrong PIN returns exit 4 with the same Display as wrong identity passphrase (error-oracle hygiene; PITFALL #16)
 - [ ] **PIN-07 [Phase 8]**: Error-oracle enumeration test extended: wrong-PIN variant, wrong-identity-key variant, sig-failure variants (outer, inner, canonical-mismatch) all produce identical user-facing Display strings under `format!("{}", err)`. Existing `lib::error::tests::signature_failure_variants_share_display` test expanded to cover PIN.
 - [ ] **PIN-08 [Phase 8]**: Integration test matrix for PIN: (a) send-with-pin → receive-no-pin attempts → exit 7 declined (PIN prompt bails before decrypt); (b) send-with-pin → receive-wrong-pin → exit 4 passphrase (same as wrong identity); (c) send-with-pin → receive-correct-pin → exit 0 + acceptance banner proceeds. Under MockTransport.
-- [ ] **PIN-09 [Phase 8]**: SPEC.md documents PIN crypto: Argon2id params (matching cclink's — 64 MB, 3 iter), HKDF namespace, wire blob layout (salt || ciphertext), UX order (PIN before z32), error-oracle constraint, 8-char entropy floor + anti-pattern validation
-- [ ] **PIN-10 [Phase 8]**: THREAT-MODEL.md adds §X.Y "PIN mode" — second-factor semantics (require BOTH PIN and identity key), offline brute-force bound (Argon2id params × entropy floor), intentional indistinguishability from wrong-key errors, no PIN logging anywhere
+- [x] **PIN-09
+ [Phase 8]**: SPEC.md documents PIN crypto: Argon2id params (matching cclink's — 64 MB, 3 iter), HKDF namespace, wire blob layout (salt || ciphertext), UX order (PIN before z32), error-oracle constraint, 8-char entropy floor + anti-pattern validation
+- [x] **PIN-10
+ [Phase 8]**: THREAT-MODEL.md adds §X.Y "PIN mode" — second-factor semantics (require BOTH PIN and identity key), offline brute-force bound (Argon2id params × entropy floor), intentional indistinguishability from wrong-key errors, no PIN logging anywhere
 
 ### Burn-after-read mode (BURN)
 
