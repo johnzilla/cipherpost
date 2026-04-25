@@ -249,6 +249,12 @@ path = "tests/material_pgp_envelope_round_trip.rs"
 name = "material_pgp_ingest"
 path = "tests/material_pgp_ingest.rs"
 
+# Phase 7 Plan 04: PGP round-trip under MockTransport.
+[[test]]
+name = "pgp_roundtrip"
+path = "tests/pgp_roundtrip.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
