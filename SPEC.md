@@ -402,6 +402,83 @@ not changed silently.
 Code constants enforcing these labels are covered by a constant-match test
 (`tests/dht_label_constants.rs`) that fails if code and SPEC drift.
 
+### 3.6 PIN Crypto Stack (Phase 8 — D-P8-01..06)
+
+PIN-protected shares (`OuterRecord.pin_required = true`) require BOTH the
+receiver's identity passphrase AND a PIN to decrypt. The PIN is a second factor
+layered via NESTED age encryption (CLAUDE.md `chacha20poly1305 only via age`
+invariant — no direct AEAD calls). Non-pin shares (`pin_required` absent or
+`false`) preserve the v1.0 wire shape byte-for-byte (the `pin_required` field
+is elided from JCS via `skip_serializing_if = is_false`; no protocol_version
+bump).
+
+**Architectural lineage:** Forks cclink's `pin_derive_key` shape verbatim;
+diverges on AEAD path (cclink uses raw `chacha20poly1305`; cipherpost wraps
+the derived 32-byte scalar into an `age::x25519::Identity` and uses
+`age::Encryptor::with_recipients`). HKDF namespace adapted from `cclink-pin-v1`
+to `cipherpost/v1/pin` per cipherpost's domain-separation convention
+(every HKDF info string starts with `cipherpost/v1/`; verified by
+`tests/hkdf_info_enumeration.rs`).
+
+**KDF parameters (locked):**
+
+- **Argon2id** version 1.3 (`V0x13`): 64 MiB memory (`m_cost=65536`), 3
+  iterations, 1 lane (`parallelism=1`), 32-byte output. Distinct lifecycle
+  from the identity-KEK Argon2id params (which are READ FROM the identity
+  file's PHC header per Pitfall #8). PIN params are share-level constants;
+  bumping them requires a `protocol_version` bump.
+- **HKDF-SHA256:** `salt = the same 32-byte random salt`; `ikm = Argon2id
+  32-byte output`; `info = "cipherpost/v1/pin"` (referenced via
+  `crate::crypto::hkdf_infos::PIN` constant — NEVER inline-literal). Output:
+  32 bytes used as an X25519 scalar.
+- **age `Identity`:** built from the 32-byte X25519 scalar via
+  `crate::crypto::identity_from_x25519_bytes`. The `to_public()` recipient
+  becomes the inner age-encryption recipient.
+
+**Wire blob layout:**
+
+- Non-pin shares: `blob = base64-STANDARD(outer_age_ct)` — exact v1.0 byte shape.
+- PIN shares: `blob = base64-STANDARD(salt[32] || outer_age_ct)` — salt is the
+  FIRST 32 raw bytes (read BEFORE any age-decrypt to derive `pin_recipient`).
+
+**Nested age structure (PIN shares only):**
+
+1. `inner_ct = age_encrypt(envelope_jcs, pin_recipient)`
+2. `outer_ct = age_encrypt(inner_ct, receiver_recipient)`
+3. `blob = base64(salt || outer_ct)`
+
+**Receive flow ordering (D-P8-07).** PIN shares extend the §5.2 13-step
+pipeline with a PIN dispatch step (6a) inserted BETWEEN outer-verify (steps
+2/3) and outer age-decrypt (step 7). The TAMPER-ZERO INVARIANT is preserved:
+outer-verify gates the PIN prompt, so a tampered share never reaches the
+prompt — exit 3 sig failure with no PIN-prompt side effect. Concretely, when
+`record.pin_required = true`, run_receive: (i) base64-decodes the blob,
+(ii) splits the first 32 bytes as the salt, (iii) calls `prompt_pin(false)`
+(no echo, single-shot — wrong PIN is the user's notification rather than a
+re-prompt), (iv) derives `pin_identity` from PIN+salt, (v) age-decrypts the
+outer ciphertext with the receiver identity to produce `inner_ct`,
+(vi) age-decrypts `inner_ct` with `pin_identity` to produce `envelope_jcs`.
+Only THEN does the §5.2 step 8 acceptance prompt run.
+
+**Error-oracle constraint (PIN-07).** Wrong-PIN, wrong-passphrase, and
+tampered inner-ciphertext all surface as `Error::DecryptFailed` with the
+IDENTICAL user-facing Display (`"wrong passphrase or identity decryption
+failed"`) and exit code 4. Sig-failures (`Error::Signature*`, exit 3) remain
+a DIFFERENT lane — distinguishable by exit code, but both lanes preserve
+user-facing Display equality WITHIN their lane (D-16 invariant for sig lane;
+PIN-07 narrow invariant for credential lane).
+
+**Entropy floor (PIN-02).** PIN must be ≥ 8 characters, not all-same
+characters, not monotonic ascending, not monotonic descending, and not in
+the blocklist (`password`, `qwerty`, `letmein`, `12345678`, `87654321`,
+`qwertyui`, `asdfghjk` — case-insensitive). Rejection is GENERIC
+(`"PIN does not meet entropy requirements"`, exit 1) — the specific reason
+is NEVER named in user-facing output (oracle hygiene per PITFALLS #23/#24;
+supersedes REQUIREMENTS PIN-02 wording per D-P8-12). The specific reason
+IS asserted at the test layer (`tests/pin_validation.rs::rejects_*`), so
+implementations remain testable. Length validation runs BEFORE Argon2id so
+length-failures don't leak via wall-clock timing (T-08-15).
+
 ## 4. Share URI
 
 A share URI is a single copy-paste token that identifies where to resolve a share and what
@@ -507,6 +584,25 @@ cipherpost send --self -p 'server bootstrap' --material ssh-key --material-file 
 Both `--armor` rejection literals fire BEFORE the preview parse runs (cost-on-error
 + pre-emit surface hygiene per D-RECV-01 / T-07-49).
 
+**`--pin` (cipherpost/v1.1, Phase 8 PIN-01):** Require a PIN as a second factor.
+Bool flag — clap rejects argv-inline `--pin <value>` naturally (no
+`Option<String>` shape). PIN is read from TTY at send time with double-entry
+confirmation (`prompt_pin(confirm=true)` — a typo'd PIN bricks decryptability,
+so confirmation matches the rationale of `identity generate`'s `confirm_on_tty=true`).
+The receiver is prompted at receive time (single-shot — wrong PIN funnels through
+`Error::DecryptFailed` exit 4, the user's notification). Both the receiver's
+identity passphrase AND the PIN are required to decrypt PIN-protected shares.
+Non-interactive PIN sources (`--pin-file`, `--pin-fd`, `CIPHERPOST_PIN` env)
+are deferred to v1.2 — v1.1 keeps PIN as an intentionally human-in-the-loop
+second factor. PIN entropy validation runs at send time and rejects with
+exit 1 / generic `"PIN does not meet entropy requirements"` Display (oracle
+hygiene per PIN-07; specific reason is NEVER named). See §3.6 for the full
+KDF + wire-blob layout + receive-flow ordering.
+
+```
+cipherpost send --pin --self -p 'high-value backup' --material-file ./vault.key
+```
+
 ### 5.2 Receive
 
 Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
@@ -520,6 +616,19 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    guard included). Any signature failure → unified message, exit 3 (D-16, RECV-01).
 5. Check `url_share_ref == OuterRecord.share_ref`; mismatch → `Error::ShareRefMismatch`, exit 1 (D-URI-02).
 6. TTL check against `OuterRecord.created_at + OuterRecord.ttl_seconds`. Expired → exit 2 (RECV-02).
+
+   **cipherpost/v1.1: PIN dispatch (Phase 8 PIN-06).** When `OuterRecord.pin_required = true`,
+   step 6a runs after TTL and BEFORE step 7's age-decrypt: (a) base64-decode `blob`
+   (≥ 32 bytes required, else `Error::SignatureCanonicalMismatch` exit 3 — same oracle-
+   hygiene treatment as a malformed blob); (b) split first 32 bytes as the PIN salt;
+   (c) `prompt_pin(confirm=false)` — TTY-only, single-shot, no echo (non-TTY context →
+   `Error::Config` exit 1, no state mutation, no receipt published — share remains
+   re-receivable when a PIN is later available); (d) derive `pin_identity` from
+   PIN + salt via Argon2id + HKDF-SHA256 with info `cipherpost/v1/pin` (§3.6);
+   (e) step 7's age-decrypt becomes NESTED: outer with the receiver identity
+   produces `inner_ct`, inner with `pin_identity` produces `envelope_jcs`.
+   Wrong PIN at the inner step → `Error::DecryptFailed` exit 4 with the
+   IDENTICAL Display as a wrong identity-passphrase failure (PIN-07).
 7. age-decrypt `OuterRecord.blob` into a `Zeroizing<Vec<u8>>`. Decryption failure → exit 4 (RECV-03).
 8. Parse decrypted bytes as JCS → `Envelope`. JCS parse failure → `Error::SignatureCanonicalMismatch`,
    exit 3 (D-RECV-01 step 7).
@@ -702,7 +811,7 @@ attacks (D-16).
 | 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), **`SshKeyFormatNotSupported`** (Phase 7 Plan 05 / D-P7-12 — input not OpenSSH v1; distinct variant because Display embeds the `ssh-keygen -p -o -f <path>` conversion hint that would be wrong for non-SSH content errors; SPEC §3.2 SshKey), any unclassified |
 | 2 | TTL expired | `share expired` | `Expired` |
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
-| 4 | Passphrase / decryption failure | `passphrase failed` | `Passphrase`, `Decrypt` |
+| 4 | Passphrase / decryption failure | `wrong passphrase or identity decryption failed` | `DecryptFailed` (Phase 8 PIN-07: covers wrong identity-passphrase OR wrong PIN OR tampered inner age ciphertext — IDENTICAL Display across all three credential-failure modes; oracle hygiene), `IdentityPermissions`, `PassphraseInvalidInput` |
 | 5 | Not found on DHT | `not found` | `NotFound` |
 | 7 | User declined acceptance | `declined` | `Declined` |
 
