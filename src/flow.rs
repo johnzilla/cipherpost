@@ -514,7 +514,7 @@ pub fn run_receive(
             let sub = preview::render_pgp_preview(bytes)?;
             (bytes, Some(sub))
         }
-        Material::SshKey => {
+        Material::SshKey { .. } => {
             // Plan 07 extends this arm live (SSH preview + armor reject per
             // D-P7-13). Until then, reject with NotImplemented — matches the
             // Plan 01 run_send dispatch.
@@ -796,7 +796,7 @@ fn material_type_string(m: &Material) -> &'static str {
         Material::GenericSecret { .. } => "generic_secret",
         Material::X509Cert { .. } => "x509_cert",
         Material::PgpKey { .. } => "pgp_key",
-        Material::SshKey => "ssh_key",
+        Material::SshKey { .. } => "ssh_key",
     }
 }
 

@@ -61,8 +61,8 @@ impl Envelope {
 }
 
 /// Typed cryptographic-material variants. Wire shape: `{"type":"<snake>","bytes":"<b64>"}`.
-/// GenericSecret + X509Cert + PgpKey carry bytes. SshKey is reserved (Phase 7 Plan 05
-/// upgrades it to `{ bytes: Vec<u8> }`).
+/// All four variants now carry bytes (Phase 6 added X509Cert, Phase 7 added
+/// PgpKey + SshKey).
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Material {
@@ -78,7 +78,10 @@ pub enum Material {
         #[serde(with = "base64_std")]
         bytes: Vec<u8>,
     },
-    SshKey,
+    SshKey {
+        #[serde(with = "base64_std")]
+        bytes: Vec<u8>,
+    },
 }
 
 // Manual Debug — redacts data-carrying variants (Pitfall #7). Phase 6: X509Cert
@@ -98,7 +101,9 @@ impl std::fmt::Debug for Material {
             Material::PgpKey { bytes } => {
                 write!(f, "PgpKey([REDACTED {} bytes])", bytes.len())
             }
-            Material::SshKey => write!(f, "SshKey"),
+            Material::SshKey { bytes } => {
+                write!(f, "SshKey([REDACTED {} bytes])", bytes.len())
+            }
         }
     }
 }
@@ -147,14 +152,29 @@ impl Material {
         }
     }
 
+    /// Return the `Vec<u8>` of an `SshKey` variant. Other variants return
+    /// `Error::InvalidMaterial { variant, reason: "accessor called on wrong variant" }`
+    /// — mirrors `as_pgp_key_bytes` / `as_x509_cert_bytes` (D-P6-15 pattern).
+    /// Developer-facing; callers match the variant before calling.
+    pub fn as_ssh_key_bytes(&self) -> Result<&[u8], Error> {
+        match self {
+            Material::SshKey { bytes } => Ok(bytes.as_slice()),
+            other => Err(Error::InvalidMaterial {
+                variant: variant_tag(other).to_string(),
+                reason: "accessor called on wrong variant".to_string(),
+            }),
+        }
+    }
+
     /// Plaintext byte length of this variant's data field. Feeds `enforce_plaintext_cap`
-    /// pre-encrypt (D-P6-16 / X509-06). Unit variants return 0; Phase 7 extends.
+    /// pre-encrypt (D-P6-16 / X509-06). Phase 7 Plan 05: all four variants now
+    /// carry bytes — no unit-variant zero-placeholder remains.
     pub fn plaintext_size(&self) -> usize {
         match self {
             Material::GenericSecret { bytes } => bytes.len(),
             Material::X509Cert { bytes } => bytes.len(),
             Material::PgpKey { bytes } => bytes.len(),
-            Material::SshKey => 0,
+            Material::SshKey { bytes } => bytes.len(),
         }
     }
 }
@@ -166,7 +186,7 @@ fn variant_tag(m: &Material) -> &'static str {
         Material::GenericSecret { .. } => "generic_secret",
         Material::X509Cert { .. } => "x509_cert",
         Material::PgpKey { .. } => "pgp_key",
-        Material::SshKey => "ssh_key",
+        Material::SshKey { .. } => "ssh_key",
     }
 }
 
@@ -255,19 +275,46 @@ mod tests {
     }
 
     #[test]
-    fn material_non_generic_variants_return_not_implemented_on_bytes_access() {
-        // X509Cert and PgpKey are struct variants after Phase 6 / Phase 7 Plan 01.
-        // Their cross-accessor behavior (as_generic_secret_bytes) is tested
-        // individually below. Only SshKey remains as the unit-variant placeholder
-        // until Phase 7 Plan 05.
-        for m in [Material::SshKey] {
-            let err = m.as_generic_secret_bytes().unwrap_err();
-            assert!(
-                matches!(err, Error::NotImplemented { phase: 2 }),
-                "expected NotImplemented{{phase:2}}, got {:?}",
-                err
-            );
-        }
+    fn material_all_variants_have_dedicated_accessors() {
+        // Phase 7 Plan 05: all four Material variants are struct-data variants
+        // with their own as_<variant>_bytes() accessor. The Phase-2-style
+        // generic NotImplemented{phase:2} fallback is reachable ONLY via
+        // cross-variant accessor mismatch (e.g., calling as_x509_cert_bytes
+        // on a SshKey), which is tested per-variant elsewhere.
+        assert_eq!(
+            Material::generic_secret(vec![1, 2])
+                .as_generic_secret_bytes()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            Material::X509Cert {
+                bytes: vec![1, 2, 3]
+            }
+            .as_x509_cert_bytes()
+            .unwrap()
+            .len(),
+            3
+        );
+        assert_eq!(
+            Material::PgpKey {
+                bytes: vec![1, 2, 3, 4]
+            }
+            .as_pgp_key_bytes()
+            .unwrap()
+            .len(),
+            4
+        );
+        assert_eq!(
+            Material::SshKey {
+                bytes: vec![1, 2, 3, 4, 5]
+            }
+            .as_ssh_key_bytes()
+            .unwrap()
+            .len(),
+            5
+        );
     }
 
     #[test]
@@ -336,14 +383,14 @@ mod tests {
             .plaintext_size(),
             123
         );
+        assert_eq!(Material::PgpKey { bytes: vec![0; 77] }.plaintext_size(), 77);
         assert_eq!(
-            Material::PgpKey {
-                bytes: vec![0; 77]
+            Material::SshKey {
+                bytes: vec![0xAA; 50]
             }
             .plaintext_size(),
-            77
+            50
         );
-        assert_eq!(Material::SshKey.plaintext_size(), 0);
     }
 
     #[test]
@@ -437,10 +484,92 @@ mod tests {
 
     #[test]
     fn material_as_x509_cert_bytes_on_pgp_key_returns_invalid_material() {
-        let m = Material::PgpKey {
-            bytes: vec![0x99],
-        };
+        let m = Material::PgpKey { bytes: vec![0x99] };
         let err = m.as_x509_cert_bytes().unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "accessor called on wrong variant");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 7 Plan 05 — Material::SshKey is now a struct variant.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn material_ssh_key_serde_round_trip() {
+        let m = Material::SshKey {
+            bytes: vec![0xDE, 0xAD, 0xBE, 0xEF],
+        };
+        let s = serde_json::to_string(&m).unwrap();
+        assert!(
+            s.contains("\"type\":\"ssh_key\""),
+            "serde tag must be snake_case: {}",
+            s
+        );
+        assert!(
+            s.contains("\"bytes\":\""),
+            "SshKey.bytes must serialize as base64 string: {}",
+            s
+        );
+        let back: Material = serde_json::from_str(&s).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn material_ssh_key_debug_redacts_bytes() {
+        let m = Material::SshKey {
+            bytes: vec![0xCD; 42],
+        };
+        let dbg = format!("{:?}", m);
+        assert_eq!(dbg, "SshKey([REDACTED 42 bytes])");
+        assert!(
+            !dbg.to_lowercase().contains("cd"),
+            "Debug leaked byte sequence: {}",
+            dbg
+        );
+    }
+
+    #[test]
+    fn material_ssh_key_plaintext_size_matches_byte_length() {
+        assert_eq!(
+            Material::SshKey {
+                bytes: vec![0; 200]
+            }
+            .plaintext_size(),
+            200
+        );
+    }
+
+    #[test]
+    fn material_as_ssh_key_bytes_mismatch_returns_invalid_material() {
+        let m = Material::generic_secret(vec![1, 2, 3]);
+        let err = m.as_ssh_key_bytes().unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "generic_secret");
+                assert_eq!(reason, "accessor called on wrong variant");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn material_as_ssh_key_bytes_happy_returns_slice() {
+        let m = Material::SshKey {
+            bytes: vec![0xCA, 0xFE],
+        };
+        let bytes = m.as_ssh_key_bytes().unwrap();
+        assert_eq!(bytes, &[0xCA, 0xFE]);
+    }
+
+    #[test]
+    fn material_as_ssh_key_bytes_on_pgp_key_returns_invalid_material() {
+        let m = Material::PgpKey { bytes: vec![0x99] };
+        let err = m.as_ssh_key_bytes().unwrap_err();
         match err {
             Error::InvalidMaterial { variant, reason } => {
                 assert_eq!(variant, "pgp_key");

@@ -38,20 +38,17 @@ fn pgp_key_bytes_access_returns_not_implemented_phase_2() {
 }
 
 #[test]
-fn ssh_key_bytes_access_returns_not_implemented_phase_2() {
-    let err = Material::SshKey.as_generic_secret_bytes().unwrap_err();
-    assert!(matches!(
-        err,
-        cipherpost::Error::NotImplemented { phase: 2 }
-    ));
-}
-
-#[test]
-fn non_generic_variants_serialize_their_type_tag() {
-    // Phase 7 Plan 01: PgpKey is now a struct variant carrying bytes. Its
-    // full serde round-trip lives in payload::tests::material_pgp_key_serde_round_trip.
-    // Here we just confirm SshKey (the remaining unit variant) still serializes
-    // as the bare-tag form until Phase 7 Plan 05.
-    let s = serde_json::to_string(&Material::SshKey).unwrap();
-    assert_eq!(s, "{\"type\":\"ssh_key\"}");
+fn ssh_key_generic_secret_accessor_returns_not_implemented_phase_2() {
+    // Phase 7 Plan 05: SshKey is a struct variant. Its native accessor is
+    // as_ssh_key_bytes(). The cross-accessor as_generic_secret_bytes() still
+    // returns NotImplemented{phase:2} via the wildcard arm — exercise that here.
+    let m = Material::SshKey {
+        bytes: vec![0x6f, 0x70, 0x65, 0x6e],
+    };
+    let err = m.as_generic_secret_bytes().unwrap_err();
+    assert!(
+        matches!(err, cipherpost::Error::NotImplemented { phase: 2 }),
+        "expected NotImplemented{{phase:2}}, got {:?}",
+        err
+    );
 }
