@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: verifying
+status: executing
 stopped_at: Phase 7 planning complete (8 plans, PASS verdict)
-last_updated: "2026-04-25T01:15:51.107Z"
-last_activity: 2026-04-24
+last_updated: "2026-04-25T01:18:16.001Z"
+last_activity: 2026-04-25 -- Phase 07 execution started
 progress:
   total_phases: 5
   completed_phases: 2
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickoff)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase 06 — typed-material-x509cert
+**Current focus:** Phase 07 — typed-material-pgpkey-sshkey
 
 ## Current Position
 
-Phase: 06 (typed-material-x509cert) — EXECUTING
-Plan: 4 of 4 (next — CLI surface: `--material` flag + `Receive --armor`)
-Status: Phase complete — ready for verification
-Last activity: 2026-04-24
+Phase: 07 (typed-material-pgpkey-sshkey) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 07
+Last activity: 2026-04-25 -- Phase 07 execution started
 
 Progress: [██████████] 100%
 
