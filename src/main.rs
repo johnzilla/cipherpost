@@ -123,7 +123,8 @@ fn dispatch(cli: Cli) -> Result<()> {
             // D-P6-01: reject unimplemented typed variants at dispatch, before
             // any passphrase resolution. Keeps the error-code surface clean
             // (exit 1 via NotImplemented) and avoids loading identity unnecessarily.
-            if matches!(material, MaterialVariant::PgpKey | MaterialVariant::SshKey) {
+            // Plan 01: PgpKey dispatched live via run_send. SshKey still waiting on Plan 05.
+            if matches!(material, MaterialVariant::SshKey) {
                 return Err(cipherpost::Error::NotImplemented { phase: 7 }.into());
             }
 

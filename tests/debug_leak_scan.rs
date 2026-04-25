@@ -105,9 +105,10 @@ fn material_x509_cert_debug_redacts_bytes() {
 }
 
 #[test]
-fn material_pgp_and_ssh_unit_variant_debug_no_bytes() {
+fn material_ssh_unit_variant_debug_no_bytes() {
     use cipherpost::payload::Material;
-    // Unit variants have nothing to leak — the Debug string is just the variant name.
-    assert_eq!(format!("{:?}", Material::PgpKey), "PgpKey");
+    // SshKey is still a unit variant until Plan 05.
     assert_eq!(format!("{:?}", Material::SshKey), "SshKey");
+    // PgpKey moved to material_pgp_key_debug_redacts_bytes (Plan 04 will add
+    // the dedicated extern leak-scan test once tests/material_pgp_ingest.rs ships).
 }
