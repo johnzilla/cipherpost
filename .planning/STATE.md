@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: ready_to_plan
-stopped_at: Phase 7 complete — typed-material PgpKey + SshKey shipped (8/8 plans, 253 tests pass, verification passed 5/5)
-last_updated: "2026-04-25T01:18:16.001Z"
-last_activity: 2026-04-25 -- Phase 07 execution complete (8/8 plans, verified passed)
+status: planning
+stopped_at: Phase 8 context gathered — cclink survey closed; conflicts resolved; 6-plan PIN-first sequencing locked
+last_updated: "2026-04-25T18:09:26.410Z"
+last_activity: 2026-04-25
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 15
-  completed_plans: 7
-  percent: 60
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -158,7 +158,7 @@ Items acknowledged and carried forward:
 ## Session Continuity
 
 Last session: --stopped-at
-Stopped at: Phase 7 planning complete (8 plans, PASS verdict)
+Stopped at: Phase 8 context gathered — cclink survey closed; conflicts resolved; 6-plan PIN-first sequencing locked
 Resume file: --resume-file
 
 **Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans, 2 shipped — 2026-04-24T18:22:32.720Z
