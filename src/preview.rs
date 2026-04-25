@@ -722,4 +722,76 @@ mod tests {
             other => panic!("expected InvalidMaterial, got {:?}", other),
         }
     }
+
+    // --- Phase 7 Plan 06 — render_ssh_preview tests --------------------------
+    //
+    // Helper-and-error-path tests live here. Full fixture-backed golden-string
+    // tests for the per-algorithm Key line content + SHA-256 fingerprint shape +
+    // [DEPRECATED] tag placement land in Plan 08 in `tests/ssh_banner_render.rs`.
+    //
+    // Behavior contract under test:
+    //   1. Garbage input → Err(InvalidMaterial { variant: "ssh_key",
+    //      reason: "malformed OpenSSH v1 blob" }), never panics.
+    //   2. Empty input → same.
+    //   3. SSH_SEPARATOR_DASH_COUNT constant pinned at 57 (CONTEXT.md §specifics).
+    //   4. SSH_COMMENT_TRUNC_LIMIT constant pinned at 64 (D-P7-15 mirror of D-P7-08).
+    //   5. is_deprecated_ssh_algorithm: DSA any size → true; RSA<2048 → true;
+    //      RSA>=2048 → false; modern algorithms (ed25519, ecdsa-*) → false.
+
+    #[test]
+    fn render_ssh_preview_rejects_garbage_generically() {
+        let err = render_ssh_preview(b"this is not an OpenSSH v1 blob").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "ssh_key");
+                assert_eq!(reason, "malformed OpenSSH v1 blob");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn render_ssh_preview_rejects_empty_input() {
+        let err = render_ssh_preview(b"").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "ssh_key");
+                assert_eq!(reason, "malformed OpenSSH v1 blob");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ssh_separator_dash_count_is_57() {
+        assert_eq!(SSH_SEPARATOR_DASH_COUNT, 57);
+    }
+
+    #[test]
+    fn ssh_comment_trunc_limit_is_64() {
+        assert_eq!(SSH_COMMENT_TRUNC_LIMIT, 64);
+    }
+
+    #[test]
+    fn is_deprecated_ssh_algorithm_dsa_always_deprecated() {
+        assert!(is_deprecated_ssh_algorithm("ssh-dss", None));
+        assert!(is_deprecated_ssh_algorithm("ssh-dss", Some(1024)));
+        assert!(is_deprecated_ssh_algorithm("ssh-dss", Some(2048)));
+    }
+
+    #[test]
+    fn is_deprecated_ssh_algorithm_rsa_below_2048_deprecated() {
+        assert!(is_deprecated_ssh_algorithm("ssh-rsa", Some(1024)));
+        assert!(is_deprecated_ssh_algorithm("ssh-rsa", Some(1536)));
+        assert!(!is_deprecated_ssh_algorithm("ssh-rsa", Some(2048)));
+        assert!(!is_deprecated_ssh_algorithm("ssh-rsa", Some(4096)));
+    }
+
+    #[test]
+    fn is_deprecated_ssh_algorithm_modern_algorithms_not_deprecated() {
+        assert!(!is_deprecated_ssh_algorithm("ssh-ed25519", Some(256)));
+        assert!(!is_deprecated_ssh_algorithm("ecdsa-sha2-nistp256", Some(256)));
+        assert!(!is_deprecated_ssh_algorithm("ecdsa-sha2-nistp384", Some(384)));
+        assert!(!is_deprecated_ssh_algorithm("ecdsa-sha2-nistp521", Some(521)));
+    }
 }
