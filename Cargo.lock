@@ -566,6 +566,7 @@ dependencies = [
  "predicates",
  "proptest",
  "rand 0.8.6",
+ "rsa",
  "secrecy",
  "serde",
  "serde_canonical_json",
