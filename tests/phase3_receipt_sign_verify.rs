@@ -70,6 +70,34 @@ fn assert_unified_d16_display(err: &Error) {
     );
 }
 
+/// Phase 8 Plan 02 (PIN-07 narrow): credential-failure Display invariant.
+/// Wrong-PIN, wrong-passphrase, and inner age-decrypt failures all produce
+/// this string with exit 4.
+///
+/// Distinct from `assert_unified_d16_display` (the exit-3 sig lane); both
+/// invariants coexist — different lane, different Display, but Display is
+/// uniform WITHIN each lane. PIN-07 narrow per RESEARCH Open Risk #1.
+#[allow(dead_code)]
+pub fn assert_unified_credential_failure_display(err: &cipherpost::Error) {
+    assert_eq!(
+        format!("{}", err),
+        "wrong passphrase or identity decryption failed",
+        "PIN-07 unified credential-failure Display invariant violated"
+    );
+    assert_eq!(
+        cipherpost::error::exit_code(err),
+        4,
+        "credential failure must map to exit 4"
+    );
+}
+
+#[test]
+fn credential_failure_display_invariant() {
+    // Direct check: synthetic Error::DecryptFailed honors the credential-
+    // lane Display + exit-4 invariant.
+    assert_unified_credential_failure_display(&cipherpost::Error::DecryptFailed);
+}
+
 #[test]
 fn tampered_nonce_fails_verify() {
     let kp = deterministic_keypair(0xAA);

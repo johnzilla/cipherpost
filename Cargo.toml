@@ -318,6 +318,28 @@ name = "pin_roundtrip"
 path = "tests/pin_roundtrip.rs"
 required-features = ["mock"]
 
+# Phase 8 Plan 02: PIN-07 narrow oracle (wrong-PIN ≡ wrong-passphrase ≡
+# tampered-inner-ciphertext Display + exit-4 equality; sig-failures stay
+# in the distinct exit-3 lane).
+[[test]]
+name = "pin_error_oracle"
+path = "tests/pin_error_oracle.rs"
+required-features = ["mock"]
+
+# Phase 8 Plan 02: JCS byte-identity for OuterRecordSignable{pin_required=true}.
+# Pins alphabetic placement between created_at and protocol_version (NOT
+# purpose — purpose lives on Envelope, not OuterRecord).
+[[test]]
+name = "outer_record_pin_required_signable"
+path = "tests/outer_record_pin_required_signable.rs"
+
+# Phase 8 Plan 02: PIN entropy floor + anti-pattern + blocklist matrix.
+# Tests `validate_pin` rejection rules and the oracle-hygiene invariant
+# that every rejection class produces the IDENTICAL generic Display.
+[[test]]
+name = "pin_validation"
+path = "tests/pin_validation.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

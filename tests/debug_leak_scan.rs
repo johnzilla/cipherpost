@@ -149,3 +149,42 @@ fn material_pgp_key_debug_redacts_bytes() {
         dbg
     );
 }
+
+// -----------------------------------------------------------------------------
+// Phase 8 Plan 02 (PIN-10 / T-08-11): PIN secret-holding types must not leak
+// PIN bytes via Debug. SecretBox<String> is the canonical wrapper used in
+// `crate::pin::prompt_pin` and threaded through `run_send` / `run_receive`;
+// `Zeroizing<[u8; 32]>` is the canonical wrapper for the derived PIN key.
+// -----------------------------------------------------------------------------
+
+#[test]
+fn pin_secret_box_debug_redacts() {
+    // SecretBox<String> is the type used by prompt_pin and threaded
+    // through run_send. The secrecy crate redacts the inner value by
+    // default on Debug — assert no PIN bytes leak.
+    use secrecy::SecretBox;
+    let pin: SecretBox<String> = SecretBox::new(Box::new("validpin1".to_string()));
+    let dbg = format!("{:?}", pin);
+    assert!(
+        !dbg.contains("validpin1"),
+        "SecretBox<String> Debug leaked PIN bytes: {}",
+        dbg
+    );
+}
+
+#[test]
+fn pin_zeroizing_key_buffer_debug_does_not_panic() {
+    // Compile-time invariant: pin_derive_key returns Zeroizing<[u8; 32]>,
+    // which implements Drop that zeroes. Zeroizing is a transparent wrapper
+    // around the inner type's Debug — for [u8; 32] the wrapper allows hex
+    // bytes through. The mitigation is at the type-system level: no
+    // #[derive(Debug)] on any struct that HOLDS the Zeroizing buffer (so
+    // it is never accidentally printed via outer-struct Debug). This test
+    // documents the invariant and asserts the wrapper itself does not
+    // crash on Debug-format.
+    let z: zeroize::Zeroizing<[u8; 32]> = zeroize::Zeroizing::new([0xAA_u8; 32]);
+    let _ = format!("{:?}", z);
+    // No crash; src/pin.rs has no #[derive(Debug)] on any struct (verified
+    // by the absence of `derive(Debug)` in src/pin.rs — pin_derive_key is
+    // a free function returning Zeroizing<[u8; 32]> directly).
+}
