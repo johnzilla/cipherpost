@@ -72,6 +72,16 @@ pgp = { version = "=0.19.0", default-features = false }
 # any rsa feature; default features are fine for the trait-only import.
 rsa = { version = "0.9", default-features = false }
 
+# Phase 7 Plan 05: OpenSSH v1 key parsing + canonical re-encode + SHA-256
+# fingerprint. `default-features = false` strips `["ecdsa", "rand_core", "std"]`;
+# we add `["alloc"]` because PrivateKey::to_openssh() requires alloc.
+# Crucially, the `ed25519` feature is NOT enabled — research D-P7-10 verified
+# source-level that Ed25519 parsing + Fingerprint::compute() work without it
+# (sha2 is unconditional; only the ed25519-dalek interop TryFrom impls are gated).
+# This keeps the dep tree clean: NO new ed25519-dalek version leak from ssh-key
+# (verified post-Plan-05 against Plan 01's evidence file).
+ssh-key = { version = "0.6.7", default-features = false, features = ["alloc"] }
+
 [[test]]
 name = "mock_transport_roundtrip"
 path = "tests/mock_transport_roundtrip.rs"

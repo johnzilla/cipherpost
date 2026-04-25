@@ -104,11 +104,27 @@ fn material_x509_cert_debug_redacts_bytes() {
     );
 }
 
+// Phase 7 Plan 05: Material::SshKey is now a struct variant carrying bytes
+// (matches X509Cert / PgpKey / GenericSecret). The redaction rule applies
+// uniformly across all four variants — SshKey holds OpenSSH v1 SECRET key
+// material so byte-leak suppression is critical-functionality, not polish.
 #[test]
-fn material_ssh_unit_variant_debug_no_bytes() {
+fn material_ssh_key_debug_redacts_bytes() {
     use cipherpost::payload::Material;
-    // SshKey is still a unit variant until Plan 05.
-    assert_eq!(format!("{:?}", Material::SshKey), "SshKey");
+    let m = Material::SshKey {
+        bytes: vec![0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB],
+    };
+    let dbg = format!("{:?}", m);
+    assert!(
+        dbg.contains("REDACTED"),
+        "SshKey Debug must show REDACTED, got: {:?}",
+        dbg
+    );
+    assert!(
+        !dbg.contains("cdef0123456789ab"),
+        "SshKey Debug leaked bytes: {:?}",
+        dbg
+    );
 }
 
 // Phase 7 Plan 04: Material::PgpKey is a struct variant carrying bytes
