@@ -275,6 +275,34 @@ path = "tests/pgp_banner_render.rs"
 name = "pgp_error_oracle"
 path = "tests/pgp_error_oracle.rs"
 
+# Phase 7 Plan 08: SSH Envelope JCS fixture byte-identity (SSH-07).
+[[test]]
+name = "material_ssh_envelope_round_trip"
+path = "tests/material_ssh_envelope_round_trip.rs"
+
+# Phase 7 Plan 08: SSH ingest pipeline coverage (SSH-01, SSH-02, SSH-08).
+[[test]]
+name = "material_ssh_ingest"
+path = "tests/material_ssh_ingest.rs"
+
+# Phase 7 Plan 08: SSH self-mode round-trip + WireBudgetExceeded + armor-rejection
+# (SSH-05, SSH-08, SSH-09; round-trip #[ignore]'d from day 1 per D-P7-03).
+[[test]]
+name = "ssh_roundtrip"
+path = "tests/ssh_roundtrip.rs"
+required-features = ["mock"]
+
+# Phase 7 Plan 08: SSH banner golden-string render tests (SSH-04).
+[[test]]
+name = "ssh_banner_render"
+path = "tests/ssh_banner_render.rs"
+
+# Phase 7 Plan 08: SSH error-oracle hygiene + SshKeyFormatNotSupported exit-1
+# regression (SSH-08 oracle).
+[[test]]
+name = "ssh_error_oracle"
+path = "tests/ssh_error_oracle.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

@@ -203,13 +203,11 @@ A test (`tests/x509_error_oracle.rs`) enumerates every constructed reason across
 and asserts Display contains none of {`X509Error`, `parse error at`, `nom::`, `Incomplete`,
 `Needed`, `PEMError`, `asn1-rs`, `der-parser`, `x509_parser::`}.
 
-**Wire-budget note (cipherpost/v1.1 Phase 6 deferral — Pitfall #22):** Realistic X.509
-certificates (Ed25519 minimum ~234 bytes DER) exceed the 1000-byte BEP44 SignedPacket
-ceiling when wrapped as `Envelope → age ciphertext → OuterRecord JSON → SignedPacket`.
-Cipherpost surfaces this as a clean `Error::WireBudgetExceeded { encoded, budget: 1000,
-plaintext }` at send time with the cert plaintext size reported — NOT as an
-`InvalidMaterial` or PKARR-internal panic. Two-tier storage (small envelope in DHT
-pointing to external blob) is the architectural fix and is scoped to a later phase.
+**Wire-budget note (cipherpost/v1.1 Phase 6 deferral):** Realistic X.509 certificates
+exceed the 1000-byte BEP44 SignedPacket ceiling. Cipherpost surfaces this as a clean
+`Error::WireBudgetExceeded { encoded, budget: 1000, plaintext }` at send time. See
+§Pitfall #22 (consolidated below) for the cross-variant what-works-today matrix and
+the v1.2 two-tier-storage architectural fix.
 
 **`pgp_key` wire form (cipherpost/v1.1, Phase 7):**
 ```json
@@ -253,11 +251,76 @@ called on wrong variant"`. A test (`tests/pgp_error_oracle.rs`) enumerates each
 `pgp::packet`, `packet::Error`, `pgp::Error`, `rpgp`} plus the Phase 6 X.509
 forbidden-token set.
 
-**Reserved variant (`ssh_key`)** has no `bytes` field in cipherpost/v1.1 prior
-to Phase 7 Plan 05 — it is unit-style in the Rust enum and encodes as just
-`{"type": "ssh_key"}` for protocol fingerprinting. Any ingest or decode attempt
-returns `Error::NotImplemented { phase: 7 }`. Phase 7 Plan 05 promotes it to a
-`{ bytes }` struct variant with serde form matching `pgp_key`.
+**`ssh_key` wire form (cipherpost/v1.1, Phase 7 Plan 05+):**
+```json
+{"type": "ssh_key", "bytes": "<base64-STANDARD-padded>"}
+```
+
+| Field | Type | Wire encoding | Description | Source decision |
+|-------|------|---------------|-------------|-----------------|
+| `type` | String | literal `"ssh_key"` | Variant discriminator | D-WIRE-03 |
+| `bytes` | String | base64-STANDARD, padded — **canonical OpenSSH v1 PEM bytes** (UTF-8) | OpenSSH v1 private-key blob | D-P7-10..16, SSH-01..10 |
+
+The `bytes` field carries the **canonical OpenSSH v1 PEM blob** (UTF-8) produced
+by re-encoding the user's input through `ssh-key`'s `PrivateKey::to_openssh(LineEnding::LF)`
+at ingest time (D-P7-11). Because OpenSSH v1 framing has historically tolerated
+several superficial encoding variations (CRLF vs LF, different line widths,
+whitespace trailers from text-editor saves), cipherpost re-encodes to a single
+canonical byte stream so `share_ref` is deterministic across re-sends of
+semantically identical keys.
+
+CLI input MUST be OpenSSH v1 (`-----BEGIN OPENSSH PRIVATE KEY-----`). Other
+formats are REJECTED at ingest with the distinct `Error::SshKeyFormatNotSupported`
+variant (D-P7-12 — separate from `Error::InvalidMaterial` because the user-facing
+message embeds a copy-pasteable `ssh-keygen -p -o -f <path>` conversion hint
+that is variant-specific). Specifically rejected formats:
+- Legacy PEM: `-----BEGIN RSA/DSA/EC PRIVATE KEY-----`
+- RFC 4716 SSH2: `---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----`
+- OpenSSH-FIDO: `-----BEGIN OPENSSH-FIDO PRIVATE KEY-----`
+- Arbitrary garbage / empty input
+
+The Display of `Error::SshKeyFormatNotSupported` intentionally omits BOTH the
+rejected format name (avoiding an info-disclosure oracle: "your input looked
+like RSA-PEM") AND any ssh-key crate internal types — it is a single static
+literal pointing the user at `ssh-keygen -p -o`. Maps to exit 1.
+
+Trailing bytes after the `-----END OPENSSH PRIVATE KEY-----` marker are also
+REJECTED (T-07-39 / WR-01 mirror) with `Error::InvalidMaterial { variant:
+"ssh_key", reason: "trailing bytes after OpenSSH v1 blob" }` — guards against
+attacker-appended trailers drifting `share_ref`. Whitespace-only trailers from
+text-editor saves are tolerated (sliced off before parse).
+
+**Parser:** `ssh-key 0.6.7` with `default-features = false, features = ["alloc"]`.
+The `ed25519` feature is INTENTIONALLY OFF — D-P7-10 verified that Ed25519
+parsing + `Fingerprint::compute(HashAlg::Sha256)` work without it (sha2 is
+unconditional; only the ed25519-dalek interop `TryFrom` impls are gated). This
+keeps the dep tree clean: ssh-key adds NO new ed25519-dalek version beyond the
+existing pgp 0.19.0-transitive 2.x and pkarr-direct 3.0.0-pre.5 (verified by
+`tests/x509_dep_tree_guard.rs::dep_tree_ssh_key_does_not_pull_ed25519_dalek_2_x_independently`).
+
+**Oracle hygiene (SSH-08):** Every parse failure returns either
+`Error::SshKeyFormatNotSupported` (format-rejection class) OR
+`Error::InvalidMaterial { variant: "ssh_key", reason }` with a short curated
+`reason` literal — never an ssh-key crate internal type or message. Audit set:
+`"malformed OpenSSH v1 blob"`, `"trailing bytes after OpenSSH v1 blob"`,
+`"accessor called on wrong variant"`. A test (`tests/ssh_error_oracle.rs`)
+enumerates each × 4 variants and asserts Display contains none of
+{`ssh_key::Error`, `ssh_key::`, `ssh_encoding`, `ssh_cipher`, `PemError`,
+`ssh-key::`}.
+
+**SHA-256-only fingerprint policy (D-P7-14):** The acceptance-banner subblock
+(§5.2) renders ONLY the SHA-256 fingerprint via `Fingerprint::Display` (format
+`SHA256:<base64-unpadded>`, matching `ssh-keygen -lf` byte-for-byte). MD5 and
+SHA-1 fingerprints are NOT rendered — both are deprecated per OpenSSH 7.0+
+release notes; surfacing them would invite users to verify against legacy
+outputs that share-collide.
+
+**Algorithm-deprecation `[DEPRECATED]` tag (D-P7-14):** When the parsed key's
+algorithm is `ssh-dss` (any size) or `ssh-rsa` with bit length below 2048,
+the banner Key line is suffixed with ` [DEPRECATED]`. The tag is **display-only**
+— it does NOT block acceptance; senders MAY legitimately migrate legacy
+infrastructure. The visible warning gives the recipient a chance to question
+the handoff before the typed-z32 prompt completes.
 
 ### 3.3 OuterRecord
 
@@ -376,8 +439,7 @@ syntax under a bumped protocol version.
 1. Read payload from `<path>` or `-` (stdin). (SEND-01, PAYL-03)
 2. **Ingest (cipherpost/v1.1):** dispatch on `--material <variant>` (default
    `generic-secret`). Accepted values: `generic-secret`, `x509-cert`,
-   `pgp-key` (Phase 7 Plan 01-04 — LIVE), `ssh-key` (Phase 7 Plan 05+ — rejects
-   at dispatch with `Error::NotImplemented { phase: 7 }`).
+   `pgp-key` (Phase 7 Plan 01-04 — LIVE), `ssh-key` (Phase 7 Plan 05-08 — LIVE).
    - `payload::ingest::x509_cert(raw)` sniffs PEM vs DER (ASCII-whitespace-
      trim + `-----BEGIN CERTIFICATE-----` header check), normalizes PEM →
      canonical DER, and validates via `x509-parser` strict profile with an
@@ -390,12 +452,24 @@ syntax under a bumped protocol version.
      resilient to rpgp's silent-0xFF parser quirk). Returns `Material::PgpKey
      { bytes: raw.to_vec() }` with no canonical re-encode — the binary packet
      stream IS canonical (RFC 4880 §4.2).
+   - `payload::ingest::ssh_key(raw)` strict-rejects non-OpenSSH-v1 input with
+     `Error::SshKeyFormatNotSupported` (legacy PEM RSA/DSA/EC, RFC 4716 SSH2,
+     OpenSSH-FIDO, garbage), checks for trailing bytes after the
+     `-----END OPENSSH PRIVATE KEY-----` marker, parses via `ssh-key`'s
+     `PrivateKey::from_openssh`, and re-encodes canonically via
+     `to_openssh(LineEnding::LF)` (D-P7-11). Returns `Material::SshKey
+     { bytes: <canonical OpenSSH v1 PEM bytes> }`.
    - Parse failure → `Error::InvalidMaterial { variant, reason }` exit 1.
+   - SSH-specific format-rejection → `Error::SshKeyFormatNotSupported` exit 1
+     (distinct variant; user message embeds `ssh-keygen -p -o -f <path>` hint).
 3. **Plaintext cap (D-P6-16 / X509-06):** reject if `material.plaintext_size() >
    65 536`. For `x509_cert`, this is the **decoded DER length** — a 1 MB
    PEM input that decodes to 100 KB DER fails the cap on the decoded size,
    not the input size (PAYL-03). For `pgp_key`, this is the **raw binary
    packet-stream length** (no PEM-style decode applies; armor is rejected).
+   For `ssh_key`, this is the **canonical re-encoded UTF-8 PEM byte length**
+   (i.e., the bytes stored in `Material::SshKey` after `to_openssh(LineEnding::LF)`,
+   not the raw input).
 4. Build `Envelope { purpose, material, created_at, protocol_version }` with `purpose` control-
    stripped (D-WIRE-05). JCS-serialize.
 5. age-encrypt the JCS bytes to the recipient's X25519 (derived from their Ed25519 pubkey) or
@@ -412,13 +486,28 @@ syntax under a bumped protocol version.
 - `--material <VALUE>` (default `generic-secret`) — selects the typed
   Material variant. Accepted: `generic-secret` (Phase 5), `x509-cert`
   (Phase 6), `pgp-key` (Phase 7 Plan 01-04 — LIVE), `ssh-key` (Phase 7
-  Plan 05+ — currently parses at the CLI level but dispatch returns
-  `Error::NotImplemented { phase: 7 }`, exit 1).
+  Plan 05-08 — LIVE).
 
 **`--material pgp-key` example:**
 ```
 cipherpost send --self -p 'alice keyshare' --material pgp-key --material-file ./alice.pgp
 ```
+
+**`--material ssh-key` example:**
+```
+cipherpost send --self -p 'server bootstrap' --material ssh-key --material-file ./id_ed25519
+```
+
+**`--armor` matrix (cipherpost/v1.1, FINAL):**
+| `--material` | `--armor` accepted? | Behavior |
+|--------------|---------------------|----------|
+| `x509-cert` | YES | wraps as PEM `-----BEGIN CERTIFICATE-----` (Phase 6) |
+| `pgp-key` | YES | wraps as ASCII armor via rpgp `to_armored_bytes` (Phase 7 Plan 03) |
+| `generic-secret` | NO | `Error::Config("--armor requires --material x509-cert or pgp-key")` exit 1 (Plan 03 widened literal) |
+| `ssh-key` | NO | `Error::Config("--armor not applicable to ssh-key — OpenSSH v1 is self-armored")` exit 1 (Plan 07; D-P7-13 — variant-specific rationale because OpenSSH v1 is ALREADY armored, wrapping again would produce nonsense) |
+
+Both `--armor` rejection literals fire BEFORE the preview parse runs (cost-on-error
++ pre-emit surface hygiene per D-RECV-01 / T-07-49).
 
 ### 5.2 Receive
 
@@ -464,10 +553,10 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    SHA-256:     <64 hex chars lowercase>        (over canonical DER)
    ```
    The separator line is exactly `--- X.509 ` + 57 dashes = 61 chars, matching the
-   `===` banner border width. Phase 7 added an analogous `--- OpenPGP ---` subblock
-   (below); SSH will follow in Plan 05+. Parse failures on the banner render
-   return `Error::InvalidMaterial { variant: "x509_cert", reason: "<short>" }`
-   with the same generic-reason set as ingest.
+   `===` banner border width. Phase 7 added analogous `--- OpenPGP ---` and
+   `--- SSH ---` subblocks (below). Parse failures on the banner render return
+   `Error::InvalidMaterial { variant: "x509_cert", reason: "<short>" }` with
+   the same generic-reason set as ingest.
 
    **cipherpost/v1.1: OpenPGP subblock (Phase 7 D-P7-07 / D-P7-08 / PGP-04)** —
    when `Type: pgp_key`, a typed subblock is inserted between the `Size:` and
@@ -503,6 +592,49 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    ingest, so an oracle adversary cannot distinguish "ingest rejection" from
    "preview rejection" via the error string.
 
+   **cipherpost/v1.1: SSH subblock (Phase 7 D-P7-14 / D-P7-15 / SSH-04)** —
+   when `Type: ssh_key`, a typed subblock is inserted between the `Size:` and
+   `TTL:` lines:
+   ```
+   --- SSH ---------------------------------------------------    (57 dashes after prefix)
+   Key:         <ssh-ed25519 256 | ssh-rsa 2048 | ssh-rsa 1024 [DEPRECATED] | ssh-dss [DEPRECATED] | ecdsa-sha2-nistp256 256 | …>
+   Fingerprint: SHA256:<43 base64-unpadded chars>                 (matches `ssh-keygen -lf` byte-for-byte)
+   Comment:     [sender-attested] <comment, truncated 64 chars w/ `…`; `(none)` if empty>
+   ```
+
+   The separator line is exactly `--- SSH ` + 57 dashes = 65 chars (matching
+   the `--- OpenPGP ---` width). Algorithm names use ssh-key 0.6.7's
+   `Algorithm::as_str()` wire-form output (`ssh-ed25519`, `ssh-rsa`, `ssh-dss`,
+   `ecdsa-sha2-nistp256/384/521`) — NOT a friendly-name remapping, so the
+   recipient sees the same identifier they'd see in `~/.ssh/authorized_keys`
+   and `ssh-keygen -lf` output.
+
+   **`[DEPRECATED]` tag (D-P7-14):** Display-only. Triggered for `ssh-dss`
+   (any size) and `ssh-rsa` keys with bit length below 2048. The tag does
+   NOT block acceptance — senders MAY legitimately migrate legacy
+   infrastructure. The user sees the warning before the typed-z32 prompt.
+
+   **SHA-256-only fingerprint (D-P7-14):** MD5 and SHA-1 fingerprint forms
+   are NOT rendered. Both are deprecated per OpenSSH 7.0+ release notes;
+   surfacing them would invite users to verify against legacy outputs that
+   share-collide.
+
+   **`[sender-attested]` comment label (D-P7-15):** SSH key comments are
+   attacker-mutable (any sender can put anything in the comment), so explicit
+   labeling prevents user confusion ("I sent the alice key but it says bob
+   in the comment"). The `(none)` placeholder for empty comments is rendered
+   with the same `[sender-attested]` prefix for consistency.
+
+   **No SECRET-key warning on SSH (D-P7-14):** Unlike the PGP subblock, SSH
+   does NOT prepend a `[WARNING: SECRET key …]` line — OpenSSH v1 ALWAYS
+   contains a private key, so warning every time is noise. The `[DEPRECATED]`
+   algorithm tag is the softer concern the SSH subblock surfaces instead.
+
+   Parse failures on the SSH banner return `Error::InvalidMaterial { variant:
+   "ssh_key", reason: "malformed OpenSSH v1 blob" }` — same single literal as
+   ingest, so an oracle adversary cannot distinguish "ingest rejection" from
+   "preview rejection" via the error string.
+
    Stdin AND stderr MUST both be TTYs; else `Error::Config`, exit 1 (D-ACCEPT-03).
 10. Read user input; compare byte-equal (after `trim()`) to the sender's full 52-char z-base-32
     pubkey. Mismatch → `Error::Declined`, exit 7 (D-ACCEPT-01, RECV-04).
@@ -518,16 +650,20 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
       primaries (header `-----BEGIN PGP PRIVATE KEY BLOCK-----`). Default
       `ArmorOptions` = `{ headers: None, include_checksum: true }` (CRC24 line
       per RFC 4880 §6.1).
-    - **`generic-secret` and `ssh-key`** → REJECTED with
+    - **`generic-secret`** → REJECTED with
       `Error::Config("--armor requires --material x509-cert or pgp-key")`
-      at exit 1 (OQ-1). Plan 05+ may further specialize the rejection literal
-      for `ssh-key` (per D-P7-13: `"--armor not applicable to ssh-key —
-      OpenSSH v1 is self-armored"`).
+      at exit 1 (Phase 7 Plan 03 widened literal).
+    - **`ssh-key`** → REJECTED with
+      `Error::Config("--armor not applicable to ssh-key — OpenSSH v1 is self-armored")`
+      at exit 1 (Phase 7 Plan 07 / D-P7-13 — variant-specific rationale because
+      OpenSSH v1 is ALREADY armored, wrapping again would produce nonsense).
+      Both rejection literals fire BEFORE the preview parse runs (cost-on-error
+      + pre-emit surface hygiene).
 
-    Armor matrix as of Phase 7 PGP plans:
+    Armor matrix (cipherpost/v1.1, FINAL):
     ```
     --armor accepted for:   x509-cert | pgp-key
-    --armor rejected for:   generic-secret | ssh-key
+    --armor rejected for:   generic-secret | ssh-key (each with a content-specific literal)
     ```
 12. Create sentinel `~/.cipherpost/state/accepted/<share_ref>` (mode 0600); append a ledger
     line to `~/.cipherpost/state/accepted.jsonl` (mode 0600) with `receipt_published_at: null` (D-STATE-01, D-SEQ-04).
@@ -565,7 +701,7 @@ attacks (D-16).
 | Code | Meaning | User-facing message | Error variants (internal) |
 |------|---------|---------------------|---------------------------|
 | 0 | Success | — | — |
-| 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), any unclassified |
+| 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), **`SshKeyFormatNotSupported`** (Phase 7 Plan 05 / D-P7-12 — input not OpenSSH v1; distinct variant because Display embeds the `ssh-keygen -p -o -f <path>` conversion hint that would be wrong for non-SSH content errors; SPEC §3.2 SshKey), any unclassified |
 | 2 | TTL expired | `share expired` | `Expired` |
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
 | 4 | Passphrase / decryption failure | `passphrase failed` | `Passphrase`, `Decrypt` |
@@ -629,40 +765,60 @@ ed25519-dalek implementations.
 (b) `pkarr` migrates to a stable `ed25519-dalek 3.x` release (the `=3.0.0-pre.5` pin can
 then drop the `=` exact-pin requirement).
 
-## Pitfall #22 — Wire-budget (what works today)
+## Pitfall #22 — Wire-budget: what works today (consolidated)
 
-Phase 6 shipped with a note that realistic X.509 certs exceed the 1000-byte PKARR BEP44
-ceiling. Phase 7 extends the picture with measured PGP and SSH numbers (Plan 04
-post-implementation):
+Realistic typed-material payloads exceed the 1000-byte PKARR BEP44 ceiling.
+The current cipherpost protocol surfaces this as a clean `Error::WireBudgetExceeded
+{ encoded, budget: 1000, plaintext }` at send time — NOT as an `InvalidMaterial`
+or PKARR-internal panic. The architectural fix (two-tier storage: small DHT
+envelope pointing to encrypted blob in external store) belongs to the v1.2
+milestone.
 
-| Variant | Minimum fixture (raw) | Measured/predicted encoded | Fits <1000 B? |
-|---------|-----------------------|----------------------------|---------------|
-| `generic_secret` (trivial payload ~20 B) | 20 B | ~800 B | YES (Phase 5 baseline) |
-| `x509_cert` Ed25519 self-signed minimum | ~234 B | ~1290 B | NO |
-| `pgp_key` rpgp-minimal Ed25519 (UID ≤20 chars, no subkeys, empty pref-subpackets) | 202 B | **~1236 B (measured)** | **NO** |
-| `pgp_key` realistic key (UID >20 chars, RSA, OR subkeys) | ≥250 B | >1000 B | NO |
-| `ssh_key` Ed25519 OpenSSH v1 minimum | ~321 B | ~1340 B | NO (Plan 05 forecast) |
-| `ssh_key` RSA-2048+ or larger keys | ≥500 B | >2000 B | NO (Plan 05 forecast) |
+This consolidated matrix (Phase 7 Plan 08, replacing the per-variant scattered
+notes from Phase 6 + Plan 04) tells users honestly which variants work today
+and which surface `WireBudgetExceeded`:
+
+| Variant | Min fixture | Predicted/measured encoded | Round-trip today? |
+|---------|-------------|----------------------------|-------------------|
+| `generic_secret` (trivial payload ~20 B) | ~20 B | ~800 B | **YES** (Phase 5 baseline) |
+| `x509_cert` Ed25519 self-signed minimum | ~234 B | ~1290 B | NO (`#[ignore]`'d in `tests/x509_roundtrip.rs`) |
+| `pgp_key` rpgp-minimal Ed25519 (UID ≤20 chars, no subkeys, empty pref-subpackets) | 202 B | **1236 B (measured)** | NO (`#[ignore]`'d in `tests/pgp_roundtrip.rs`) |
+| `pgp_key` realistic key (UID >20 chars, RSA, OR subkeys) | ≥250 B | >1000 B | NO (positive `WireBudgetExceeded` test ACTIVE) |
+| `ssh_key` Ed25519 OpenSSH v1 minimum (empty comment) | 387 B (raw) | **1589 B (measured Plan 08)** | NO (`#[ignore]`'d FROM DAY 1 in `tests/ssh_roundtrip.rs`) |
+| `ssh_key` larger keys (RSA, longer comment) | ≥500 B | >2000 B | NO (positive `WireBudgetExceeded` test ACTIVE) |
+
+**Behavior matrix today (Phase 7 ship state):**
+- `x509_cert` realistic-fixture sends surface `Error::WireBudgetExceeded { encoded,
+  budget: 1000, plaintext }` cleanly (Phase 6).
+- `pgp_key` rpgp-minimal Ed25519 round-trip: `#[ignore]`'d (1236 B > 1000 B).
+- `pgp_key` realistic-fixture sends surface `Error::WireBudgetExceeded` cleanly
+  (Plan 04 positive test `pgp_send_realistic_key_surfaces_wire_budget_exceeded_cleanly`).
+- `ssh_key` round-trip: `#[ignore]`'d FROM DAY 1 (D-P7-03 fallback active per
+  research GAP for SSH; minimum 387 B Ed25519 OpenSSH v1 fixture encodes to
+  ~1589 B per Plan 08 measurement).
+- `ssh_key` realistic-fixture sends surface `Error::WireBudgetExceeded` cleanly
+  (Plan 08 positive test `ssh_send_realistic_key_surfaces_wire_budget_exceeded_cleanly`).
+- `generic_secret` + small payloads continue to round-trip as in Phase 5.
 
 **Note on PGP wire-budget reality:** Research GAP-5 predicted `raw × 4.16 ≈ encoded`
 (~840 B for a 202 B fixture). Actual measurement at Plan 04 implementation time:
-**1236 B encoded**, expansion factor ≈ 6.1× — about 50% higher than predicted. The
-overhead is split between JCS envelope framing (~180 B for `{created_at, material:
-{type:pgp_key, bytes:b64}, protocol_version, purpose}` plus base64 expansion of the
-bytes field), age encryption framing, and OuterRecord JSON wrapping. Consequence: the
-`pgp_self_round_trip_recovers_packet_stream` test ships `#[ignore]`'d alongside the SSH
-round-trip per the same fallback pattern D-P7-03 carved for OpenSSH. The architectural
-fix (two-tier storage: small envelope in DHT pointing to encrypted blob in external
-store) belongs to the v1.2 milestone.
+**1236 B encoded**, expansion factor ≈ 6.1× — about 50% higher than predicted.
+The overhead is split between JCS envelope framing (~180 B for `{created_at,
+material: {type:pgp_key, bytes:b64}, protocol_version, purpose}` plus base64
+expansion of the bytes field), age encryption framing, and OuterRecord JSON wrapping.
 
-Until then:
-- X.509 round-trip tests marked `#[ignore]` (Phase 6 Plan 04)
-- PGP round-trip + armor-output tests marked `#[ignore]` (Phase 7 Plan 04 — re-enable
-  with v1.2 two-tier storage)
-- PGP realistic-key send surfaces `Error::WireBudgetExceeded` cleanly (Phase 7 Plan 04
-  positive test `pgp_send_realistic_key_surfaces_wire_budget_exceeded_cleanly`)
-- SSH round-trip tests marked `#[ignore]` from day 1 (Phase 7 Plan 08 — D-P7-03 amended)
-- SSH send at any realistic size surfaces `Error::WireBudgetExceeded` cleanly
+**Note on SSH wire-budget reality:** Research forecast ~1340 B (Plan 05 prediction
+based on raw × 4.16). Actual Plan 08 measurement on the 387 B Ed25519 fixture:
+**1589 B encoded** (plaintext 617 B; expansion factor ≈ 4.10× over raw and ≈ 2.58×
+over plaintext). The forecast was within ~16% — closer than PGP's 50% miss because
+SSH OpenSSH v1 PEM is already a fairly verbose format with limited compression
+opportunity at the canonical-re-encode layer.
+
+**Honest messaging discipline (D-P7-03):** Phase 7 ships with `#[ignore]`'d
+round-trip tests + active `WireBudgetExceeded` tests for X.509 + PGP + SSH.
+The `#[ignore]`'d tests are the regression suite for the v1.2 two-tier-storage
+fix — do NOT remove them. Each carries a `wire-budget: …` `#[ignore]` reason
+that points at this section + the v1.2 milestone.
 
 ## 7. Passphrase Contract
 
