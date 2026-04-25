@@ -271,7 +271,11 @@ fn x509_send_realistic_cert_surfaces_wire_budget_exceeded_cleanly() {
 
 /// `--armor` on a non-X509 (GenericSecret) share is rejected at run_receive
 /// with a stable `Error::Config` literal. This path runs BEFORE wire budget
-/// is consulted (tiny 9-byte plaintext easily fits).
+/// is consulted (tiny 9-byte plaintext easily fits). Phase 7 Plan 03 widened
+/// the message from `"--armor requires --material x509-cert"` to
+/// `"--armor requires --material x509-cert or pgp-key"` as PGP gained
+/// armor-output support — the literal is the FULL list of armor-permitted
+/// variants so users see the accurate accept-set on rejection.
 #[test]
 #[serial]
 fn armor_on_generic_secret_rejected_with_config_error() {
@@ -306,7 +310,7 @@ fn armor_on_generic_secret_rejected_with_config_error() {
 
     match err {
         Error::Config(msg) => {
-            assert_eq!(msg, "--armor requires --material x509-cert");
+            assert_eq!(msg, "--armor requires --material x509-cert or pgp-key");
         }
         other => panic!("expected Error::Config, got {:?}", other),
     }

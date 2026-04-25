@@ -629,4 +629,45 @@ mod tests {
     fn pgp_uid_trunc_limit_is_64() {
         assert_eq!(PGP_UID_TRUNC_LIMIT, 64);
     }
+
+    // --- Phase 7 Plan 03 — pgp_armor helper tests ----------------------------
+    //
+    // The full happy-path test (a real PGP fixture round-trips through
+    // pgp_armor() and yields output starting with `-----BEGIN PGP PUBLIC KEY
+    // BLOCK-----` for a public-key fixture, or `-----BEGIN PGP PRIVATE KEY
+    // BLOCK-----` for a secret-key fixture) lands in Plan 04 once a real
+    // fixture is committed. Plan 03's scope is the error-path contract: any
+    // malformed input MUST surface as the same curated `Error::InvalidMaterial
+    // { variant: "pgp_key", reason: "malformed PGP packet stream" }` literal
+    // already used by `payload::ingest::pgp_key` and `render_pgp_preview`
+    // (oracle-hygiene single-source-of-truth across all three call sites).
+    //
+    // Threats addressed: T-07-15 (header-mismatch on hand-rolled armor — we
+    // delegate to rpgp's `to_armored_bytes` so the BEGIN header matches the
+    // detected primary tag), T-07-10 / oracle-hygiene mirror (no rpgp internal
+    // error chain leaks through pgp_armor's error path).
+
+    #[test]
+    fn pgp_armor_rejects_garbage_with_curated_error() {
+        let err = pgp_armor(b"this is not a PGP packet stream").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_armor_rejects_empty_input() {
+        let err = pgp_armor(b"").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
 }
