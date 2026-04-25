@@ -83,6 +83,8 @@ fn x509_self_round_trip_recovers_der_bytes() {
         MaterialSource::Bytes(FIXTURE_DER.to_vec()),
         MaterialVariant::X509Cert,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("run_send X509 self-mode");
 
@@ -127,6 +129,8 @@ fn x509_self_round_trip_with_armor_produces_pem() {
         MaterialSource::Bytes(FIXTURE_DER.to_vec()),
         MaterialVariant::X509Cert,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap();
 
@@ -192,6 +196,8 @@ fn x509_pem_input_normalizes_to_canonical_der() {
         MaterialSource::Bytes(pem_input),
         MaterialVariant::X509Cert,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("PEM ingest must succeed");
 
@@ -238,6 +244,8 @@ fn x509_send_realistic_cert_surfaces_wire_budget_exceeded_cleanly() {
         MaterialSource::Bytes(FIXTURE_DER.to_vec()),
         MaterialVariant::X509Cert,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("realistic X.509 cert must overflow wire budget");
 
@@ -292,6 +300,8 @@ fn armor_on_generic_secret_rejected_with_config_error() {
         MaterialSource::Bytes(b"topsecret".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap();
 
@@ -333,6 +343,8 @@ fn x509_malformed_der_send_rejected_at_ingest() {
         MaterialSource::Bytes(b"not a DER cert".to_vec()),
         MaterialVariant::X509Cert,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("malformed DER send must fail at ingest");
 

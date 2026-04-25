@@ -33,6 +33,8 @@ fn state_permissions_are_0700_and_0600_after_receive() {
         MaterialSource::Bytes(b"x".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap();
     let uri = ShareUri::parse(&uri_str).unwrap();

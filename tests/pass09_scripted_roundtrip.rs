@@ -63,6 +63,8 @@ fn run_roundtrip(id_a: &Identity, kp_a: &pkarr::Keypair, id_b: &Identity, kp_b: 
         MaterialSource::Bytes(b"secret".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("A run_send");
     let uri = ShareUri::parse(&uri_str).unwrap();

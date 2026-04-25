@@ -40,6 +40,8 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
         MaterialSource::Bytes(plaintext.clone()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap();
     let uri = ShareUri::parse(&uri_str).unwrap();

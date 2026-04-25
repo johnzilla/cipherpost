@@ -230,6 +230,8 @@ pub fn run_send(
     material_source: MaterialSource,
     material_variant: MaterialVariant,
     ttl_seconds: u64,
+    pin: Option<secrecy::SecretBox<String>>,
+    burn: bool,
 ) -> Result<String, Error> {
     // 1. read material bytes (unchanged)
     let plaintext_bytes: Zeroizing<Vec<u8>> = read_material(material_source)?;
@@ -262,10 +264,8 @@ pub fn run_send(
     // 5. build Envelope + JCS-serialize
     let created_at = now_unix_seconds()?;
     let envelope = Envelope {
-        // Phase 8 Plan 01: Task 3 wires this to a `burn: bool` fn param;
-        // Task 2 just lands the field with a stable default to keep the
-        // build green between tasks.
-        burn_after_read: false,
+        // Phase 8 Plan 01 (D-P8-04, BURN-01): wired from the `burn` fn param.
+        burn_after_read: burn,
         created_at,
         material,
         protocol_version: PROTOCOL_VERSION,
@@ -292,6 +292,22 @@ pub fn run_send(
         }
     };
 
+    // Phase 8 Plan 01 (D-P8-06): pre-loop pin setup. The KDF runs ONCE outside
+    // the retry loop because (a) Argon2id is ~250ms — re-running 20× per grease
+    // retry would burn 5s of false-budget overhead, and (b) the salt + KDF
+    // result are stable across grease draws (only the ciphertext bytes vary).
+    let pin_setup: Option<([u8; 32], age::x25519::Recipient)> = if let Some(ref pin) = pin {
+        use rand::RngCore;
+        let mut salt = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut salt);
+        let pin_key = crate::pin::pin_derive_key(pin, &salt)?;
+        let pin_id = crypto::identity_from_x25519_bytes(&pin_key)?;
+        let pin_rcpt = pin_id.to_public();
+        Some((salt, pin_rcpt))
+    } else {
+        None
+    };
+
     // Steps 6-12 are retried up to WIRE_BUDGET_RETRY_ATTEMPTS times. The age
     // format intentionally adds a random-length "grease" stanza on every
     // encryption (age-core `grease_the_joint` — a 0..=265-byte random stanza)
@@ -306,24 +322,40 @@ pub fn run_send(
     // and can decide whether to split the payload.
     let mut last_err: Option<(usize, usize)> = None;
     for _attempt in 0..WIRE_BUDGET_RETRY_ATTEMPTS {
-        // 6. age_encrypt (grease stanza re-sampled each call)
-        let ciphertext = crypto::age_encrypt(&jcs_bytes, &recipient)?;
+        // 6. age_encrypt (grease stanza re-sampled each call). Phase 8 Plan 01
+        //    (D-P8-06): when pin_setup.is_some(), nest two age layers — INNER
+        //    encrypts to PIN-derived recipient, OUTER encrypts the inner
+        //    ciphertext to receiver identity (preserves v1.0 "outer = identity"
+        //    mental model and keeps non-pin shares byte-identical to v1.0).
+        let final_ct = if let Some((_, ref pin_recipient)) = pin_setup {
+            let inner_ct = crypto::age_encrypt(&jcs_bytes, pin_recipient)?;
+            crypto::age_encrypt(&inner_ct, &recipient)?
+        } else {
+            crypto::age_encrypt(&jcs_bytes, &recipient)?
+        };
 
-        // 7. share_ref — hash raw ciphertext bytes per PAYL-05.
-        let share_ref = record::share_ref_from_bytes(&ciphertext, created_at);
+        // 7. share_ref — hash raw OUTER ciphertext bytes per PAYL-05 (unchanged).
+        let share_ref = record::share_ref_from_bytes(&final_ct, created_at);
 
-        // 8. blob (base64 STANDARD)
+        // 8. blob (base64 STANDARD). Phase 8 Plan 01 (D-P8-05): conditional
+        //    salt prefix when pin_required — salt is OUTSIDE both age layers
+        //    because the receiver needs it BEFORE any age-decrypt (to derive
+        //    the inner pin_recipient). Non-pin path stays at v1.0 byte shape.
         use base64::Engine;
-        let blob = base64::engine::general_purpose::STANDARD.encode(&ciphertext);
+        let blob = if let Some((ref salt, _)) = pin_setup {
+            let mut bytes = Vec::with_capacity(32 + final_ct.len());
+            bytes.extend_from_slice(&salt[..]);
+            bytes.extend_from_slice(&final_ct);
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        } else {
+            base64::engine::general_purpose::STANDARD.encode(&final_ct)
+        };
 
         // 9 + 10 + 11. signable → sign → record
         let signable = OuterRecordSignable {
             blob: blob.clone(),
             created_at,
-            // Phase 8 Plan 01: Task 3 will derive this from `pin_setup.is_some()`;
-            // Task 2 just lands the field with a stable default to keep the
-            // build green between tasks.
-            pin_required: false,
+            pin_required: pin_setup.is_some(),
             protocol_version: PROTOCOL_VERSION,
             pubkey: identity.z32_pubkey(),
             recipient: recipient_z32_option.clone(),
@@ -334,7 +366,7 @@ pub fn run_send(
         let record = OuterRecord {
             blob,
             created_at,
-            pin_required: false,
+            pin_required: pin_setup.is_some(),
             protocol_version: PROTOCOL_VERSION,
             pubkey: identity.z32_pubkey(),
             recipient: recipient_z32_option.clone(),

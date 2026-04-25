@@ -40,6 +40,8 @@ fn plaintext_above_64k_rejected_with_actual_and_cap_in_display() {
         MaterialSource::Bytes(huge),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap_err();
 
@@ -89,6 +91,8 @@ fn plaintext_under_64k_but_over_wire_budget_rejected_with_wire_budget_error() {
         MaterialSource::Bytes(big),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap_err();
 

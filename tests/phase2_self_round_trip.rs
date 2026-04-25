@@ -43,6 +43,8 @@ fn self_round_trip_recovers_plaintext() {
         MaterialSource::Bytes(plaintext.clone()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("run_send self-mode");
 

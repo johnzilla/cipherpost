@@ -205,6 +205,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 material_source,
                 material,
                 ttl_seconds,
+                None,  // Phase 8 Plan 01: pin=None — CLI --pin flag wires in Plan 02.
+                false, // Phase 8 Plan 01: burn=false — CLI --burn flag wires in Plan 03.
             )?;
 
             println!("{}", uri);

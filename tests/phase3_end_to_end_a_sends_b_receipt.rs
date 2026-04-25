@@ -74,6 +74,8 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         MaterialSource::Bytes(material_bytes.to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("A run_send");
     let uri = ShareUri::parse(&uri_str).expect("parse share URI");

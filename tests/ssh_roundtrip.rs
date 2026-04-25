@@ -50,6 +50,8 @@ fn ssh_self_round_trip_recovers_canonical_bytes() {
         MaterialSource::Bytes(SSH_FIXTURE.to_vec()),
         MaterialVariant::SshKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("would pass if wire budget were larger");
     let uri = ShareUri::parse(&uri_str).unwrap();
@@ -86,6 +88,8 @@ fn ssh_send_realistic_key_surfaces_wire_budget_exceeded_cleanly() {
         MaterialSource::Bytes(SSH_FIXTURE.to_vec()),
         MaterialVariant::SshKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("SSH OpenSSH v1 must overflow wire budget");
     match err {
@@ -147,6 +151,8 @@ fn ssh_legacy_pem_send_rejected_at_ingest() {
         MaterialSource::Bytes(legacy.to_vec()),
         MaterialVariant::SshKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("legacy PEM must fail at ingest");
     assert!(
@@ -173,6 +179,8 @@ fn ssh_malformed_openssh_v1_send_rejected_at_ingest() {
         MaterialSource::Bytes(malformed.to_vec()),
         MaterialVariant::SshKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("malformed body must fail at ingest");
     match err {

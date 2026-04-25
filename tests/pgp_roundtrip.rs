@@ -61,6 +61,8 @@ fn pgp_self_round_trip_recovers_packet_stream() {
         MaterialSource::Bytes(FIXTURE_PGP.to_vec()),
         MaterialVariant::PgpKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("PGP fixture must fit under 1000 B per D-P7-03 + research GAP 5");
 
@@ -104,6 +106,8 @@ fn pgp_send_realistic_key_surfaces_wire_budget_exceeded_cleanly() {
         MaterialSource::Bytes(FIXTURE_PGP_REALISTIC.to_vec()),
         MaterialVariant::PgpKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("realistic PGP must overflow wire budget");
 
@@ -155,6 +159,8 @@ fn armor_on_pgp_share_emits_ascii_armor() {
         MaterialSource::Bytes(FIXTURE_PGP.to_vec()),
         MaterialVariant::PgpKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .unwrap();
 
@@ -205,6 +211,8 @@ fn pgp_malformed_packet_send_rejected_at_ingest() {
         MaterialSource::Bytes(b"not a PGP packet stream".to_vec()),
         MaterialVariant::PgpKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("malformed PGP send must fail at ingest");
 
@@ -243,6 +251,8 @@ fn pgp_multi_primary_send_rejected_at_ingest() {
         MaterialSource::Bytes(concatenated),
         MaterialVariant::PgpKey,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect_err("multi-primary keyring send must fail at ingest");
 

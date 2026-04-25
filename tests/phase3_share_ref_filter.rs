@@ -74,6 +74,8 @@ fn receipts_filter_and_senders_own_share_coexists() {
         MaterialSource::Bytes(b"payload one distinct".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("A send 1");
     let uri1 = ShareUri::parse(&uri1_str).expect("parse uri1");
@@ -110,6 +112,8 @@ fn receipts_filter_and_senders_own_share_coexists() {
         MaterialSource::Bytes(b"payload two different".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("A send 2");
     let uri2 = ShareUri::parse(&uri2_str).expect("parse uri2");

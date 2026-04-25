@@ -303,6 +303,13 @@ path = "tests/ssh_banner_render.rs"
 name = "ssh_error_oracle"
 path = "tests/ssh_error_oracle.rs"
 
+# Phase 8 Plan 01: pin send-side smoke (pin_required wire shape + salt prefix).
+# Receive-side PIN decrypt lands in Plan 02 (tests/pin_roundtrip.rs).
+[[test]]
+name = "pin_send_smoke"
+path = "tests/pin_send_smoke.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

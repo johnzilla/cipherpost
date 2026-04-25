@@ -71,6 +71,8 @@ fn bs_self_share_survives_publish_receipt() {
         MaterialSource::Bytes(b"b self note".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("B self-send");
 
@@ -92,6 +94,8 @@ fn bs_self_share_survives_publish_receipt() {
         MaterialSource::Bytes(b"a-to-b share".to_vec()),
         MaterialVariant::GenericSecret,
         DEFAULT_TTL_SECONDS,
+        None,  // Phase 8 Plan 01: pin=None — CLI --pin lands in Plan 02.
+        false, // Phase 8 Plan 01: burn=false — CLI --burn lands in Plan 03.
     )
     .expect("A run_send share mode");
     let uri = ShareUri::parse(&uri_str).expect("parse share URI");
