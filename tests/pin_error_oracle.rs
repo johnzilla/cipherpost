@@ -69,11 +69,7 @@ fn wrong_pin_display_does_not_match_signature_failure_display() {
             exit_code(*sig),
             "PIN-07 narrow: exit codes 4 (DecryptFailed) and 3 (Signature*) MUST differ"
         );
-        assert_eq!(
-            exit_code(*sig),
-            3,
-            "Signature* variant must map to exit 3"
-        );
+        assert_eq!(exit_code(*sig), 3, "Signature* variant must map to exit 3");
         assert_ne!(
             format!("{}", err_pin),
             format!("{}", *sig),

@@ -670,9 +670,7 @@ pub fn run_receive(
             Material::PgpKey { .. } => preview::pgp_armor(material_bytes)?,
             // GenericSecret + SshKey both reject `armor=true` at the material
             // match arm above — they never reach this dispatch.
-            _ => unreachable!(
-                "armor matrix validated above — only X509Cert + PgpKey reach here"
-            ),
+            _ => unreachable!("armor matrix validated above — only X509Cert + PgpKey reach here"),
         }
     } else {
         material_bytes.to_vec()

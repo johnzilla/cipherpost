@@ -243,12 +243,7 @@ fn pin_required_share_with_no_pin_at_receive() {
         .publish(&kp, &record)
         .expect("MockTransport accepts pin-required record under wire ceiling");
 
-    let uri = ShareUri::parse(&format!(
-        "cipherpost://{}/{}",
-        id.z32_pubkey(),
-        share_ref
-    ))
-    .unwrap();
+    let uri = ShareUri::parse(&format!("cipherpost://{}/{}", id.z32_pubkey(), share_ref)).unwrap();
 
     let mut sink = OutputSink::InMemory(Vec::new());
     let err = run_receive(

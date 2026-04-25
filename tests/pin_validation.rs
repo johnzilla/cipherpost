@@ -14,7 +14,8 @@ const REJECT_MSG: &str = "PIN does not meet entropy requirements";
 fn assert_rejected(pin: &str) {
     match validate_pin(pin).unwrap_err() {
         Error::Config(msg) => assert_eq!(
-            msg, REJECT_MSG,
+            msg,
+            REJECT_MSG,
             "PIN rejection produced non-generic Display (oracle leak): pin len={} msg={:?}",
             pin.len(),
             msg
@@ -54,7 +55,8 @@ fn rejects_descending() {
 #[test]
 fn rejects_blocklist() {
     for s in &[
-        "password", "PASSWORD", "Password", "qwertyui", "QWERTYUI", "letmein", "LetMeIn", "asdfghjk",
+        "password", "PASSWORD", "Password", "qwertyui", "QWERTYUI", "letmein", "LetMeIn",
+        "asdfghjk",
     ] {
         assert_rejected(s);
     }
@@ -62,7 +64,13 @@ fn rejects_blocklist() {
 
 #[test]
 fn accepts_strong_pins() {
-    for s in &["validpin1", "correct-horse", "cp@8h0rse", "ZxCvBnM!", "T3st-PIN!"] {
+    for s in &[
+        "validpin1",
+        "correct-horse",
+        "cp@8h0rse",
+        "ZxCvBnM!",
+        "T3st-PIN!",
+    ] {
         validate_pin(s).unwrap_or_else(|e| panic!("strong PIN {:?} was rejected: {:?}", s, e));
     }
 }
@@ -85,11 +93,11 @@ fn display_is_generic_across_all_rejection_classes() {
     // blocklist) must produce the IDENTICAL Display string. Oracle hygiene:
     // an attacker cannot tell which check fired from the user-facing output.
     let samples = [
-        "short",      // length
-        "aaaaaaaa",   // all-same
-        "12345678",   // ascending (also blocklist)
-        "87654321",   // descending (also blocklist)
-        "password",   // blocklist
+        "short",    // length
+        "aaaaaaaa", // all-same
+        "12345678", // ascending (also blocklist)
+        "87654321", // descending (also blocklist)
+        "password", // blocklist
     ];
     let mut displays = Vec::new();
     for s in &samples {

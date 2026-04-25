@@ -60,7 +60,9 @@ fn pin_required_jcs_field_order_is_alphabetic_correct() {
     //   share_ref, ttl_seconds
     let blob_idx = s.find(r#""blob":"#).expect("blob key present");
     let created_idx = s.find(r#""created_at":"#).expect("created_at key present");
-    let pin_idx = s.find(r#""pin_required":"#).expect("pin_required key present");
+    let pin_idx = s
+        .find(r#""pin_required":"#)
+        .expect("pin_required key present");
     let proto_idx = s
         .find(r#""protocol_version":"#)
         .expect("protocol_version key present");

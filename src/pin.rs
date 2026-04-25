@@ -120,12 +120,8 @@ pub fn validate_pin(pin: &str) -> Result<(), Error> {
     }
 
     let chars: Vec<char> = pin.chars().collect();
-    let asc = chars
-        .windows(2)
-        .all(|w| (w[1] as i32) - (w[0] as i32) == 1);
-    let desc = chars
-        .windows(2)
-        .all(|w| (w[0] as i32) - (w[1] as i32) == 1);
+    let asc = chars.windows(2).all(|w| (w[1] as i32) - (w[0] as i32) == 1);
+    let desc = chars.windows(2).all(|w| (w[0] as i32) - (w[1] as i32) == 1);
     if asc || desc {
         return Err(Error::Config(REJECT.to_string()));
     }
