@@ -514,10 +514,28 @@ pub fn run_receive(
             (bytes, Some(sub))
         }
         Material::SshKey { .. } => {
-            // Plan 07 extends this arm live (SSH preview + armor reject per
-            // D-P7-13). Until then, reject with NotImplemented — matches the
-            // Plan 01 run_send dispatch.
-            return Err(Error::NotImplemented { phase: 7 });
+            // Phase 7 Plan 07: live SSH preview + armor reject per D-P7-13.
+            // OpenSSH v1 is already PEM-armored by the format itself
+            // (`-----BEGIN OPENSSH PRIVATE KEY-----`) — wrapping again would
+            // produce nonsense. Reject `--armor` BEFORE rendering the preview
+            // (cost-on-error: don't parse + render then reject; surfaces the
+            // error before any preview lines hit stderr). bytes are the
+            // canonical re-encoded OpenSSH v1 blob stored by Plan 05's ingest.
+            // preview::render_ssh_preview pre-renders the Key (algo+bits+
+            // [DEPRECATED] tag for DSA/RSA<2048) / Fingerprint (SHA-256) /
+            // Comment ([sender-attested]) subblock per D-P7-14/15; the
+            // subblock is threaded through the unchanged Phase 6 Prompter
+            // trait via Option<&str>. D-P7-16 invariant: ssh-key crate
+            // imports stay confined to src/preview.rs + src/payload/ingest.rs
+            // — referenced here only via preview::render_ssh_preview.
+            if armor {
+                return Err(Error::Config(
+                    "--armor not applicable to ssh-key — OpenSSH v1 is self-armored".into(),
+                ));
+            }
+            let bytes = envelope.material.as_ssh_key_bytes()?;
+            let sub = preview::render_ssh_preview(bytes)?;
+            (bytes, Some(sub))
         }
     };
 
@@ -538,19 +556,23 @@ pub fn run_receive(
 
     // STEP 11: write material to output sink. D-P6-05 / X509-05 / PGP-05: if
     // --armor, dispatch to the per-variant armor helper (X.509 hand-rolled
-    // PEM, PGP via rpgp's to_armored_bytes). The --armor × non-X509-and-
-    // non-PGP-variant combination was already rejected at the material match
-    // above (GenericSecret) or short-circuited via NotImplemented (SshKey),
-    // so the unreachable arm here is safe. Plan 07 (D-P7-13) will reject
-    // --armor on SshKey explicitly with the widened literal — the
-    // unreachable! STAYS unreachable because the armor=true × SshKey path
-    // never makes it past the material match's NotImplemented return.
+    // PEM, PGP via rpgp's to_armored_bytes). Phase 7 Plan 07 finalized the
+    // armor matrix: GenericSecret + SshKey BOTH reject `armor=true` at the
+    // material match arm above (GenericSecret with the
+    // `"--armor requires --material x509-cert or pgp-key"` literal; SshKey
+    // with the variant-specific
+    // `"--armor not applicable to ssh-key — OpenSSH v1 is self-armored"`
+    // literal per D-P7-13). The unreachable! arm is a belt-and-suspenders
+    // assertion — the architectural argument above the dispatch ensures
+    // the panic never fires in any code path.
     let output_bytes: Vec<u8> = if armor {
         match &envelope.material {
             Material::X509Cert { .. } => pem_armor_certificate(material_bytes),
             Material::PgpKey { .. } => preview::pgp_armor(material_bytes)?,
+            // GenericSecret + SshKey both reject `armor=true` at the material
+            // match arm above — they never reach this dispatch.
             _ => unreachable!(
-                "armor matrix already validated above — only X509Cert or PgpKey reach here"
+                "armor matrix validated above — only X509Cert + PgpKey reach here"
             ),
         }
     } else {
