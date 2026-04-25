@@ -64,6 +64,14 @@ x509-parser = { version = "0.16", default-features = false }
 # See deny.toml [advisories] ignore entry below.
 pgp = { version = "=0.19.0", default-features = false }
 
+# Phase 7 Plan 02: rsa is already pulled transitively by pgp 0.19.0 (see RUSTSEC
+# acceptance comment above). preview.rs needs `rsa::traits::PublicKeyParts` in
+# scope to read RSA modulus bit-size for the `Key:         RSA-2048` banner
+# line. Re-exporting through a direct dep is the cleanest path (no new supply
+# chain risk — the version pin matches what pgp resolves to). We do NOT enable
+# any rsa feature; default features are fine for the trait-only import.
+rsa = { version = "0.9", default-features = false }
+
 [[test]]
 name = "mock_transport_roundtrip"
 path = "tests/mock_transport_roundtrip.rs"

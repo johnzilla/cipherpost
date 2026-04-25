@@ -1,17 +1,25 @@
 //! src/preview.rs — Acceptance-banner subblock renderers for typed Material variants.
 //!
-//! Phase 6 ships `render_x509_preview(bytes)`. Phase 7 will add
-//! `render_pgp_preview(bytes)` and `render_ssh_preview(bytes)` as siblings.
+//! Phase 6 ships `render_x509_preview(bytes)`. Phase 7 Plan 02 adds
+//! `render_pgp_preview(bytes)`. Plan 06 will add `render_ssh_preview(bytes)`.
 //!
-//! Design invariants (D-P6-09, D-P6-13, D-P6-17):
+//! Design invariants (D-P6-09, D-P6-13, D-P6-17, D-P7-09):
 //!   - Pure function: no I/O, no side effects. Returns `Result<String, Error>`.
-//!   - `x509-parser` imports live ONLY in this module (not in payload, not in flow).
-//!     `flow.rs::TtyPrompter::render_and_confirm` calls us via Plan 03's wiring.
+//!   - `x509-parser` AND `pgp` crate imports live ONLY in this module (and in
+//!     `payload/ingest.rs` for `pgp`). `flow.rs::TtyPrompter::render_and_confirm`
+//!     calls us via Plan 03's wiring.
 //!   - No leading or trailing `\n` — caller owns outer banner layout.
-//!   - Parse failures return `Error::InvalidMaterial { variant: "x509_cert",
-//!     reason: "<short generic>" }` with NO x509-parser internal strings.
-//!   - SHA-256 is computed over the canonical DER bytes passed in — matches
+//!   - Parse failures return `Error::InvalidMaterial { variant: "<tag>",
+//!     reason: "<short generic>" }` with NO crate internal strings.
+//!   - X.509 SHA-256 is computed over the canonical DER bytes passed in — matches
 //!     `share_ref` determinism domain per D-P6-13.
+//!   - PGP fingerprint is computed by rpgp from the parsed key and rendered as
+//!     UPPER-CASE hex (40 hex for v4, 64 hex for v5/v6) per PGP-04 — no leading
+//!     `0x`, no spaces, matching `gpg --list-keys --with-fingerprint` output
+//!     style minus the spaces.
+//!   - Phase 7 PGP secret-key (top-level packet tag-5) input prepends a
+//!     `[WARNING: SECRET key — unlocks cryptographic operations]` line BEFORE
+//!     the separator (D-P7-07).
 
 use crate::error::Error;
 use crate::flow::format_unix_as_iso_utc;
@@ -22,6 +30,20 @@ use x509_parser::oid_registry::{
     OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY, OID_NIST_EC_P384, OID_NIST_EC_P521,
     OID_PKCS1_RSAENCRYPTION, OID_PKCS1_RSASSAPSS, OID_SIG_ED25519, OID_SIG_ED448,
 };
+
+// Phase 7 Plan 02: rpgp imports — confined to this module per D-P7-09.
+// High-level `composed` types (`SignedPublicKey`, `SignedSecretKey`) expose
+// the fingerprint/UID/algorithm fields cleanly; `KeyDetails` trait gives
+// uniform `.fingerprint()` / `.algorithm()` / `.created_at()` / `.public_params()`
+// across both. The low-level `packet::PacketParser` + `Tag` is re-used (same
+// as `payload::ingest::pgp_key`) for the tag-5 vs tag-6 primary discriminator
+// — the composed API does not expose "was this a secret key?" directly because
+// `SignedSecretKey::to_public_key()` collapses the distinction.
+use pgp::composed::{Deserializable, SignedPublicKey, SignedSecretKey};
+use pgp::crypto::public_key::PublicKeyAlgorithm;
+use pgp::packet::PacketTrait;
+use pgp::types::{EcdsaPublicParams, KeyDetails, PublicParams, Tag};
+use rsa::traits::PublicKeyParts;
 
 /// Truncation limit for Subject / Issuer DN rendering (D-P6-10).
 /// Keeps the 80-column TTY-friendly constraint with one `…` char budget.
@@ -211,6 +233,285 @@ fn render_key_algorithm(cert: &x509_parser::certificate::X509Certificate<'_>) ->
 
     // Unknown algorithm: dotted-OID fallback.
     format!("<{}>", alg_oid.to_id_string())
+}
+
+// =============================================================================
+// Phase 7 Plan 02 — PGP preview renderer.
+// =============================================================================
+
+/// 53 dashes after `--- OpenPGP ` per Phase 7 CONTEXT.md §specifics.
+/// Total separator line width = `--- OpenPGP ` (12 chars) + 53 dashes = 65 chars.
+/// SSH subblock (Plan 06) uses `--- SSH ` (8 chars) + 57 dashes = 65 chars to
+/// match. X.509 keeps its 67-char historical width.
+const PGP_SEPARATOR_DASH_COUNT: usize = 53;
+
+/// UID truncation limit per D-P7-08 — PGP UIDs are RFC 4880 free-form UTF-8
+/// (typically `Name <email>` at 40-80 chars). Mirrors Phase 6's
+/// `DN_TRUNC_LIMIT = 80` shape but tighter for the 80-col TTY constraint with
+/// the existing `Primary UID: ` 13-char field-label budget.
+const PGP_UID_TRUNC_LIMIT: usize = 64;
+
+/// Render a PGP acceptance-banner subblock from a binary OpenPGP packet stream.
+///
+/// Returns a multi-line String (no leading or trailing newline). For a
+/// primary-secret-key input (top-level packet tag-5) the string starts with
+/// the SECRET warning line followed by a blank line, then the separator. For
+/// a primary-public-key input (tag-6) the string starts with the separator
+/// directly. Caller (run_receive — Plan 03 wires it) passes the returned
+/// string through `Option<&str>` to `TtyPrompter::render_and_confirm`'s
+/// `preview_subblock` parameter.
+///
+/// Lines (after any warning) in order:
+///   --- OpenPGP -----------------------------------------------  (53 dashes)
+///   Fingerprint: <40-hex v4 OR 64-hex v5/v6>      (UPPER-case)
+///   Primary UID: <UID, truncated at 64 chars with `…`>
+///   Key:         <Ed25519 | RSA-2048 | ECDSA P-256 | ... | <dotted-OID>>
+///   Subkeys:     N (type1, type2, ...)            // or `0`
+///   Created:     YYYY-MM-DD HH:MM UTC
+///
+/// Error contract (D-P7-09 / PGP-08): every parse failure surfaces as
+/// `Error::InvalidMaterial { variant: "pgp_key", reason: "malformed PGP packet
+/// stream" }` — the ONE curated literal. NEVER wraps an rpgp internal error
+/// chain (oracle hygiene gate; matches `payload::ingest::pgp_key`).
+pub fn render_pgp_preview(bytes: &[u8]) -> Result<String, Error> {
+    // Step 1: discriminate primary kind via raw packet tag (D-P7-07).
+    // We need this BEFORE composing because the `composed` API collapses
+    // SecretKey → PublicKey for uniform downstream access (`SignedSecretKey::
+    // to_public_key()`); the tag is the authoritative "was this a secret?"
+    // signal. Re-uses the same `pgp::packet::PacketParser` entry point as
+    // `payload::ingest::pgp_key` for error-surface consistency.
+    let is_secret = pgp_primary_is_secret(bytes)?;
+
+    // Step 2: extract metadata via the high-level composed API.
+    let (fingerprint_hex, primary_uid, key_alg, subkey_summary, created_unix) =
+        if is_secret {
+            extract_secret_metadata(bytes)?
+        } else {
+            extract_public_metadata(bytes)?
+        };
+
+    // Step 3: format the subblock string. UID truncation reuses the existing
+    // Phase 6 `truncate_display` helper (D-P6-10 pattern). Created timestamp
+    // reuses Phase 6 Plan 02's `pub(crate) format_unix_as_iso_utc`.
+    let separator: String = format!("--- OpenPGP {}", "-".repeat(PGP_SEPARATOR_DASH_COUNT));
+    let uid_truncated = truncate_display(&primary_uid, PGP_UID_TRUNC_LIMIT);
+    let created_iso = format_unix_as_iso_utc(created_unix);
+
+    let mut out = String::new();
+    if is_secret {
+        // D-P7-07: warning line is the FIRST line of the returned String,
+        // followed by a blank line, then the separator. High visual weight.
+        out.push_str("[WARNING: SECRET key — unlocks cryptographic operations]\n\n");
+    }
+    out.push_str(&separator);
+    out.push('\n');
+    writeln!(out, "Fingerprint: {}", fingerprint_hex).expect("String write");
+    writeln!(out, "Primary UID: {}", uid_truncated).expect("String write");
+    writeln!(out, "Key:         {}", key_alg).expect("String write");
+    writeln!(out, "Subkeys:     {}", subkey_summary).expect("String write");
+    // D-P6-17 mirror: Created is the LAST line — no trailing newline.
+    write!(out, "Created:     {}", created_iso).expect("String write");
+    Ok(out)
+}
+
+/// Tag-5 vs tag-6 discriminator. Returns Ok(true) for SecretKey (tag 5),
+/// Ok(false) for PublicKey (tag 6). Errs (with the canonical sanitized
+/// `malformed PGP packet stream` reason) on malformed input or no primary
+/// packet found.
+fn pgp_primary_is_secret(bytes: &[u8]) -> Result<bool, Error> {
+    use std::io::Cursor;
+    let mut cursor = Cursor::new(bytes);
+    let parser = pgp::packet::PacketParser::new(&mut cursor);
+    for packet_result in parser {
+        let packet = packet_result.map_err(|_| pgp_parse_error())?;
+        match packet.tag() {
+            Tag::SecretKey => return Ok(true),
+            Tag::PublicKey => return Ok(false),
+            _ => continue,
+        }
+    }
+    Err(pgp_parse_error())
+}
+
+/// Single source of truth for the PGP preview parse-failure error literal —
+/// matches the `malformed PGP packet stream` reason that
+/// `payload::ingest::pgp_key` uses (oracle-hygiene deduplication across
+/// Plan 01 + Plan 02).
+fn pgp_parse_error() -> Error {
+    Error::InvalidMaterial {
+        variant: "pgp_key".into(),
+        reason: "malformed PGP packet stream".into(),
+    }
+}
+
+/// Extract the PGP banner-fields tuple from a public-key packet stream
+/// (top-level Tag::PublicKey).
+fn extract_public_metadata(
+    bytes: &[u8],
+) -> Result<(String, String, String, String, i64), Error> {
+    let key = SignedPublicKey::from_bytes(bytes).map_err(|_| pgp_parse_error())?;
+    let fp_hex = format_fingerprint_upper(&key.fingerprint());
+    let primary_uid = first_uid_string(&key.details.users);
+    let key_alg = render_pgp_key_algorithm(key.algorithm(), key.public_params());
+    let subkey_summary = render_pgp_public_subkey_summary(&key.public_subkeys);
+    let created = i64::from(key.created_at().as_secs());
+    Ok((fp_hex, primary_uid, key_alg, subkey_summary, created))
+}
+
+/// Extract the PGP banner-fields tuple from a secret-key packet stream
+/// (top-level Tag::SecretKey). Re-uses the public-key view via
+/// `SignedSecretKey::to_public_key()` for uniform field extraction (the public
+/// half is always present alongside the secret material per RFC 4880 §5.5.3).
+fn extract_secret_metadata(
+    bytes: &[u8],
+) -> Result<(String, String, String, String, i64), Error> {
+    let key = SignedSecretKey::from_bytes(bytes).map_err(|_| pgp_parse_error())?;
+    let fp_hex = format_fingerprint_upper(&key.fingerprint());
+    let primary_uid = first_uid_string(&key.details.users);
+    let key_alg = render_pgp_key_algorithm(key.algorithm(), key.public_params());
+    // SecretKey carries BOTH public-subkey records AND secret-subkey records
+    // (the secret-subkey set is the secret half; the public-subkey set holds
+    // the public-encryption-only subkeys). Surface both counts together so the
+    // user sees the true subkey topology.
+    let mut total_subkeys: Vec<&pgp::types::PublicParams> = Vec::new();
+    let mut algos: Vec<PublicKeyAlgorithm> = Vec::new();
+    for sk in &key.public_subkeys {
+        algos.push(sk.key.algorithm());
+        total_subkeys.push(sk.key.public_params());
+    }
+    for sk in &key.secret_subkeys {
+        algos.push(sk.key.algorithm());
+        total_subkeys.push(sk.key.public_params());
+    }
+    let subkey_summary = if algos.is_empty() {
+        "0".to_string()
+    } else {
+        let names: Vec<String> = algos
+            .iter()
+            .zip(total_subkeys.iter())
+            .map(|(a, p)| render_pgp_key_algorithm(*a, p))
+            .collect();
+        format!("{} ({})", algos.len(), names.join(", "))
+    };
+    let created = i64::from(key.created_at().as_secs());
+    Ok((fp_hex, primary_uid, key_alg, subkey_summary, created))
+}
+
+/// Render a `pgp::types::Fingerprint` as UPPER-CASE hex with no leading `0x`,
+/// no spaces — matches GnuPG `--list-keys --with-fingerprint` output minus the
+/// 4-char-group spacing. v4 keys → 40 hex chars; v5/v6 keys → 64 hex chars.
+fn format_fingerprint_upper(fp: &pgp::types::Fingerprint) -> String {
+    // Fingerprint impls UpperHex (see pgp/src/types/fingerprint.rs):
+    //   `format!("{:X}", fp)` produces hex::encode_upper(fp.as_bytes()).
+    format!("{:X}", fp)
+}
+
+/// First user's UID string, or `(no user id)` placeholder if the key has no
+/// SignedUser records (defensive — well-formed transferable keys always have
+/// at least one). Strips control characters defensively to prevent ANSI/CR
+/// banner-injection through a hostile UID.
+fn first_uid_string(users: &[pgp::types::SignedUser]) -> String {
+    let raw = users
+        .first()
+        .and_then(|u| u.id.as_str())
+        .unwrap_or("(no user id)");
+    strip_control_chars(raw)
+}
+
+/// Filter out ASCII control characters (< 0x20 or 0x7F) — matches the same
+/// hardening pattern Phase 2 applies to the `purpose` field. Keeps the
+/// printable + extended-UTF8 range.
+fn strip_control_chars(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_control())
+        .collect()
+}
+
+/// Render an OpenPGP public-key algorithm + parameters as a human-readable
+/// string. Coverage maps to D-P7-08:
+///   Ed25519, Ed448, RSA-<bits>, ECDSA P-256/P-384/P-521/secp256k1,
+///   ECDH-X25519/Curve25519/<curve-name>, X25519/X448, EdDSALegacy, DSA,
+///   Elgamal — anything else falls through to a numeric algorithm-OID
+///   placeholder of the form `<algo-N>`.
+fn render_pgp_key_algorithm(alg: PublicKeyAlgorithm, params: &PublicParams) -> String {
+    match alg {
+        PublicKeyAlgorithm::Ed25519 => "Ed25519".to_string(),
+        PublicKeyAlgorithm::Ed448 => "Ed448".to_string(),
+        PublicKeyAlgorithm::EdDSALegacy => "EdDSA-Legacy".to_string(),
+        PublicKeyAlgorithm::X25519 => "X25519".to_string(),
+        PublicKeyAlgorithm::X448 => "X448".to_string(),
+        PublicKeyAlgorithm::DSA => "DSA".to_string(),
+        PublicKeyAlgorithm::ElgamalEncrypt | PublicKeyAlgorithm::Elgamal => {
+            "Elgamal".to_string()
+        }
+        PublicKeyAlgorithm::RSA
+        | PublicKeyAlgorithm::RSAEncrypt
+        | PublicKeyAlgorithm::RSASign => render_rsa_with_size(params),
+        PublicKeyAlgorithm::ECDSA => render_ecdsa(params),
+        PublicKeyAlgorithm::ECDH => render_ecdh(params),
+        // Catch-all for the remaining `#[non_exhaustive]` PQC + Private*
+        // variants and any future additions — render the numeric algorithm ID
+        // (RFC 9580 §9.1 assigns 1-byte values) as a stable placeholder.
+        _ => format!("<algo-{}>", u8::from(alg)),
+    }
+}
+
+/// `RSA-<bits>` rendering. The bit-size comes from the modulus length via
+/// `PublicKeyParts::n` from the `rsa` crate — pgp's `PublicParams::RSA(rsa)`
+/// holds the parsed `rsa::RsaPublicKey` directly. Falls back to plain `RSA`
+/// if the params variant doesn't match (defensive — should be unreachable
+/// when `algorithm()` returned RSA*).
+fn render_rsa_with_size(params: &PublicParams) -> String {
+    if let PublicParams::RSA(rsa_params) = params {
+        // n() is from the PublicKeyParts trait; bit-size is the length in
+        // bits of the modulus. RSA modulus bit-count is the conventional
+        // "RSA key size" (2048, 3072, 4096, etc.).
+        let bits = rsa_params.key.n().bits();
+        format!("RSA-{}", bits)
+    } else {
+        "RSA".to_string()
+    }
+}
+
+/// `ECDSA <curve-name>` rendering. P-256/P-384/P-521 are spelled with the
+/// `P-` prefix (matches OpenSSH + OpenPGP convention); secp256k1 keeps its
+/// canonical name; unsupported curves fall back to the curve's display name.
+fn render_ecdsa(params: &PublicParams) -> String {
+    if let PublicParams::ECDSA(ecdsa) = params {
+        match ecdsa {
+            EcdsaPublicParams::P256 { .. } => "ECDSA P-256".to_string(),
+            EcdsaPublicParams::P384 { .. } => "ECDSA P-384".to_string(),
+            EcdsaPublicParams::P521 { .. } => "ECDSA P-521".to_string(),
+            EcdsaPublicParams::Secp256k1 { .. } => "ECDSA secp256k1".to_string(),
+            EcdsaPublicParams::Unsupported { curve, .. } => {
+                format!("ECDSA <{}>", curve.oid_str())
+            }
+        }
+    } else {
+        "ECDSA".to_string()
+    }
+}
+
+/// `ECDH-<curve-name>` rendering. Mirrors the ECDSA shape but for the ECDH
+/// key-agreement variant.
+fn render_ecdh(params: &PublicParams) -> String {
+    if let PublicParams::ECDH(ecdh) = params {
+        format!("ECDH-{}", ecdh.curve().name())
+    } else {
+        "ECDH".to_string()
+    }
+}
+
+/// Subkey summary for the public-key path: `0`, or `N (alg1, alg2, ...)`.
+fn render_pgp_public_subkey_summary(subkeys: &[pgp::composed::SignedPublicSubKey]) -> String {
+    if subkeys.is_empty() {
+        return "0".to_string();
+    }
+    let names: Vec<String> = subkeys
+        .iter()
+        .map(|sk| render_pgp_key_algorithm(sk.key.algorithm(), sk.key.public_params()))
+        .collect();
+    format!("{} ({})", subkeys.len(), names.join(", "))
 }
 
 #[cfg(test)]
