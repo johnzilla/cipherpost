@@ -88,6 +88,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             passphrase_file,
             passphrase_fd,
             material_stdin,
+            pin,
         } => {
             // D-P5-04: reject --passphrase-file AND --passphrase-fd together.
             if passphrase_file.is_some() && passphrase_fd.is_some() {
@@ -196,6 +197,17 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             };
 
+            // Phase 8 Plan 02: --pin flag wires through prompt_pin (TTY-only,
+            // confirm=true at send to catch typos before committing). Non-TTY
+            // context with --pin set causes Error::Config (exit 1) from
+            // prompt_pin's non-TTY rejection arm. Argv-inline --pin=value is
+            // rejected by clap (bool flag) without ever reaching this point.
+            let pin_secret: Option<secrecy::SecretBox<String>> = if pin {
+                Some(cipherpost::pin::prompt_pin(true)?)
+            } else {
+                None
+            };
+
             let uri = cipherpost::flow::run_send(
                 &id,
                 transport.as_ref(),
@@ -205,8 +217,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 material_source,
                 material,
                 ttl_seconds,
-                None,  // Phase 8 Plan 01: pin=None — CLI --pin flag wires in Plan 02.
-                false, // Phase 8 Plan 01: burn=false — CLI --burn flag wires in Plan 03.
+                pin_secret, // Phase 8 Plan 02: wired (was None placeholder in Plan 01).
+                false,      // Phase 8 Plan 03 wires --burn.
             )?;
 
             println!("{}", uri);

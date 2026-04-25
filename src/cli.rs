@@ -98,6 +98,19 @@ pub enum Command {
         /// Any value other than `-` is rejected at dispatch.
         #[arg(value_name = "STDIN")]
         material_stdin: Option<String>,
+
+        /// Require a PIN as a second factor on receive (PIN-01).
+        ///
+        /// PIN is read from TTY at send time with double-entry confirmation;
+        /// receiver is prompted at receive time. PIN-protected shares require
+        /// BOTH the receiver's identity passphrase AND the PIN to decrypt.
+        ///
+        /// Non-interactive PIN sources (--pin-file, --pin-fd, CIPHERPOST_PIN
+        /// env) are deferred to v1.2 — v1.1 keeps PIN as an intentionally
+        /// human-in-the-loop second factor. Argv-inline `--pin <value>` is
+        /// rejected by clap (bool flag).
+        #[arg(long)]
+        pin: bool,
     },
 
     /// Receive and decrypt a share (phase 2)
