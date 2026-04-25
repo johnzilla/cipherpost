@@ -3,7 +3,16 @@
 
 [advisories]
 version = 2
-ignore = []
+# Phase 7: accept RUSTSEC-2023-0071 (Marvin Attack on rsa 0.9). The `rsa` crate
+# is transitively pulled by `pgp 0.19.0` for RFC 4880 RSA key support. Cipherpost
+# uses the pgp crate ONLY for packet parsing and metadata extraction — we do not
+# decrypt, sign, encrypt, or perform any private-key RSA operation. The Marvin
+# timing attack requires a network-observable decryption/signing oracle; no such
+# surface exists in cipherpost's parse-only code path. Impact: low. Remove this
+# ignore when upstream `rsa` ships a constant-time patched version.
+ignore = [
+    "RUSTSEC-2023-0071",
+]
 # yanked = "deny" is default in v2
 # Note: pkarr 5.0.3 transitively pulls ed25519-dalek 3.0.0-pre.5 (pre-release).
 # If RUSTSEC flags this pre-release, add an explicit ignore with a TODO and PITFALLS-pin rationale.

@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT"
 description = "Self-sovereign, serverless, accountless CLI for cryptographic-material handoff over Mainline DHT via PKARR."
 repository = "https://github.com/johnzilla/cipherpost"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [lib]
 name = "cipherpost"
@@ -52,6 +52,17 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # `default = []` so the result is identical, but explicit intent aids audit.
 # Do NOT bump to 0.17 — that version breaks to nom 8.0.
 x509-parser = { version = "0.16", default-features = false }
+# Phase 7: OpenPGP binary packet-stream parsing. Exact-pin (`=0.19.0`) because
+# the supply-chain matrix (MSRV 1.88, RUSTSEC-2023-0071 via rsa 0.9, unconditional
+# ed25519-dalek 2.1.1 pull) is version-specific — any upstream change requires
+# re-running Phase 7 research. `default-features = false` disables `bzip2`
+# (we do not encounter compressed key material — keys are not messages) and
+# `asm` (supply-chain prefers pure-Rust). See D-P7-04 + research §"Crate: pgp".
+#
+# Transitive advisory accepted: RUSTSEC-2023-0071 (Marvin timing attack on rsa 0.9).
+# Cipherpost parses PGP for metadata display only — never decrypts/signs with RSA.
+# See deny.toml [advisories] ignore entry below.
+pgp = { version = "=0.19.0", default-features = false }
 
 [[test]]
 name = "mock_transport_roundtrip"
