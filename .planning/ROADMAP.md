@@ -94,7 +94,13 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   3. User can `cipherpost send --burn`; first receive decrypts and writes a `burned` state-ledger entry; second receive on the same share returns exit 7 "share already consumed"; a receipt IS published after successful burn-receive (burn does not suppress attestation)
   4. `--pin` and `--burn` compose: a share with both flags set carries `pin_required=true` in OuterRecord and `burn_after_read=true` in Envelope; `skip_serializing_if = is_false` preserves byte-identity with v1.0 for non-pin/non-burn shares
   5. THREAT-MODEL.md documents PIN mode (second-factor semantics, Argon2id offline-brute-force bound, intentional indistinguishability from wrong-key errors) and burn mode (local-state-only semantics, DHT-ciphertext-survives-TTL caveat, multi-machine race explicitly described)
-**Plans**: TBD
+**Plans**: 6 plans
+- [ ] 08-01-PLAN.md — PIN crypto core: src/pin.rs (pin_derive_key + Argon2id+HKDF), hkdf_infos::PIN constant, OuterRecord.pin_required + Envelope.burn_after_read fields, is_false helper, run_send nested-age branch, cclink-divergence write-up + cargo-tree evidence
+- [ ] 08-02-PLAN.md — PIN ship-gate: validate_pin + prompt_pin (TTY-only, confirm-on-send, CIPHERPOST_TEST_PIN cfg-gated test injection), --pin CLI flag + main.rs wiring, run_receive PIN integration (salt-split + nested age-decrypt), JCS fixture (~218 B), error-oracle Display equality (exit-4 lane), leak-scan PIN entries, SPEC.md §3.6
+- [ ] 08-03-PLAN.md — BURN core: --burn CLI flag + BURN-05 stderr warning, LedgerState enum {None, Accepted, Burned}, check_already_consumed rename, LedgerEntry.state Option<&str> schema migration (v1.0 default-deserialization preserved)
+- [ ] 08-04-PLAN.md — BURN ship-gate: Prompter::marker param + [BURN] banner marker, append_ledger_entry_with_state helper + emit-before-mark for burn (D-P8-12), JCS fixture (~140 B; burn_after_read FIRST alphabetic), BURN-09 round-trip + receipt-count==1, state_ledger schema tests, PITFALLS.md #26 SUPERSEDED header, SPEC.md §3.7 Burn Semantics
+- [ ] 08-05-PLAN.md — Compose: tests/pin_burn_compose.rs walks pin × burn × {GenericSecret, X509Cert, PgpKey, SshKey} matrix (12 base + 4 receipt-count + 4 second-receive cross-cutting); 2 negative-path safety (wrong-PIN-doesn't-mark-burned + typed-z32-declined-doesn't-mark-burned); pin+burn+pgp wire-budget pre-flight (RESEARCH Open Risk #5)
+- [ ] 08-06-PLAN.md — Docs: THREAT-MODEL.md §PIN mode + §Burn mode (multi-machine race + indistinguishability + offline brute-force bound), SPEC.md final consolidation pass (§3.6 + §3.7 + §5.1 + §5.2 + §6 + §Pitfall #22 cross-refs), CLAUDE.md +3 load-bearing lock-ins (cipherpost/v1/pin; ledger state field; emit-before-mark contract)
 **UI hint**: no
 
 ### Phase 9: Real-DHT E2E + CAS merge-update race gate
@@ -120,8 +126,8 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 5. Non-interactive automation E2E | v1.1 | 3/3 | Complete    | 2026-04-24 |
 | 6. Typed Material: X509Cert | v1.1 | 4/4 | Complete    | 2026-04-24 |
 | 7. Typed Material: PgpKey + SshKey | v1.1 | 8/8 | Complete    | 2026-04-25 |
-| 8. --pin and --burn modes | v1.1 | 0/TBD | Not started | - |
+| 8. --pin and --burn modes | v1.1 | 0/6 | Planned | - |
 | 9. Real-DHT E2E + CAS race gate | v1.1 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-04-25 after Phase 7 complete — PgpKey + SshKey ship gates landed (fixtures + 51 new tests across PGP+SSH + SPEC.md update; ed25519-dalek 2.x ↔ 3.0.0-pre.5 coexistence pinned by guard). 253/253 tests pass. Phase 7 complete.*
+*Last updated: 2026-04-25 after Phase 8 plans landed — 6 strictly sequential plans (PIN core / PIN ship-gate / BURN core / BURN ship-gate / Compose / Docs) covering all 19 REQ-IDs (PIN-01..10 + BURN-01..09). PIN-first sequencing per D-P8-14; all plans autonomous per D-P8-16. Ready to execute Phase 8.*
