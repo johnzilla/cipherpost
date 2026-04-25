@@ -1,8 +1,15 @@
-//! src/payload/ingest.rs — Phase 6 raw-bytes → typed Material normalization.
+//! src/payload/ingest.rs — raw-bytes → typed Material normalization.
 //!
 //! `x509_cert(raw)` sniffs PEM vs DER, normalizes PEM → DER, validates via
 //! `x509-parser`'s strict-DER profile, and explicitly rejects trailing bytes
 //! after the certificate (D-P6-07). Returns `Material::X509Cert { bytes: canonical_der }`.
+//!
+//! `pgp_key(raw)` strictly rejects ASCII armor (D-P7-05), parses the binary
+//! OpenPGP packet stream via `pgp::packet::PacketParser`, counts top-level
+//! Tag::PublicKey + Tag::SecretKey packets (rejects keyrings per D-P7-06 /
+//! PGP-03), and asserts the parser consumed the entire input (WR-01 mirror /
+//! D-P7-07). Returns `Material::PgpKey { bytes: raw.to_vec() }` — no canonical
+//! re-encode; the binary packet stream IS canonical per RFC 4880 §4.2.
 //!
 //! The `bytes` field always carries canonical DER regardless of CLI input format
 //! (X509-01 invariant) — so `share_ref` remains deterministic across re-sends
@@ -10,8 +17,8 @@
 //!
 //! Error contract: every failure path returns `Error::InvalidMaterial { variant,
 //! reason }` with a short, generic `reason` string. NEVER wrap an `x509-parser`
-//! error chain — the `reason: String` is the oracle-hygiene gate (D-P6-03 /
-//! X509-08).
+//! or `pgp` error chain — the `reason: String` is the oracle-hygiene gate
+//! (D-P6-03 / X509-08 / D-P7-09 / PGP-08).
 //!
 //! Pitfalls addressed:
 //!   #19 — X.509 BER / PEM / DER non-canonicity: x509-parser's strict profile
@@ -98,6 +105,111 @@ pub fn x509_cert(raw: &[u8]) -> Result<Material, Error> {
     Ok(Material::X509Cert { bytes: der_bytes })
 }
 
+/// Normalize raw bytes (binary OpenPGP packet stream) into `Material::PgpKey { bytes }`.
+///
+/// No canonical re-encode — the binary packet stream IS canonical (RFC 4880 §4.2 +
+/// RFC 9580 §4.2). Re-encoding through rpgp could alter insignificant bits that
+/// would drift `share_ref` across sender toolchains; storing input bytes verbatim
+/// (after validation) is the correctness-preserving choice.
+///
+/// Pipeline:
+///   1. Sniff: after skipping leading ASCII whitespace, reject if the input
+///      begins with `-----BEGIN PGP` (catches PUBLIC KEY BLOCK and PRIVATE KEY
+///      BLOCK both — D-P7-05).
+///   2. Parse: iterate top-level packets via rpgp's `pgp::packet::PacketParser`.
+///      Count `Tag::PublicKey` (RFC tag 6) + `Tag::SecretKey` (RFC tag 5) at
+///      the top level — subkeys (`PublicSubkey` tag 14 / `SecretSubkey` tag 7)
+///      are NOT counted (subkeys are legitimate; we're rejecting keyrings).
+///   3. If zero primaries (or zero packets): malformed → reject.
+///   4. If primary count > 1: keyring → reject per D-P7-06 / PGP-03.
+///   5. Assert the parser consumed the entire input — trailing bytes after
+///      the last valid packet are rejected (WR-01 invariant mirror).
+///   6. Return `Material::PgpKey { bytes: raw.to_vec() }`.
+///
+/// Error contract: every failure path returns `Error::InvalidMaterial { variant:
+/// "pgp_key", reason: "<short generic>" }`. NEVER wrap a `pgp` crate error —
+/// the `reason: String` is the oracle-hygiene gate (PGP-08 / D-P7-09 extension).
+pub fn pgp_key(raw: &[u8]) -> Result<Material, Error> {
+    // --- Step 1: armor-prefix sniff (D-P7-05 / PGP-01). ----------------------
+    let first_non_ws = raw
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(raw.len());
+    let trimmed = &raw[first_non_ws..];
+    if trimmed.starts_with(b"-----BEGIN PGP") {
+        return Err(Error::InvalidMaterial {
+            variant: "pgp_key".into(),
+            reason: "ASCII-armored input rejected — supply binary packet stream".into(),
+        });
+    }
+
+    // --- Step 2: parse top-level packets, count primaries. -------------------
+    // PacketParser wraps a BufRead; we wrap `raw` in a Cursor and keep ownership
+    // via `&mut cursor` so `cursor.position()` is available for the trailing-
+    // bytes check after iteration finishes. `PacketTrait` is brought in-scope
+    // so `packet.tag()` resolves (method lives on the trait, not the enum).
+    use pgp::packet::PacketTrait;
+    use std::io::Cursor;
+    let mut cursor = Cursor::new(raw);
+    let mut primary_count: usize = 0;
+    let mut total_packets: usize = 0;
+
+    {
+        let parser = pgp::packet::PacketParser::new(&mut cursor);
+        for packet_result in parser {
+            let packet = packet_result.map_err(|_| Error::InvalidMaterial {
+                variant: "pgp_key".into(),
+                reason: "malformed PGP packet stream".into(),
+            })?;
+            total_packets += 1;
+            match packet.tag() {
+                pgp::types::Tag::PublicKey | pgp::types::Tag::SecretKey => {
+                    primary_count += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    let bytes_consumed = cursor.position() as usize;
+
+    if total_packets == 0 {
+        return Err(Error::InvalidMaterial {
+            variant: "pgp_key".into(),
+            reason: "malformed PGP packet stream".into(),
+        });
+    }
+    if primary_count == 0 {
+        return Err(Error::InvalidMaterial {
+            variant: "pgp_key".into(),
+            reason: "malformed PGP packet stream".into(),
+        });
+    }
+    if primary_count > 1 {
+        return Err(Error::InvalidMaterial {
+            variant: "pgp_key".into(),
+            reason: format!(
+                "PgpKey must contain exactly one primary key; keyrings are not supported in v1.1 (found {} primary keys)",
+                primary_count
+            ),
+        });
+    }
+
+    // --- Step 3: trailing-bytes check (WR-01 invariant / D-P7-07). -----------
+    // PacketParser::next returns None on UnexpectedEof cleanly, so if there's
+    // anything after the last valid packet the cursor position will be short
+    // of raw.len(). That remaining tail is rejected.
+    if bytes_consumed != raw.len() {
+        return Err(Error::InvalidMaterial {
+            variant: "pgp_key".into(),
+            reason: "trailing bytes after PGP packet stream".into(),
+        });
+    }
+
+    Ok(Material::PgpKey {
+        bytes: raw.to_vec(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +257,104 @@ mod tests {
         // Empty input: falls to DER path, parse fails -> malformed DER.
         let err = x509_cert(b"").unwrap_err();
         assert!(matches!(err, Error::InvalidMaterial { .. }));
+    }
+
+    // Phase 7 Plan 01 — pgp_key() inline tests. Full fixture-based happy-path +
+    // multi-primary + trailing-bytes tests land in Plan 04 via
+    // tests/material_pgp_ingest.rs; this block covers the synthetic-input negative
+    // paths that don't need a real key fixture.
+
+    #[test]
+    fn pgp_key_armor_public_block_rejected() {
+        let err = pgp_key(b"-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: X\n\nAAAA\n-----END PGP PUBLIC KEY BLOCK-----\n").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(
+                    reason,
+                    "ASCII-armored input rejected — supply binary packet stream"
+                );
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_key_armor_private_block_rejected() {
+        let err =
+            pgp_key(b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nAAAA\n-----END PGP PRIVATE KEY BLOCK-----\n")
+                .unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(
+                    reason,
+                    "ASCII-armored input rejected — supply binary packet stream"
+                );
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_key_armor_with_leading_whitespace_still_rejected() {
+        // Whitespace is skipped before the prefix check.
+        let err = pgp_key(b"  \n\t-----BEGIN PGP PUBLIC KEY BLOCK-----\nfoo").unwrap_err();
+        assert!(matches!(err, Error::InvalidMaterial { .. }));
+    }
+
+    #[test]
+    fn pgp_key_garbage_rejected_generically() {
+        // Non-PGP byte soup — parser should reject with generic reason.
+        // Every reason must be one of the curated literals (oracle hygiene).
+        let err = pgp_key(b"not a PGP packet stream").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert!(
+                    reason == "malformed PGP packet stream"
+                        || reason == "trailing bytes after PGP packet stream",
+                    "unexpected reason literal: {}",
+                    reason
+                );
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_key_empty_input_rejected() {
+        let err = pgp_key(b"").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_key_oracle_hygiene_no_internal_errors_in_reason() {
+        // Confirm no arm allows rpgp internal strings through. Each failure
+        // path reason must match one of the four curated literals from the
+        // source code (not the rpgp Error::PacketParsing / MpiTooLarge etc).
+        let inputs: &[&[u8]] = &[
+            b"-----BEGIN PGP MESSAGE-----",
+            b"garbage",
+            b"",
+            b"\x00\x00\x00",
+        ];
+        for raw in inputs {
+            if let Err(Error::InvalidMaterial { reason, .. }) = pgp_key(raw) {
+                assert!(
+                    !reason.contains("pgp::")
+                        && !reason.contains("PacketParsing")
+                        && !reason.contains("MpiTooLarge"),
+                    "reason leaked crate internals: {}",
+                    reason
+                );
+            }
+        }
     }
 }

@@ -243,7 +243,11 @@ pub fn run_send(
             payload::ingest::generic_secret(plaintext_bytes.to_vec())?
         }
         MaterialVariant::X509Cert => payload::ingest::x509_cert(&plaintext_bytes)?,
-        MaterialVariant::PgpKey | MaterialVariant::SshKey => {
+        // Phase 7 Plan 01: PgpKey dispatch is now live — calls payload::ingest::pgp_key
+        // (strict armor reject + multi-primary reject + trailing-bytes check).
+        MaterialVariant::PgpKey => payload::ingest::pgp_key(&plaintext_bytes)?,
+        MaterialVariant::SshKey => {
+            // SshKey still waiting on Plan 05.
             return Err(Error::NotImplemented { phase: 7 });
         }
     };
