@@ -492,7 +492,7 @@ pub fn run_receive(
         Material::GenericSecret { .. } => {
             if armor {
                 return Err(Error::Config(
-                    "--armor requires --material x509-cert".into(),
+                    "--armor requires --material x509-cert or pgp-key".into(),
                 ));
             }
             (envelope.material.as_generic_secret_bytes()?, None)
@@ -502,11 +502,22 @@ pub fn run_receive(
             let sub = preview::render_x509_preview(bytes)?;
             (bytes, Some(sub))
         }
-        Material::PgpKey { .. } | Material::SshKey => {
-            // Plan 01: PgpKey is now a struct variant carrying bytes, but the
-            // run_receive preview path still returns NotImplemented — Plan 03
-            // wires `preview::render_pgp_preview` in and swaps this arm live.
-            // SshKey stays NotImplemented until Plan 05.
+        Material::PgpKey { .. } => {
+            // Phase 7 Plan 03: live PGP preview + armor-permitted variant.
+            // bytes are the verbatim binary packet stream stored by Plan 01's
+            // ingest. preview::render_pgp_preview pre-renders the SECRET-key
+            // warning + Fingerprint / Primary UID / Key / Subkeys / Created
+            // subblock per D-P7-07 (warning is the FIRST line of the returned
+            // String); the subblock is threaded through the unchanged
+            // Phase 6 Prompter trait via Option<&str>.
+            let bytes = envelope.material.as_pgp_key_bytes()?;
+            let sub = preview::render_pgp_preview(bytes)?;
+            (bytes, Some(sub))
+        }
+        Material::SshKey => {
+            // Plan 07 extends this arm live (SSH preview + armor reject per
+            // D-P7-13). Until then, reject with NotImplemented — matches the
+            // Plan 01 run_send dispatch.
             return Err(Error::NotImplemented { phase: 7 });
         }
     };
@@ -526,12 +537,23 @@ pub fn run_receive(
 
     // STEPS 9-10 are encapsulated inside Prompter.
 
-    // STEP 11: write material to output sink. D-P6-05 / X509-05: if --armor
-    // and the variant is X509Cert, emit PEM-armored bytes; else raw bytes.
-    // The armor → non-X509 combination was already rejected at the material
-    // match above; if we reach here with armor=true, variant is X509Cert.
+    // STEP 11: write material to output sink. D-P6-05 / X509-05 / PGP-05: if
+    // --armor, dispatch to the per-variant armor helper (X.509 hand-rolled
+    // PEM, PGP via rpgp's to_armored_bytes). The --armor × non-X509-and-
+    // non-PGP-variant combination was already rejected at the material match
+    // above (GenericSecret) or short-circuited via NotImplemented (SshKey),
+    // so the unreachable arm here is safe. Plan 07 (D-P7-13) will reject
+    // --armor on SshKey explicitly with the widened literal — the
+    // unreachable! STAYS unreachable because the armor=true × SshKey path
+    // never makes it past the material match's NotImplemented return.
     let output_bytes: Vec<u8> = if armor {
-        pem_armor_certificate(material_bytes)
+        match &envelope.material {
+            Material::X509Cert { .. } => pem_armor_certificate(material_bytes),
+            Material::PgpKey { .. } => preview::pgp_armor(material_bytes)?,
+            _ => unreachable!(
+                "armor matrix already validated above — only X509Cert or PgpKey reach here"
+            ),
+        }
     } else {
         material_bytes.to_vec()
     };

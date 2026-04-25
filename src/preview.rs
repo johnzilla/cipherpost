@@ -502,6 +502,58 @@ fn render_ecdh(params: &PublicParams) -> String {
     }
 }
 
+/// Wrap a binary OpenPGP packet stream in the RFC 4880 ASCII-armor envelope.
+///
+/// PGP armor is crate-specific: rpgp chooses the `-----BEGIN PGP PUBLIC KEY
+/// BLOCK-----` vs `-----BEGIN PGP PRIVATE KEY BLOCK-----` header automatically
+/// based on the primary packet type (tag-6 → public, tag-5 → private). We
+/// delegate to rpgp's `to_armored_bytes` API rather than hand-rolling like we
+/// do for X.509 PEM (where the `-----BEGIN CERTIFICATE-----` header is
+/// universal regardless of key type).
+///
+/// This is the only armor emitter for PGP; armor on INPUT is permanently
+/// rejected at ingest (D-P7-05 / PGP-01) so the round-trip is binary-in /
+/// optionally-armored-out.
+///
+/// Threat T-07-15 mitigation: the BEGIN/END headers MATCH the actual primary
+/// kind because rpgp's `SignedPublicKey::to_armored_bytes` calls
+/// `armor::write(self, BlockType::PublicKey, ...)` and
+/// `SignedSecretKey::to_armored_bytes` calls
+/// `armor::write(self, BlockType::PrivateKey, ...)`. We choose the right
+/// constructor by re-using `pgp_primary_is_secret` (the same tag-5/tag-6
+/// discriminator already used by `render_pgp_preview`).
+///
+/// Error contract: every parse/serialize failure surfaces as the canonical
+/// `Error::InvalidMaterial { variant: "pgp_key", reason: "malformed PGP
+/// packet stream" }` literal — funnels through `pgp_parse_error()`, the same
+/// single source of truth shared with `render_pgp_preview` and
+/// `payload::ingest::pgp_key` (oracle-hygiene gate).
+pub fn pgp_armor(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    use pgp::composed::ArmorOptions;
+
+    // Step 1: decide block-type via the same tag-5/tag-6 discriminator used by
+    // render_pgp_preview. This is the authoritative "secret or public" signal —
+    // even if the composed parse below could in principle be tried both ways,
+    // dispatching by tag gives a single deterministic path AND ensures we never
+    // emit a PUBLIC KEY armor envelope around a SECRET KEY packet stream.
+    let is_secret = pgp_primary_is_secret(bytes)?;
+
+    // Step 2: parse via the matching composed type and re-emit as armored bytes.
+    // rpgp's to_armored_bytes() picks the BEGIN/END header from the type itself
+    // (BlockType::PublicKey vs BlockType::PrivateKey), so we don't pass headers
+    // explicitly. ArmorOptions::default() keeps include_checksum=true (CRC24
+    // line — RFC 4880 § 6.1) and headers=None.
+    if is_secret {
+        let key = SignedSecretKey::from_bytes(bytes).map_err(|_| pgp_parse_error())?;
+        key.to_armored_bytes(ArmorOptions::default())
+            .map_err(|_| pgp_parse_error())
+    } else {
+        let key = SignedPublicKey::from_bytes(bytes).map_err(|_| pgp_parse_error())?;
+        key.to_armored_bytes(ArmorOptions::default())
+            .map_err(|_| pgp_parse_error())
+    }
+}
+
 /// Subkey summary for the public-key path: `0`, or `N (alg1, alg2, ...)`.
 fn render_pgp_public_subkey_summary(subkeys: &[pgp::composed::SignedPublicSubKey]) -> String {
     if subkeys.is_empty() {
@@ -628,5 +680,46 @@ mod tests {
     #[test]
     fn pgp_uid_trunc_limit_is_64() {
         assert_eq!(PGP_UID_TRUNC_LIMIT, 64);
+    }
+
+    // --- Phase 7 Plan 03 — pgp_armor helper tests ----------------------------
+    //
+    // The full happy-path test (a real PGP fixture round-trips through
+    // pgp_armor() and yields output starting with `-----BEGIN PGP PUBLIC KEY
+    // BLOCK-----` for a public-key fixture, or `-----BEGIN PGP PRIVATE KEY
+    // BLOCK-----` for a secret-key fixture) lands in Plan 04 once a real
+    // fixture is committed. Plan 03's scope is the error-path contract: any
+    // malformed input MUST surface as the same curated `Error::InvalidMaterial
+    // { variant: "pgp_key", reason: "malformed PGP packet stream" }` literal
+    // already used by `payload::ingest::pgp_key` and `render_pgp_preview`
+    // (oracle-hygiene single-source-of-truth across all three call sites).
+    //
+    // Threats addressed: T-07-15 (header-mismatch on hand-rolled armor — we
+    // delegate to rpgp's `to_armored_bytes` so the BEGIN header matches the
+    // detected primary tag), T-07-10 / oracle-hygiene mirror (no rpgp internal
+    // error chain leaks through pgp_armor's error path).
+
+    #[test]
+    fn pgp_armor_rejects_garbage_with_curated_error() {
+        let err = pgp_armor(b"this is not a PGP packet stream").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_armor_rejects_empty_input() {
+        let err = pgp_armor(b"").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
     }
 }
