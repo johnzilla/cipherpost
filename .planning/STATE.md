@@ -4,14 +4,14 @@ milestone: v1.1
 milestone_name: Real v1
 status: planning
 stopped_at: Phase 8 context gathered — cclink survey closed; conflicts resolved; 6-plan PIN-first sequencing locked
-last_updated: "2026-04-25T18:09:26.410Z"
+last_updated: "2026-04-25T20:24:44.780Z"
 last_activity: 2026-04-25
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 15
+  total_plans: 21
   completed_plans: 15
-  percent: 100
+  percent: 71
 ---
 
 # Project State
@@ -161,5 +161,5 @@ Last session: --stopped-at
 Stopped at: Phase 8 context gathered — cclink survey closed; conflicts resolved; 6-plan PIN-first sequencing locked
 Resume file: --resume-file
 
-**Planned Phase:** 6 (Typed Material — X509Cert) — 4 plans, 2 shipped — 2026-04-24T18:22:32.720Z
+**Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
 **Next action:** `/gsd-execute-phase 6` (continues with Plan 03 — CLI `--material` flag + `Receive --armor` + run_send/run_receive wiring)
