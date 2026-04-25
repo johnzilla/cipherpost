@@ -155,3 +155,74 @@ fn dep_tree_ed25519_dalek_coexistence_shape() {
         versions
     );
 }
+
+// Phase 7 Plan 08: ssh-key 0.6.x version pin.
+// Asserts the locked dep declaration in Cargo.toml (`ssh-key = "0.6.7"` with
+// `default-features = false, features = ["alloc"]` per Plan 05's D-P7-10).
+// If `cargo update -p ssh-key` accidentally bumps the major/minor (0.7+), this
+// test fails first — Plan 06's render_ssh_preview helpers depend on the 0.6.x
+// API surface (Algorithm::as_str, KeyData::rsa/dsa/ecdsa accessors).
+#[test]
+fn dep_tree_contains_ssh_key_0_6_x() {
+    let out = Command::new("cargo")
+        .arg("tree")
+        .arg("-p")
+        .arg("ssh-key")
+        .output()
+        .expect("cargo tree -p ssh-key must run");
+    assert!(
+        out.status.success(),
+        "cargo tree -p ssh-key failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("UTF-8");
+    let first_line = stdout
+        .lines()
+        .next()
+        .expect("non-empty cargo tree output");
+    assert!(
+        first_line.starts_with("ssh-key v0.6."),
+        "Expected ssh-key v0.6.x (not 0.7, not 0.5), got: {:?}",
+        first_line
+    );
+}
+
+// Phase 7 Plan 08 / SSH-10: regression check that ssh-key 0.6.7 (added in
+// Plan 05) does NOT introduce a NEW ed25519-dalek version beyond Plan 04's
+// documented coexistence shape (2.x from pgp + 3.0.0-pre.5 from pkarr).
+//
+// Effectively duplicates `dep_tree_ed25519_dalek_coexistence_shape` — the
+// redundancy is INTENTIONAL: when this test fails, it tells the maintainer
+// SPECIFICALLY that ssh-key is suspected (e.g., a future ssh-key release
+// flipping the `ed25519` feature default would silently pull a third
+// ed25519-dalek version, defeating D-P7-22). T-07-61 mitigation.
+#[test]
+fn dep_tree_ssh_key_does_not_pull_ed25519_dalek_2_x_independently() {
+    // NOTE: we use `cargo tree` (full tree, no `-p` filter) instead of
+    // `cargo tree -p ed25519-dalek` because the latter errors out with
+    // "package specification is ambiguous" when multiple versions of the
+    // same crate are present (which is the documented coexistence shape
+    // we're guarding against drift in). Walking the full tree and counting
+    // distinct `ed25519-dalek vX.Y.Z` occurrences is the only ambiguity-
+    // free path. Mirrors the existing `dep_tree_ed25519_dalek_coexistence_shape`
+    // implementation pattern.
+    let tree = cargo_tree_text();
+    let mut versions = std::collections::HashSet::new();
+    for line in tree.lines() {
+        if let Some(start) = line.find("ed25519-dalek v") {
+            let rest = &line[start + "ed25519-dalek v".len()..];
+            let end = rest
+                .find(|c: char| c == ' ' || c == '\n' || c == '(')
+                .unwrap_or(rest.len());
+            versions.insert(rest[..end].to_string());
+        }
+    }
+    assert!(
+        versions.len() <= 2,
+        "ssh-key 0.6.7 is supposed to NOT pull a new ed25519-dalek version. \
+         Found {} distinct versions: {:?}. Investigate ssh-key feature drift (e.g., \
+         a future release flipping the `ed25519` feature default).",
+        versions.len(),
+        versions
+    );
+}
