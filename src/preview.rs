@@ -281,4 +281,51 @@ mod tests {
         // available; here we assert the constant alone.
         assert_eq!(SEPARATOR_DASH_COUNT, 57);
     }
+
+    // --- Phase 7 Plan 02 — render_pgp_preview tests --------------------------
+    //
+    // Helper-and-error-path tests live here. Full fixture-backed golden-string
+    // tests for the public-key + secret-key happy paths land in Plan 04 in
+    // `tests/pgp_banner_render.rs` once a real PGP fixture is committed.
+    //
+    // Behavior contract under test:
+    //   1. Garbage input → Err(InvalidMaterial { variant: "pgp_key",
+    //      reason: "malformed PGP packet stream" }), never panics.
+    //   2. Empty input → same.
+    //   3. PGP_SEPARATOR_DASH_COUNT constant pinned at 53 (CONTEXT.md §specifics).
+    //   4. PGP_UID_TRUNC_LIMIT constant pinned at 64 (D-P7-08).
+
+    #[test]
+    fn render_pgp_preview_rejects_garbage_generically() {
+        let err = render_pgp_preview(b"this is not a PGP packet stream").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn render_pgp_preview_rejects_empty_input() {
+        let err = render_pgp_preview(b"").unwrap_err();
+        match err {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "malformed PGP packet stream");
+            }
+            other => panic!("expected InvalidMaterial, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pgp_separator_dash_count_is_53() {
+        assert_eq!(PGP_SEPARATOR_DASH_COUNT, 53);
+    }
+
+    #[test]
+    fn pgp_uid_trunc_limit_is_64() {
+        assert_eq!(PGP_UID_TRUNC_LIMIT, 64);
+    }
 }
