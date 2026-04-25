@@ -14,6 +14,10 @@ fn fixture_signable() -> OuterRecordSignable {
     OuterRecordSignable {
         blob: "AAAA".into(),
         created_at: 1_700_000_000,
+        // Phase 8 Plan 01: pin_required defaults to false; `is_false`
+        // skip_serializing_if elides this from JCS bytes — fixture stays
+        // 192 bytes byte-for-byte identical to v1.0.
+        pin_required: false,
         protocol_version: 1,
         pubkey: "pk-placeholder-z32".into(),
         recipient: Some("rcpt-placeholder-z32".into()),

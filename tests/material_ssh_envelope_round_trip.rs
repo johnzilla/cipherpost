@@ -24,6 +24,7 @@ fn canonical_ssh_bytes() -> Vec<u8> {
 
 fn fixture_envelope() -> Envelope {
     Envelope {
+        burn_after_read: false,
         created_at: 1_700_000_000,
         material: Material::SshKey {
             bytes: canonical_ssh_bytes(),

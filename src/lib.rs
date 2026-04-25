@@ -19,6 +19,15 @@ pub mod transport;
 
 pub use error::Error;
 
+/// Phase 8 Plan 01 (D-P8-03 / D-P8-04 / AD-2): serde `skip_serializing_if`
+/// predicate for boolean "default-elide-on-false" wire fields. Used by
+/// `OuterRecord(Signable).pin_required` and `Envelope.burn_after_read` to
+/// preserve v1.0 JCS byte-identity for non-pin / non-burn shares
+/// (no protocol_version bump required for additive optional bool fields).
+pub(crate) fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// Wire protocol version. Written into every signed OuterRecordSignable and Envelope.
 /// Bumping this invalidates every previously issued share.
 pub const PROTOCOL_VERSION: u16 = 1;

@@ -13,6 +13,7 @@ const DER_FIXTURE: &[u8] = include_bytes!("fixtures/x509_cert_fixture.der");
 
 fn fixture_envelope() -> Envelope {
     Envelope {
+        burn_after_read: false,
         created_at: 1_700_000_000,
         material: Material::X509Cert {
             bytes: DER_FIXTURE.to_vec(),

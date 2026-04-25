@@ -13,6 +13,7 @@ const PGP_FIXTURE: &[u8] = include_bytes!("fixtures/material_pgp_fixture.pgp");
 
 fn fixture_envelope() -> Envelope {
     Envelope {
+        burn_after_read: false,
         created_at: 1_700_000_000,
         material: Material::PgpKey {
             bytes: PGP_FIXTURE.to_vec(),

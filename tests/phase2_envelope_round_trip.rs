@@ -10,6 +10,10 @@ const FIXTURE_PATH: &str = "tests/fixtures/envelope_jcs_generic_secret.bin";
 
 fn fixture_envelope() -> Envelope {
     Envelope {
+        // Phase 8 Plan 01: burn_after_read defaults to false; `is_false`
+        // skip_serializing_if elides this from JCS bytes — fixture stays
+        // byte-for-byte identical to v1.0.
+        burn_after_read: false,
         created_at: 1_700_000_000,
         material: Material::generic_secret(vec![0, 1, 2, 3]),
         protocol_version: PROTOCOL_VERSION,

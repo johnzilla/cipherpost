@@ -27,6 +27,12 @@ pub const SHARE_REF_HEX_LEN: usize = SHARE_REF_BYTES * 2;
 pub struct OuterRecord {
     pub blob: String,
     pub created_at: i64,
+    /// Phase 8 Plan 01 (D-P8-03, PIN-04): true ⇒ this share is PIN-protected.
+    /// Outer-signed; pre-decrypt readable so the receiver knows to prompt for PIN
+    /// BEFORE attempting age-decrypt. `is_false` elides on the wire when false,
+    /// preserving v1.0 byte-identity for non-pin shares.
+    #[serde(default, skip_serializing_if = "crate::is_false")]
+    pub pin_required: bool,
     pub protocol_version: u16,
     pub pubkey: String,
     pub recipient: Option<String>,
@@ -42,6 +48,10 @@ pub struct OuterRecord {
 pub struct OuterRecordSignable {
     pub blob: String,
     pub created_at: i64,
+    /// Phase 8 Plan 01 (D-P8-03, PIN-04): mirror of `OuterRecord.pin_required`;
+    /// included in JCS bytes that the inner Ed25519 signature covers.
+    #[serde(default, skip_serializing_if = "crate::is_false")]
+    pub pin_required: bool,
     pub protocol_version: u16,
     pub pubkey: String,
     pub recipient: Option<String>,
@@ -54,6 +64,7 @@ impl From<&OuterRecord> for OuterRecordSignable {
         OuterRecordSignable {
             blob: r.blob.clone(),
             created_at: r.created_at,
+            pin_required: r.pin_required,
             protocol_version: r.protocol_version,
             pubkey: r.pubkey.clone(),
             recipient: r.recipient.clone(),
@@ -174,6 +185,7 @@ mod tests {
         let signable = OuterRecordSignable {
             blob: "dGVzdA".into(),
             created_at: 1_700_000_000,
+            pin_required: false,
             protocol_version: PROTOCOL_VERSION,
             pubkey: kp.public_key().to_z32(),
             recipient: None,
@@ -184,6 +196,7 @@ mod tests {
         let record = OuterRecord {
             blob: signable.blob.clone(),
             created_at: signable.created_at,
+            pin_required: signable.pin_required,
             protocol_version: signable.protocol_version,
             pubkey: signable.pubkey.clone(),
             recipient: signable.recipient.clone(),
@@ -201,6 +214,7 @@ mod tests {
         let signable = OuterRecordSignable {
             blob: "dGVzdA".into(),
             created_at: 1,
+            pin_required: false,
             protocol_version: 1,
             pubkey: kp.public_key().to_z32(),
             recipient: None,
@@ -211,6 +225,7 @@ mod tests {
         let record = OuterRecord {
             blob: "TAMPERED".into(), // differs from what was signed
             created_at: 1,
+            pin_required: false,
             protocol_version: 1,
             pubkey: signable.pubkey.clone(),
             recipient: None,

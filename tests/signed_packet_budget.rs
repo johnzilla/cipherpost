@@ -26,6 +26,7 @@ fn representative_outer_record_fits_in_1000_bytes() {
     let signable = OuterRecordSignable {
         blob: blob.clone(),
         created_at,
+        pin_required: false,
         protocol_version: PROTOCOL_VERSION,
         pubkey: kp.public_key().to_z32(),
         recipient: Some(kp.public_key().to_z32()), // worst case: share mode, recipient present
@@ -36,6 +37,7 @@ fn representative_outer_record_fits_in_1000_bytes() {
     let record = OuterRecord {
         blob: signable.blob,
         created_at: signable.created_at,
+        pin_required: signable.pin_required,
         protocol_version: signable.protocol_version,
         pubkey: signable.pubkey,
         recipient: signable.recipient,

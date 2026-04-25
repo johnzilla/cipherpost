@@ -27,6 +27,7 @@ fn minimal_outer_record(kp: &pkarr::Keypair) -> OuterRecord {
     let signable = OuterRecordSignable {
         blob: "AAAA".to_string(),
         created_at: 1_700_000_000,
+        pin_required: false,
         protocol_version: PROTOCOL_VERSION,
         pubkey: kp.public_key().to_z32(),
         recipient: None,
@@ -37,6 +38,7 @@ fn minimal_outer_record(kp: &pkarr::Keypair) -> OuterRecord {
     OuterRecord {
         blob: signable.blob,
         created_at: signable.created_at,
+        pin_required: signable.pin_required,
         protocol_version: signable.protocol_version,
         pubkey: signable.pubkey,
         recipient: signable.recipient,

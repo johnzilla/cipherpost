@@ -33,6 +33,7 @@ fn expired_share_aborts_with_error_expired_exit_2() {
     let signable = OuterRecordSignable {
         blob: blob.clone(),
         created_at,
+        pin_required: false,
         protocol_version: PROTOCOL_VERSION,
         pubkey: kp.public_key().to_z32(),
         recipient: None,
@@ -43,6 +44,7 @@ fn expired_share_aborts_with_error_expired_exit_2() {
     let record = OuterRecord {
         blob,
         created_at,
+        pin_required: false,
         protocol_version: PROTOCOL_VERSION,
         pubkey: kp.public_key().to_z32(),
         recipient: None,

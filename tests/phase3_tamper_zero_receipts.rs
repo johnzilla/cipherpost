@@ -75,6 +75,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
     let signable = OuterRecordSignable {
         blob: garbage_blob_b64.clone(),
         created_at,
+        pin_required: false,
         protocol_version: PROTOCOL_VERSION,
         pubkey: a_z32.clone(),
         recipient: Some(b_z32.clone()),
@@ -85,6 +86,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
     let tampered_record = OuterRecord {
         blob: signable.blob,
         created_at: signable.created_at,
+        pin_required: signable.pin_required,
         protocol_version: signable.protocol_version,
         pubkey: signable.pubkey,
         recipient: signable.recipient,

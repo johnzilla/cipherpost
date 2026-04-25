@@ -29,6 +29,12 @@ pub const PLAINTEXT_CAP: usize = 65536;
 /// is pre-encryption plaintext. A manual impl Debug below redacts the material.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Envelope {
+    /// Phase 8 Plan 01 (D-P8-04, BURN-01): true ⇒ this share is burn-after-read.
+    /// Inner-signed (post-decrypt); DHT observers do NOT see this flag.
+    /// `is_false` elides on the wire when false, preserving v1.0 byte-identity
+    /// for non-burn shares. Alphabetic FIRST position (`b` < `c` for created_at).
+    #[serde(default, skip_serializing_if = "crate::is_false")]
+    pub burn_after_read: bool,
     pub created_at: i64,
     pub material: Material,
     pub protocol_version: u16,
@@ -38,6 +44,7 @@ pub struct Envelope {
 impl std::fmt::Debug for Envelope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Envelope")
+            .field("burn_after_read", &self.burn_after_read)
             .field("created_at", &self.created_at)
             .field("material", &self.material) // Material has its own redacting Debug
             .field("protocol_version", &self.protocol_version)
@@ -233,6 +240,7 @@ mod tests {
 
     fn sample_envelope() -> Envelope {
         Envelope {
+            burn_after_read: false,
             created_at: 1_700_000_000,
             material: Material::generic_secret(vec![0, 1, 2, 3]),
             protocol_version: crate::PROTOCOL_VERSION,

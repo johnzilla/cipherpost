@@ -262,6 +262,10 @@ pub fn run_send(
     // 5. build Envelope + JCS-serialize
     let created_at = now_unix_seconds()?;
     let envelope = Envelope {
+        // Phase 8 Plan 01: Task 3 wires this to a `burn: bool` fn param;
+        // Task 2 just lands the field with a stable default to keep the
+        // build green between tasks.
+        burn_after_read: false,
         created_at,
         material,
         protocol_version: PROTOCOL_VERSION,
@@ -316,6 +320,10 @@ pub fn run_send(
         let signable = OuterRecordSignable {
             blob: blob.clone(),
             created_at,
+            // Phase 8 Plan 01: Task 3 will derive this from `pin_setup.is_some()`;
+            // Task 2 just lands the field with a stable default to keep the
+            // build green between tasks.
+            pin_required: false,
             protocol_version: PROTOCOL_VERSION,
             pubkey: identity.z32_pubkey(),
             recipient: recipient_z32_option.clone(),
@@ -326,6 +334,7 @@ pub fn run_send(
         let record = OuterRecord {
             blob,
             created_at,
+            pin_required: false,
             protocol_version: PROTOCOL_VERSION,
             pubkey: identity.z32_pubkey(),
             recipient: recipient_z32_option.clone(),
