@@ -1,27 +1,52 @@
-tests/fixtures/material_ssh_fixture.openssh-v1 — reproduction note
-==================================================================
+tests/fixtures/material_ssh_fixture*.openssh-v1 — reproduction notes
+====================================================================
 
-This file is an Ed25519 OpenSSH v1 ASCII-armored private key, generated
+These files are OpenSSH v1 ASCII-armored private-key fixtures, generated
 once and committed verbatim. We do NOT regenerate at CI time because
 key generation uses OS randomness — the same recipe produces a different
-key each run.
+key each run; only the format + algorithm + comment ("") are deterministic.
 
-The fixture exists for two purposes:
+Files
+-----
 
+  material_ssh_fixture.openssh-v1          Ed25519, empty comment, no passphrase
+                                            (387 B; happy-path / canonical-bytes /
+                                             banner / round-trip + wire-budget tests)
+  material_ssh_fixture_rsa1024.openssh-v1  RSA 1024-bit, empty comment, no passphrase
+                                            (1020 B; for the RSA<2048 [DEPRECATED] tag
+                                             test in tests/ssh_banner_render.rs)
+
+  (DSA fixture: NOT committed. See "DSA fixture status" below.)
+
+Material::SshKey JCS envelope fixture
+  material_ssh_signable.bin                JCS bytes of an Envelope{SshKey{bytes:
+                                            CANONICAL_RE_ENCODED_ED25519}} — pins
+                                            byte-identity across runs (SSH-07).
+                                            Note: bytes stored in Material::SshKey
+                                            are the CANONICAL re-encoded form per
+                                            D-P7-11 (ssh-key::PrivateKey::to_openssh
+                                            (LineEnding::LF)). To regenerate, run
+                                            `cargo test --test material_ssh_envelope_round_trip
+                                            -- --ignored regenerate_material_ssh_envelope_fixture`.
+
+The fixture is used for:
   1. Empirical byte-determinism guard test
      (src/payload/ingest.rs::ssh_tests::ssh_key_canonical_re_encode_is_byte_deterministic)
      — validates D-P7-11 on ssh-key 0.6.7's PrivateKey::from_openssh +
      to_openssh(LineEnding::LF) round-trip.
-  2. Phase 7 Plan 08 round-trip / banner-render tests build on the same
-     fixture — Plan 05 commits it; Plan 08 references it.
+  2. Phase 7 Plan 08 round-trip / banner-render / ingest / envelope tests
+     reference the same fixture files.
 
-Recipe (requires OpenSSH client tools):
+Recipes (require OpenSSH client tools)
+--------------------------------------
 
   ssh-keygen -t ed25519 -C "" -N "" -f /tmp/cipherpost_ssh_fixture_key
-
   cp /tmp/cipherpost_ssh_fixture_key tests/fixtures/material_ssh_fixture.openssh-v1
 
-The key is unencrypted (-N "" → empty passphrase). Cipherpost's ingest
+  ssh-keygen -t rsa -b 1024 -C "" -N "" -f /tmp/cipherpost_ssh_rsa1024_fixture
+  cp /tmp/cipherpost_ssh_rsa1024_fixture tests/fixtures/material_ssh_fixture_rsa1024.openssh-v1
+
+The keys are unencrypted (-N "" → empty passphrase). Cipherpost's ingest
 pipeline NEVER asks the user to encrypt material — it accepts whatever
 OpenSSH v1 PrivateKey blob the user supplies, then encrypts the WHOLE
 envelope under age (X25519, recipient-targeted). Encrypted-at-rest SSH
@@ -29,21 +54,66 @@ keys are out of scope for this milestone (D-P7-12 user-facing message
 points users at `ssh-keygen -p -o -f <path>` for format conversion ONLY,
 not encryption removal).
 
-Algorithm: Ed25519 (the simplest OpenSSH v1 algorithm; no RSA modulus
-parameterization, no EC curve choice — research D-P7-10 confirmed
-ed25519 parsing works without the `ed25519` cargo feature on ssh-key
-0.6.7 because the parse path uses `sha2` unconditionally).
+DSA fixture status (Plan 08 Task 1 deferral)
+--------------------------------------------
 
-File size: 387 bytes (small, fits comfortably under the 64 KB plaintext
-cap with room for the age envelope overhead).
+Modern OpenSSH (system ssh-keygen) refuses DSA generation:
 
-SHA-256 of the committed file (recorded at generation time):
+  $ ssh-keygen -t dsa -C "" -N "" -f /tmp/dsa
+  unknown key type dsa
+
+Generation alternatives considered:
+  (a) Older-OpenSSH host (8.x) — not available in the build environment.
+  (b) ssh-key crate's KeyGen API in an examples/ binary — requires turning on
+      the `dsa` and `rand_core` features on ssh-key, which would expand the
+      supply-chain surface (pulling the `dsa` crate). D-P7-10's verified-clean
+      ssh-key shape uses `default-features = false, features = ["alloc"]`;
+      adding DSA generation features just for one fixture violates that
+      invariant.
+  (c) Curated DSA fixture from an external test-data repo — unaudited;
+      rejected for the same supply-chain hygiene reason.
+
+Decision: SKIP the DSA fixture for Plan 08 (per the plan's <action> Step A
+fallback option 3). The RSA-1024 fixture covers the [DEPRECATED] tag
+golden-string assertion (RSA<2048 case). DSA-deprecation rendering is
+covered indirectly by:
+  - src/preview.rs::tests::is_deprecated_ssh_algorithm_dsa_always_deprecated
+    (Plan 06 unit test pinning the predicate logic — DSA at any size is
+    flagged deprecated).
+  - tests/ssh_banner_render.rs::render_ssh_preview_dsa_carries_deprecated_tag
+    is OMITTED from this plan's test file. SUMMARY.md records the rationale.
+
+Wire-budget posture (D-P7-03 fallback active per research GAP for SSH)
+----------------------------------------------------------------------
+
+  Minimum Ed25519 OpenSSH v1 PEM:  387 B (measured; raw fixture file)
+  Predicted encoded packet (4.16x): ~1610 B
+  PKARR BEP44 ceiling:              1000 B
+  Verdict: SSH does NOT round-trip at any size today.
+  tests/ssh_roundtrip.rs's `ssh_self_round_trip_recovers_canonical_bytes`
+  is `#[ignore]`'d FROM DAY 1 with the EXACT note text per D-P7-03:
+    "wire-budget: minimum OpenSSH v1 Ed25519 blob exceeds 1000-byte
+     BEP44 ceiling (~1340 B encoded) — see Pitfall #22 / v1.2 milestone"
+
+  RSA-1024 fixture (1020 B raw) is even larger — used ONLY as a
+  banner-render fixture (preview path, no wire transit involved).
+
+SHA-256 of committed files
+--------------------------
+
   3cb6b44426bd6c004348a65d8c42b694e7256df6bbd3d361528c59025acf1e46  material_ssh_fixture.openssh-v1
+  57db1cd9b49fe9b58a0d721a01a498b114a1be71dfb3ecbf969d69c0caf280ed  material_ssh_fixture_rsa1024.openssh-v1
 
-Public key (for reference; the full pub line lives at the original
-ssh-keygen output `tests/fixtures/material_ssh_fixture.openssh-v1.pub`
-if regenerated, but we only commit the private half — Phase 7 Plan 06
-preview rendering recovers the public half from the private file):
+  (DSA fixture: not committed)
+  (material_ssh_signable.bin: regenerate via `cargo test --test
+   material_ssh_envelope_round_trip -- --ignored
+   regenerate_material_ssh_envelope_fixture`; SHA pinned by the byte-identity
+   test in that file.)
+
+Public-key reference (Ed25519 fixture)
+--------------------------------------
+
   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJFHrl4QVZLni+CoonIHDhIGt+ayrVNH7YjeAidxtlJE
 
-Generated: 2026-04-24, OpenSSH ssh-keygen (system OpenSSH client).
+Generated: Ed25519 + reproduction note authored 2026-04-24 (Plan 05);
+RSA-1024 + DSA-skip note added 2026-04-25 (Plan 08). System OpenSSH client.
