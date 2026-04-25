@@ -56,6 +56,16 @@ pub mod hkdf_infos {
     /// HKDF domain for inner-payload key derivation (reserved in Phase 2).
     pub const INNER_PAYLOAD: &str = "cipherpost/v1/inner-payload";
 
+    /// Phase 8 Plan 01 (D-P8-02): HKDF info string for PIN-derived second-factor
+    /// share encryption. Shape: Argon2id(pin, salt) → HKDF-SHA256 with this info
+    /// → 32-byte X25519 scalar wrapped into an age Identity.
+    ///
+    /// INVARIANT: never inline the literal in `hk.expand(...)` calls — always
+    /// reference this constant. The grep-based `tests/hkdf_info_enumeration.rs`
+    /// scan only sees module constants; an inline literal silently bypasses
+    /// the namespace-prefix invariant test.
+    pub const PIN: &str = "cipherpost/v1/pin";
+
     // Phase 3 adds: RECEIPT_SIGN
 }
 
