@@ -248,10 +248,19 @@ fn dispatch(cli: Cli) -> Result<()> {
             let uri = cipherpost::ShareUri::parse(&share_str)?;
 
             // D-RECV-02: sentinel-first — BEFORE passphrase resolution.
-            if let Some(accepted_at) = cipherpost::flow::check_already_accepted(&uri.share_ref_hex)
-            {
-                eprintln!("already accepted at {}; not re-decrypting", accepted_at);
-                return Ok(());
+            // Phase 8 Plan 03 (D-P8-10): pattern-match on `LedgerState`. The
+            // `Burned` arm is the structural hook Plan 04 lights up at the
+            // write side; until burn rows exist on disk it never fires.
+            match cipherpost::flow::check_already_consumed(&uri.share_ref_hex) {
+                cipherpost::flow::LedgerState::None => { /* proceed */ }
+                cipherpost::flow::LedgerState::Accepted { accepted_at } => {
+                    eprintln!("already accepted at {}; not re-decrypting", accepted_at);
+                    return Ok(());
+                }
+                cipherpost::flow::LedgerState::Burned { burned_at } => {
+                    eprintln!("share already consumed (burned at {})", burned_at);
+                    return Err(cipherpost::Error::Declined.into());
+                }
             }
 
             // D-P5-01 precedence (enforced in resolve_passphrase body): fd > file > env > TTY.

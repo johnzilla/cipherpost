@@ -104,30 +104,93 @@ pub fn state_dir() -> PathBuf {
     crate::identity::key_dir().join("state")
 }
 
-fn accepted_dir() -> PathBuf {
+/// Phase 8 Plan 03 (W5): bumped from private to `pub(crate)` so external
+/// integration tests under `tests/` can use the same path-construction logic
+/// rather than duplicating the layout (which silently drifts if the helpers
+/// ever change). The `test_paths` re-export module below makes them visible
+/// to integration tests under `cfg(any(test, feature = "mock"))`.
+pub(crate) fn accepted_dir() -> PathBuf {
     state_dir().join("accepted")
 }
 
-fn sentinel_path(share_ref_hex: &str) -> PathBuf {
+pub(crate) fn sentinel_path(share_ref_hex: &str) -> PathBuf {
     accepted_dir().join(share_ref_hex)
 }
 
-fn ledger_path() -> PathBuf {
+pub(crate) fn ledger_path() -> PathBuf {
     state_dir().join("accepted.jsonl")
 }
 
-// ---- check_already_accepted -------------------------------------------------
-
-/// RECV-06 step 1: if the sentinel file exists, return `Some(accepted_at_string)`
-/// by scanning the ledger for the matching share_ref. At skeleton traffic (1-100
-/// shares/week per D-STATE-03) a linear scan is cheapest; rotation is deferred.
+/// Phase 8 Plan 03 (W5): cfg-gated re-export of path helpers for integration
+/// tests. Visible ONLY under `cfg(any(test, feature = "mock"))` so production
+/// builds do not expose internal layout in the public API surface. Plans 04
+/// and 05 import via `use cipherpost::flow::test_paths::{...}`.
 ///
-/// Returns `None` if not yet accepted. If the sentinel exists but no matching
-/// ledger entry is found, returns `Some("<unknown; ...>")` so callers still
-/// short-circuit — the sentinel alone is authoritative for "don't re-decrypt".
-pub fn check_already_accepted(share_ref_hex: &str) -> Option<String> {
+/// Implementation note: Rust forbids `pub use` of `pub(crate)` items
+/// (E0364), so this module exposes thin `pub fn` wrappers that delegate to
+/// the inner `pub(crate)` helpers. The wrappers compile out entirely when
+/// neither `cfg(test)` nor `feature = "mock"` is set.
+#[cfg(any(test, feature = "mock"))]
+pub mod test_paths {
+    use std::path::PathBuf;
+
+    pub fn state_dir() -> PathBuf {
+        super::state_dir()
+    }
+
+    pub fn accepted_dir() -> PathBuf {
+        super::accepted_dir()
+    }
+
+    pub fn sentinel_path(share_ref_hex: &str) -> PathBuf {
+        super::sentinel_path(share_ref_hex)
+    }
+
+    pub fn ledger_path() -> PathBuf {
+        super::ledger_path()
+    }
+}
+
+// ---- LedgerState + check_already_consumed -----------------------------------
+
+/// Phase 8 Plan 03 (D-P8-10): three-state ledger return type.
+///
+/// `None` — no record; receive is fresh.
+/// `Accepted` — already accepted via v1.0 idempotent flow OR Phase 8 non-burn flow;
+///              re-receive is a no-op success.
+/// `Burned` — already accepted via Phase 8 burn flow; re-receive returns exit 7
+///            (`Error::Declined`).
+///
+/// v1.0 rows on disk have no `state` field; they deserialize via serde default
+/// to `state: None` and the caller maps that to `LedgerState::Accepted`.
+/// Phase 8 burn rows write `state: "burned"` explicitly (Plan 04 wires the
+/// write side; Plan 03 ships the schema + read-side branching).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LedgerState {
+    None,
+    Accepted { accepted_at: String },
+    Burned { burned_at: String },
+}
+
+/// RECV-06 step 1 (Phase 8 Plan 03 rename + extension): if the sentinel exists,
+/// scan the ledger for the matching share_ref and return the full state.
+/// Plan 04 lights up the `Burned` write side at the receive-flow site.
+///
+/// Returns `LedgerState::None` if no sentinel.
+/// Returns `LedgerState::Accepted` if sentinel exists and the ledger row has
+/// no `state` field (v1.0) OR `state: "accepted"`. v1.0 rows on disk MUST
+/// continue to deserialize correctly — that's the migration contract.
+/// Returns `LedgerState::Burned` if sentinel exists and the ledger row carries
+/// `state: "burned"` (Phase 8 burn flow — Plan 04 writes these rows).
+///
+/// At skeleton traffic (1-100 shares/week per D-STATE-03) a linear scan is
+/// cheapest; rotation is deferred. If the sentinel exists but no matching
+/// ledger entry is found, returns `LedgerState::Accepted { accepted_at:
+/// "<unknown; ...>" }` so callers still short-circuit — the sentinel alone is
+/// authoritative for "don't re-decrypt".
+pub fn check_already_consumed(share_ref_hex: &str) -> LedgerState {
     if !sentinel_path(share_ref_hex).exists() {
-        return None;
+        return LedgerState::None;
     }
     // Scan accepted.jsonl for the matching share_ref.
     if let Ok(data) = fs::read_to_string(ledger_path()) {
@@ -138,15 +201,29 @@ pub fn check_already_accepted(share_ref_hex: &str) -> Option<String> {
             // Parse to be exact (avoid false matches in purpose text).
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                 if v.get("share_ref").and_then(|s| s.as_str()) == Some(share_ref_hex) {
-                    if let Some(s) = v.get("accepted_at").and_then(|s| s.as_str()) {
-                        return Some(s.to_string());
-                    }
+                    let ts = v
+                        .get("accepted_at")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("<unknown>")
+                        .to_string();
+                    let state_str = v.get("state").and_then(|s| s.as_str());
+                    return match state_str {
+                        Some("burned") => LedgerState::Burned { burned_at: ts },
+                        // None (v1.0 rows; serde default) OR Some("accepted")
+                        // both map to the v1.0 idempotent-success path. Unknown
+                        // state values are treated CONSERVATIVELY as Accepted —
+                        // never silently classify Accepted as Burned (T-08-17).
+                        _ => LedgerState::Accepted { accepted_at: ts },
+                    };
                 }
             }
         }
     }
-    // Sentinel present but no ledger line → sentinel still wins.
-    Some("<unknown; sentinel exists but ledger missing>".to_string())
+    // Sentinel present but no ledger line → sentinel still wins; Accepted with
+    // a synthetic timestamp so the caller's idempotent-success path runs.
+    LedgerState::Accepted {
+        accepted_at: "<unknown; sentinel exists but ledger missing>".to_string(),
+    }
 }
 
 // ---- MaterialSource / OutputSink -------------------------------------------
@@ -470,12 +547,26 @@ pub fn run_receive(
     prompter: &dyn Prompter,
     armor: bool,
 ) -> Result<(), Error> {
-    // STEP 1: sentinel-check (no network, no passphrase)
-    if let Some(accepted_at) = check_already_accepted(&uri.share_ref_hex) {
-        // NOTE: purpose/material intentionally NOT included — D-RECV-01
-        // invariant: no envelope field surfaced before acceptance.
-        eprintln!("already accepted at {}; not re-decrypting", accepted_at);
-        return Ok(());
+    // STEP 1: sentinel-check (no network, no passphrase). Phase 8 Plan 03
+    // (D-P8-10): pattern-match on the typed `LedgerState` return; the
+    // `Burned` arm is the structural hook that Plan 04 lights up at the
+    // write side (until burn rows exist on disk it never fires).
+    //
+    // NOTE: purpose/material intentionally NOT included in the eprintln —
+    // D-RECV-01 invariant: no envelope field surfaced before acceptance.
+    match check_already_consumed(&uri.share_ref_hex) {
+        LedgerState::None => { /* proceed with full receive flow */ }
+        LedgerState::Accepted { accepted_at } => {
+            eprintln!("already accepted at {}; not re-decrypting", accepted_at);
+            return Ok(());
+        }
+        LedgerState::Burned { burned_at } => {
+            // Plan 04 will write `state: "burned"` rows; until then this arm
+            // is dormant. When it fires: receive declines with exit 7 and a
+            // user-facing message explaining single-consumption semantics.
+            eprintln!("share already consumed (burned at {})", burned_at);
+            return Err(Error::Declined);
+        }
     }
 
     // STEP 2 + 3: transport.resolve() does outer PKARR sig check (pkarr
@@ -743,7 +834,7 @@ pub fn run_receive(
         transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
 
         // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
-        // check_already_accepted linear-scan handles 2-rows-per-share (last-wins).
+        // check_already_consumed linear-scan handles 2-rows-per-share (last-wins).
         // The receipt is already on the DHT — a ledger failure here is still
         // non-fatal, and falls under the same warn+degrade path.
         let iso = iso8601_utc_now()?;
@@ -987,6 +1078,17 @@ struct LedgerEntry<'a> {
     receipt_published_at: Option<&'a str>,
     sender: &'a str,
     share_ref: &'a str,
+    /// Phase 8 Plan 03 (D-P8-10): None | Some("accepted") | Some("burned").
+    /// v1.0 rows have no `state` field; they elide on the wire AND deserialize
+    /// via serde default to None (read path in `check_already_consumed` maps
+    /// None to `LedgerState::Accepted`). Plan 04 wires writes with
+    /// `Some("burned")` from a peer helper `append_ledger_entry_with_state`.
+    /// Plan 03 baseline: every existing write site passes `state: None` so the
+    /// JCS bytes for v1.0 rows stay byte-identical (skip_serializing_if elides
+    /// the key when None — no protocol_version bump, no JCS-byte-identity
+    /// regression for non-burn shares).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<&'a str>,
 }
 
 fn append_ledger_entry(
@@ -1009,6 +1111,11 @@ fn append_ledger_entry(
         receipt_published_at: None, // step 12 writes null; step 13 appends a success row
         sender: sender_z32,
         share_ref,
+        // Phase 8 Plan 03: None elides on the wire AND maps to
+        // LedgerState::Accepted on read. Plan 04 introduces a peer helper
+        // `append_ledger_entry_with_state` that passes Some("burned") for
+        // burn-mode shares.
+        state: None,
     };
     // JCS guarantees alphabetical key order (mirrors on-wire convention
     // elsewhere). Append a newline for jsonl framing.
@@ -1030,7 +1137,7 @@ fn append_ledger_entry(
 /// D-SEQ-05: append a second ledger row with `receipt_published_at: Some(iso)`
 /// after a successful Plan-03 step-13 publish_receipt. Append-only; the earlier
 /// row (from step 12, with receipt_published_at: None) stays in the file.
-/// `check_already_accepted` linear-scan already returns last-match-wins.
+/// `check_already_consumed` linear-scan already returns last-match-wins.
 ///
 /// Pitfall #4: ciphertext_hash / cleartext_hash are passed IN (pre-computed at
 /// step 12) rather than recomputed here — two hashing call-sites = two sources
@@ -1053,6 +1160,9 @@ fn append_ledger_entry_with_receipt(
         receipt_published_at: Some(receipt_published_at_iso),
         sender: sender_z32,
         share_ref,
+        // Phase 8 Plan 03: receipt-row flavor of the ledger entry inherits the
+        // None default — receipt success is orthogonal to burn semantics.
+        state: None,
     };
     let mut line = crypto::jcs_serialize(&entry)?;
     line.push(b'\n');
