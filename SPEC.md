@@ -151,9 +151,7 @@ Tagged enum; Rust-level serde directives: `#[serde(tag = "type", rename_all = "s
 
 **cipherpost/v1.0 shipped:** `generic_secret` only.
 **cipherpost/v1.1 (Phase 6) adds:** `x509_cert { bytes }`.
-**cipherpost/v1.1 (Phase 7) adds:** `pgp_key { bytes }`.
-**Reserved for Phase 7 Plan 05+:** `ssh_key` (dispatch returns `Error::NotImplemented { phase: 7 }`
-at both `main.rs::dispatch` and `flow::run_send` — exit 1).
+**cipherpost/v1.1 (Phase 7) adds:** `pgp_key { bytes }` and `ssh_key { bytes }`.
 
 **`generic_secret` wire form:**
 ```json
@@ -1006,8 +1004,8 @@ cipherpost identity (or vice versa) will fail at the HKDF step. This domain sepa
 deliberate and tested via `tests/hkdf_info_enumeration.rs`.
 
 The cipherpost delta from cclink lives purely at the payload and flow layer:
-1. **Typed payload schema** — `Envelope` with `Material` enum (`generic_secret` implemented;
-   `x509_cert`, `pgp_key`, `ssh_key` reserved for v1.0+).
+1. **Typed payload schema** — `Envelope` with `Material` enum (`generic_secret` shipped in v1.0;
+   `x509_cert` added in v1.1 Phase 6; `pgp_key` and `ssh_key` added in v1.1 Phase 7).
 2. **Explicit acceptance step** — §5.2 step 9; the recipient MUST paste the sender's full
    52-char z-base-32 pubkey to confirm (no `y`, no `--yes` flag). This prevents
    MFA-fatigue-style prompt bombing.
