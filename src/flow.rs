@@ -507,13 +507,71 @@ pub fn run_receive(
     // distinguishable error class vs. a true signature failure. No test
     // discriminates base64-decode from sig-canonical-mismatch (both funnel
     // through Display → D-16 unified string).
-    let ciphertext = base64::engine::general_purpose::STANDARD
+    let blob_bytes = base64::engine::general_purpose::STANDARD
         .decode(&record.blob)
         .map_err(|_| Error::SignatureCanonicalMismatch)?;
     let seed = identity.signing_seed();
     let x25519_secret = crypto::ed25519_to_x25519_secret(&seed);
     let age_id = crypto::identity_from_x25519_bytes(&x25519_secret)?;
-    let jcs_plain: Zeroizing<Vec<u8>> = crypto::age_decrypt(&ciphertext, &age_id)?;
+
+    // STEP 6a (Phase 8 Plan 02): PIN dispatch when record.pin_required.
+    //
+    // Tamper-zero invariant: outer-verify (STEP 2/3) MUST be complete before
+    // this point. PIN prompt happens BEFORE age-decrypt so a tampered share
+    // never reaches the prompt — exit 3 sig failure with no PIN-prompt side
+    // effect (D-P8-07 ordering).
+    //
+    // Wire shape (D-P8-05): blob = base64(salt[32] || outer_age_ct) when
+    // pin_required=true; salt is OUTSIDE both age layers because the receiver
+    // needs it BEFORE any age-decrypt (to derive pin_recipient).
+    //
+    // Wrong PIN at the inner age-decrypt step funnels through the existing
+    // crypto::age_decrypt error mapping → Error::DecryptFailed (exit 4),
+    // IDENTICAL to wrong-passphrase (PIN-07 narrow per RESEARCH Open Risk #1
+    // — exit-4 lane Display equality). No new Error variant.
+    let (ciphertext, pin_identity_opt): (Vec<u8>, Option<age::x25519::Identity>) =
+        if record.pin_required {
+            if blob_bytes.len() < 32 {
+                // Salt-prefix invariant violated — funnel through the unified
+                // sig-failure Display (oracle hygiene; mirrors base64-decode-
+                // failure rationale above).
+                return Err(Error::SignatureCanonicalMismatch);
+            }
+            let (salt_slice, outer_ct) = blob_bytes.split_at(32);
+            let salt: [u8; 32] = salt_slice
+                .try_into()
+                .expect("split_at(32) yielded exactly 32 bytes");
+
+            // Prompt — TTY-only (no echo); CIPHERPOST_TEST_PIN cfg-gated test
+            // override. Non-TTY context with no test-PIN env returns
+            // Err(Error::Config(..)) → exit 1 (NOT exit 4 — receive flow
+            // never reaches age-decrypt).
+            let pin = crate::pin::prompt_pin(false)?;
+            let pin_key = crate::pin::pin_derive_key(&pin, &salt)?;
+            let pin_id = crypto::identity_from_x25519_bytes(&pin_key)?;
+            (outer_ct.to_vec(), Some(pin_id))
+        } else {
+            (blob_bytes, None)
+        };
+
+    // STEP 6b: age-decrypt; nested two-layer when pin_required.
+    //
+    // Non-pin shares: single age-decrypt with receiver identity (preserves v1.0
+    // wire-byte-identity and decrypt path).
+    //
+    // Pin shares (NESTED): outer = age_decrypt(ciphertext, receiver_identity)
+    //                          → produces inner_ct;
+    //                      inner = age_decrypt(inner_ct, pin_identity)
+    //                          → produces envelope_jcs.
+    //
+    // Both layers funnel any failure through Error::DecryptFailed (exit 4),
+    // matching wrong-passphrase oracle (PIN-07).
+    let jcs_plain: Zeroizing<Vec<u8>> = if let Some(pin_id) = &pin_identity_opt {
+        let inner_ct = crypto::age_decrypt(&ciphertext, &age_id)?;
+        crypto::age_decrypt(&inner_ct, pin_id)?
+    } else {
+        crypto::age_decrypt(&ciphertext, &age_id)?
+    };
 
     // STEP 7: parse decrypted bytes as JCS → Envelope (parse fail =
     // sig-canonical-mismatch, exit 3 per D-RECV-01 step 7)
