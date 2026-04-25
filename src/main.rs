@@ -89,6 +89,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             passphrase_fd,
             material_stdin,
             pin,
+            burn,
         } => {
             // D-P5-04: reject --passphrase-file AND --passphrase-fd together.
             if passphrase_file.is_some() && passphrase_fd.is_some() {
@@ -208,6 +209,18 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None
             };
 
+            // Phase 8 Plan 03 (BURN-05): stderr warning BEFORE encrypt + publish.
+            // Surfaces the local-state-only caveat — DHT ciphertext survives
+            // TTL (24h default); multi-machine race is documented in
+            // THREAT-MODEL.md §Burn mode (full prose lands in Plan 06).
+            // Literal text MUST match REQUIREMENTS.md verbatim — any
+            // rephrasing is a regression.
+            if burn {
+                eprintln!(
+                    "⚠ --burn is local-state-only; ciphertext remains on DHT until TTL (24h by default). This prevents YOUR second decryption, not a second machine's."
+                );
+            }
+
             let uri = cipherpost::flow::run_send(
                 &id,
                 transport.as_ref(),
@@ -218,7 +231,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 material,
                 ttl_seconds,
                 pin_secret, // Phase 8 Plan 02: wired (was None placeholder in Plan 01).
-                false,      // Phase 8 Plan 03 wires --burn.
+                burn,       // Phase 8 Plan 03: wired (was hardcoded `false` in Plan 02).
             )?;
 
             println!("{}", uri);

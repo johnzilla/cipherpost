@@ -111,6 +111,21 @@ pub enum Command {
         /// rejected by clap (bool flag).
         #[arg(long)]
         pin: bool,
+
+        /// Mark the share single-consumption (BURN-01). After the receiver
+        /// successfully decrypts and accepts, the local ledger records
+        /// `state: "burned"` and any subsequent receive attempt against the
+        /// same share_ref returns exit 7 ("share already consumed").
+        ///
+        /// LOCAL-STATE-ONLY: Burn is enforced via the receiver's local
+        /// ledger. The encrypted payload remains on the DHT until TTL
+        /// expires (24h default). A different machine with a fresh ledger
+        /// can still decrypt the same share. See THREAT-MODEL.md
+        /// §Burn mode for the multi-machine race caveat.
+        ///
+        /// Argv-inline `--burn <value>` is rejected by clap (bool flag).
+        #[arg(long)]
+        burn: bool,
     },
 
     /// Receive and decrypt a share (phase 2)

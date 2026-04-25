@@ -340,6 +340,15 @@ path = "tests/outer_record_pin_required_signable.rs"
 name = "pin_validation"
 path = "tests/pin_validation.rs"
 
+# Phase 8 Plan 03: BURN send-side smoke (burn-only round-trip + pin+burn
+# compose orthogonality + burn=false v1.0 byte-identity preservation).
+# Receive-side burn marking + BURN-09 full round-trip lands in Plan 04
+# (tests/burn_roundtrip.rs).
+[[test]]
+name = "burn_send_smoke"
+path = "tests/burn_send_smoke.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
