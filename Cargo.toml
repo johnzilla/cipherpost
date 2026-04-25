@@ -244,6 +244,11 @@ path = "tests/x509_dep_tree_guard.rs"
 name = "material_pgp_envelope_round_trip"
 path = "tests/material_pgp_envelope_round_trip.rs"
 
+# Phase 7 Plan 04: PGP ingest pipeline coverage (positive + negative + oracle).
+[[test]]
+name = "material_pgp_ingest"
+path = "tests/material_pgp_ingest.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
