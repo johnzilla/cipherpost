@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: ready_to_plan
-stopped_at: Phase 7 planning complete (8 plans, PASS verdict)
+stopped_at: Phase 7 complete — typed-material PgpKey + SshKey shipped (8/8 plans, 253 tests pass, verification passed 5/5)
 last_updated: "2026-04-25T01:18:16.001Z"
-last_activity: 2026-04-25 -- Phase 07 execution started
+last_activity: 2026-04-25 -- Phase 07 execution complete (8/8 plans, verified passed)
 progress:
   total_phases: 5
   completed_phases: 3
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickoff)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase 07 — typed-material-pgpkey-sshkey
+**Current focus:** Phase 8 — --pin and --burn encryption modes (next up)
 
 ## Current Position
 

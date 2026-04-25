@@ -23,7 +23,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 
 - [x] **Phase 5: Non-interactive automation E2E** — scripted send/receive without TTY; passphrase-file/fd on send+receive; SPEC pin-version blessing; DHT label audit; traceability format locked (completed 2026-04-24)
 - [x] **Phase 6: Typed Material — X509Cert** — pattern-establish: DER-normalized X.509 end-to-end (parse, validate, render acceptance screen, JCS fixture, integration test) — completed 2026-04-24
-- [ ] **Phase 7: Typed Material — PgpKey + SshKey** — apply Phase 6 pattern twice; ed25519-dalek conflict pre-flight; JCS fixtures for both variants
+- [x] **Phase 7: Typed Material — PgpKey + SshKey** — apply Phase 6 pattern twice; ed25519-dalek conflict pre-flight; JCS fixtures for both variants — completed 2026-04-25
 - [ ] **Phase 8: --pin and --burn encryption modes** — cclink-fork PIN crypto (Argon2id+HKDF→X25519→age); burn-after-read state-ledger inversion; THREAT-MODEL.md additions; pin/burn compose orthogonally
 - [ ] **Phase 9: Real-DHT E2E + CAS merge-update race gate** — CAS racer in CI; real-DHT cross-identity round trip as manual release-acceptance gate; RELEASE-CHECKLIST.md
 
@@ -72,7 +72,16 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   3. JCS fixtures `tests/fixtures/material_pgp_signable.bin` and `tests/fixtures/material_ssh_signable.bin` are committed and asserted byte-for-byte identical on every CI run
   4. `cargo tree | grep ed25519-dalek` pre-flight result is documented in Phase 7 plan 01 — either "no 2.x leak" or explicit coexistence acceptance recorded before any `ssh-key` code ships
   5. Malformed PGP packets and malformed SSH bytes at receive time each return exit 1 with a generic message that does not leak crate internals
-**Plans**: TBD
+**Plans**: 8 plans
+- [x] 07-01-PLAN.md — pgp foundation (rpgp dep, MSRV bump, Material::PgpKey, ingest, run_send wiring) [2026-04-25]
+- [x] 07-02-PLAN.md — render_pgp_preview helper (banner subblock, SECRET-key warning) [2026-04-25]
+- [x] 07-03-PLAN.md — run_receive PGP wiring + pgp_armor helper [2026-04-25]
+- [x] 07-04-PLAN.md — PGP ship-gate (fixtures + 23 tests + SPEC.md update + dep-tree guard) [2026-04-25]
+- [x] 07-05-PLAN.md — ssh-key foundation (Material::SshKey, ingest, run_send wiring, main.rs guard removed) [2026-04-25]
+- [x] 07-06-PLAN.md — render_ssh_preview helper (banner subblock, [DEPRECATED] tag) [2026-04-25]
+- [x] 07-07-PLAN.md — run_receive SSH wiring + --armor reject [2026-04-25]
+- [x] 07-08-PLAN.md — SSH ship-gate (fixtures + 28 tests + SPEC.md update + dep-tree guard) [2026-04-25]
+**Phase 7 wire-budget continuation:** Realistic PGP and SSH keys also exceed the 1000-byte PKARR BEP44 ceiling; round-trip tests `#[ignore]`'d per D-P7-03 (positive `WireBudgetExceeded` paths ship ACTIVE). Wire-budget escape hatch consolidated into SPEC.md §Pitfall #22 with measured numbers.
 **UI hint**: no
 
 ### Phase 8: --pin and --burn encryption modes
@@ -110,9 +119,9 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 4. Protocol docs | v1.0 | 5/5 | Complete | 2026-04-22 |
 | 5. Non-interactive automation E2E | v1.1 | 3/3 | Complete    | 2026-04-24 |
 | 6. Typed Material: X509Cert | v1.1 | 4/4 | Complete    | 2026-04-24 |
-| 7. Typed Material: PgpKey + SshKey | v1.1 | 0/TBD | Not started | - |
+| 7. Typed Material: PgpKey + SshKey | v1.1 | 8/8 | Complete    | 2026-04-25 |
 | 8. --pin and --burn modes | v1.1 | 0/TBD | Not started | - |
 | 9. Real-DHT E2E + CAS race gate | v1.1 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-04-24 after Phase 6 Plan 04 complete — X509Cert ship gate landed (fixtures + 28 new tests + SPEC.md). Phase 6 complete. Wire-budget deferral documented for Phase 7 consideration.*
+*Last updated: 2026-04-25 after Phase 7 complete — PgpKey + SshKey ship gates landed (fixtures + 51 new tests across PGP+SSH + SPEC.md update; ed25519-dalek 2.x ↔ 3.0.0-pre.5 coexistence pinned by guard). 253/253 tests pass. Phase 7 complete.*
