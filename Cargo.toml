@@ -260,6 +260,11 @@ required-features = ["mock"]
 name = "pgp_banner_render"
 path = "tests/pgp_banner_render.rs"
 
+# Phase 7 Plan 04: PGP error-oracle hygiene (FORBIDDEN_DISPLAY_TOKENS extended).
+[[test]]
+name = "pgp_error_oracle"
+path = "tests/pgp_error_oracle.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
