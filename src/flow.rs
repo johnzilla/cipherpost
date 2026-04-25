@@ -498,9 +498,11 @@ pub fn run_receive(
             let sub = preview::render_x509_preview(bytes)?;
             (bytes, Some(sub))
         }
-        Material::PgpKey | Material::SshKey => {
-            // Reserved — Phase 7. as_x509_cert_bytes on these would also fail;
-            // surface the clean NotImplemented error instead of InvalidMaterial.
+        Material::PgpKey { .. } | Material::SshKey => {
+            // Plan 01: PgpKey is now a struct variant carrying bytes, but the
+            // run_receive preview path still returns NotImplemented — Plan 03
+            // wires `preview::render_pgp_preview` in and swaps this arm live.
+            // SshKey stays NotImplemented until Plan 05.
             return Err(Error::NotImplemented { phase: 7 });
         }
     };
@@ -767,7 +769,7 @@ fn material_type_string(m: &Material) -> &'static str {
     match m {
         Material::GenericSecret { .. } => "generic_secret",
         Material::X509Cert { .. } => "x509_cert",
-        Material::PgpKey => "pgp_key",
+        Material::PgpKey { .. } => "pgp_key",
         Material::SshKey => "ssh_key",
     }
 }
