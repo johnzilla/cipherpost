@@ -151,7 +151,8 @@ Tagged enum; Rust-level serde directives: `#[serde(tag = "type", rename_all = "s
 
 **cipherpost/v1.0 shipped:** `generic_secret` only.
 **cipherpost/v1.1 (Phase 6) adds:** `x509_cert { bytes }`.
-**Reserved for Phase 7:** `pgp_key`, `ssh_key` (dispatch returns `Error::NotImplemented { phase: 7 }`
+**cipherpost/v1.1 (Phase 7) adds:** `pgp_key { bytes }`.
+**Reserved for Phase 7 Plan 05+:** `ssh_key` (dispatch returns `Error::NotImplemented { phase: 7 }`
 at both `main.rs::dispatch` and `flow::run_send` — exit 1).
 
 **`generic_secret` wire form:**
@@ -210,11 +211,53 @@ plaintext }` at send time with the cert plaintext size reported — NOT as an
 `InvalidMaterial` or PKARR-internal panic. Two-tier storage (small envelope in DHT
 pointing to external blob) is the architectural fix and is scoped to a later phase.
 
-**Reserved variants (`pgp_key`, `ssh_key`)** have no `bytes` field in cipherpost/v1.1 —
-they are unit-style in the Rust enum and encode as just `{"type": "pgp_key"}` for
-protocol fingerprinting. Any ingest or decode attempt returns `Error::NotImplemented
-{ phase: 7 }`. Phase 7 will promote both to `{ bytes }` struct variants with serde form
-matching `x509_cert`.
+**`pgp_key` wire form (cipherpost/v1.1, Phase 7):**
+```json
+{"type": "pgp_key", "bytes": "<base64-STANDARD-padded>"}
+```
+
+| Field | Type | Wire encoding | Description | Source decision |
+|-------|------|---------------|-------------|-----------------|
+| `type` | String | literal `"pgp_key"` | Variant discriminator | D-WIRE-03 |
+| `bytes` | String | base64-STANDARD, padded — **binary OpenPGP packet stream** per RFC 4880 §4.2 / RFC 9580 §4.2 | OpenPGP key bytes (public TPK or secret TSK) | D-P7-01..09, PGP-01 |
+
+The `bytes` field carries the **binary OpenPGP packet stream** verbatim from the
+sender's input — no canonical re-encode. The RFC-defined packet stream IS canonical
+(RFC 4880 §4.2); re-encoding through the `pgp` crate could alter insignificant
+bits and drift `share_ref` across sender toolchains. CLI input MUST be binary;
+**ASCII armor (`-----BEGIN PGP PUBLIC/PRIVATE KEY BLOCK-----`) is REJECTED at
+ingest** with the exact reason `"ASCII-armored input rejected — supply binary
+packet stream"` (D-P7-05 / PGP-01). Multi-primary keyrings (>1 top-level
+PublicKey/SecretKey packet) are REJECTED at ingest with the count substituted
+(D-P7-06 / PGP-03). Trailing bytes after the last valid packet are REJECTED
+(WR-01 mirror; the `pgp` crate's `PacketParser` silently advances cursor past
+0xFF stream-end magic, so the trailing-bytes oracle sums per-packet serialized
+lengths via `pgp::ser::Serialize::to_writer` rather than relying on cursor
+position).
+
+**Parser:** `pgp 0.19.0` exact-pin with `default-features = false` (disables
+`bzip2` and `asm` features). Pulls `rsa 0.9` transitively for RFC-4880 RSA
+support (advisory RUSTSEC-2023-0071 accepted — see §Supply-Chain Deferrals).
+Pulls `ed25519-dalek 2.x` transitively (coexists with cipherpost's
+`=3.0.0-pre.5` pin — see §Supply-Chain Deferrals). Same dep-tree guard CI test
+asserts no `ring` / `aws-lc` / `openssl-sys` leak.
+
+**Oracle hygiene (PGP-08):** Every parse failure returns `Error::InvalidMaterial
+{ variant: "pgp_key", reason }` with a short curated `reason` literal — never an
+rpgp internal type or message. Audit set: `"ASCII-armored input rejected — supply
+binary packet stream"`, `"PgpKey must contain exactly one primary key; keyrings
+are not supported in v1.1 (found N primary keys)"` (N substituted), `"malformed
+PGP packet stream"`, `"trailing bytes after PGP packet stream"`, `"accessor
+called on wrong variant"`. A test (`tests/pgp_error_oracle.rs`) enumerates each
+× 4 variants and asserts Display contains none of {`pgp::errors`, `PgpError`,
+`pgp::packet`, `packet::Error`, `pgp::Error`, `rpgp`} plus the Phase 6 X.509
+forbidden-token set.
+
+**Reserved variant (`ssh_key`)** has no `bytes` field in cipherpost/v1.1 prior
+to Phase 7 Plan 05 — it is unit-style in the Rust enum and encodes as just
+`{"type": "ssh_key"}` for protocol fingerprinting. Any ingest or decode attempt
+returns `Error::NotImplemented { phase: 7 }`. Phase 7 Plan 05 promotes it to a
+`{ bytes }` struct variant with serde form matching `pgp_key`.
 
 ### 3.3 OuterRecord
 
@@ -333,16 +376,26 @@ syntax under a bumped protocol version.
 1. Read payload from `<path>` or `-` (stdin). (SEND-01, PAYL-03)
 2. **Ingest (cipherpost/v1.1):** dispatch on `--material <variant>` (default
    `generic-secret`). Accepted values: `generic-secret`, `x509-cert`,
-   `pgp-key` (Phase 7 — rejects at dispatch), `ssh-key` (Phase 7 — rejects at
-   dispatch). `payload::ingest::x509_cert(raw)` sniffs PEM vs DER (ASCII-whitespace-
-   trim + `-----BEGIN CERTIFICATE-----` header check), normalizes PEM → canonical
-   DER, and validates via `x509-parser` strict profile with an explicit
-   trailing-bytes check. Parse failure → `Error::InvalidMaterial { variant,
-   reason }` exit 1.
+   `pgp-key` (Phase 7 Plan 01-04 — LIVE), `ssh-key` (Phase 7 Plan 05+ — rejects
+   at dispatch with `Error::NotImplemented { phase: 7 }`).
+   - `payload::ingest::x509_cert(raw)` sniffs PEM vs DER (ASCII-whitespace-
+     trim + `-----BEGIN CERTIFICATE-----` header check), normalizes PEM →
+     canonical DER, and validates via `x509-parser` strict profile with an
+     explicit trailing-bytes check.
+   - `payload::ingest::pgp_key(raw)` strict-rejects ASCII armor (any `-----BEGIN
+     PGP` prefix after whitespace skip), iterates top-level packets via
+     `pgp::packet::PacketParser`, counts top-level Tag::PublicKey + Tag::SecretKey
+     packets (rejects keyrings with N substituted), and asserts the sum of
+     per-packet serialized lengths equals `raw.len()` (trailing-bytes invariant
+     resilient to rpgp's silent-0xFF parser quirk). Returns `Material::PgpKey
+     { bytes: raw.to_vec() }` with no canonical re-encode — the binary packet
+     stream IS canonical (RFC 4880 §4.2).
+   - Parse failure → `Error::InvalidMaterial { variant, reason }` exit 1.
 3. **Plaintext cap (D-P6-16 / X509-06):** reject if `material.plaintext_size() >
    65 536`. For `x509_cert`, this is the **decoded DER length** — a 1 MB
    PEM input that decodes to 100 KB DER fails the cap on the decoded size,
-   not the input size (PAYL-03).
+   not the input size (PAYL-03). For `pgp_key`, this is the **raw binary
+   packet-stream length** (no PEM-style decode applies; armor is rejected).
 4. Build `Envelope { purpose, material, created_at, protocol_version }` with `purpose` control-
    stripped (D-WIRE-05). JCS-serialize.
 5. age-encrypt the JCS bytes to the recipient's X25519 (derived from their Ed25519 pubkey) or
@@ -356,10 +409,16 @@ syntax under a bumped protocol version.
 10. `Transport::publish(signed_packet)`. Print the share URI (`cipherpost://<z32>/<hex>`) to stdout (D-URI-01, SEND-01).
 
 **CLI flags (cipherpost/v1.1):**
-- `--material <variant>` (default `generic-secret`) — selects the typed
-  Material variant. Phase 6 supports `generic-secret` and `x509-cert`. Phase 7
-  will add `pgp-key` and `ssh-key`; currently both parse at the CLI level
-  but dispatch returns `Error::NotImplemented { phase: 7 }` (exit 1).
+- `--material <VALUE>` (default `generic-secret`) — selects the typed
+  Material variant. Accepted: `generic-secret` (Phase 5), `x509-cert`
+  (Phase 6), `pgp-key` (Phase 7 Plan 01-04 — LIVE), `ssh-key` (Phase 7
+  Plan 05+ — currently parses at the CLI level but dispatch returns
+  `Error::NotImplemented { phase: 7 }`, exit 1).
+
+**`--material pgp-key` example:**
+```
+cipherpost send --self -p 'alice keyshare' --material pgp-key --material-file ./alice.pgp
+```
 
 ### 5.2 Receive
 
@@ -405,24 +464,71 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    SHA-256:     <64 hex chars lowercase>        (over canonical DER)
    ```
    The separator line is exactly `--- X.509 ` + 57 dashes = 61 chars, matching the
-   `===` banner border width. Phase 7 will add analogous `--- OpenPGP ---` and
-   `--- SSH ---` subblocks using the same structural pattern. Parse failures on
-   the banner render return `Error::InvalidMaterial { variant: "x509_cert",
-   reason: "<short>" }` with the same generic-reason set as ingest.
+   `===` banner border width. Phase 7 added an analogous `--- OpenPGP ---` subblock
+   (below); SSH will follow in Plan 05+. Parse failures on the banner render
+   return `Error::InvalidMaterial { variant: "x509_cert", reason: "<short>" }`
+   with the same generic-reason set as ingest.
+
+   **cipherpost/v1.1: OpenPGP subblock (Phase 7 D-P7-07 / D-P7-08 / PGP-04)** —
+   when `Type: pgp_key`, a typed subblock is inserted between the `Size:` and
+   `TTL:` lines:
+   ```
+   --- OpenPGP -----------------------------------------------    (53 dashes after prefix)
+   Fingerprint: <40-hex for v4 keys; 64-hex for v5/v6>            (UPPER-case hex via rpgp Fingerprint UpperHex impl)
+   Primary UID: <UID, truncated at 64 chars w/ `…`>               (control chars stripped — banner-injection mitigation)
+   Key:         <Ed25519 | EdDSA-Legacy | RSA-N | ECDSA P-N | ECDH-curve | …>
+   Subkeys:     <N (alg1, alg2, ...)  or  "0">
+   Created:     YYYY-MM-DD HH:MM UTC
+   ```
+
+   The separator line is exactly `--- OpenPGP ` + 53 dashes = 65 chars.
+
+   **SECRET-key warning (D-P7-07).** When the primary packet is a Secret-Key
+   packet (RFC 4880 §4.3 tag-5), the subblock is preceded by a warning line +
+   blank line:
+   ```
+   [WARNING: SECRET key — unlocks cryptographic operations]
+
+   --- OpenPGP -----------------------------------------------
+   Fingerprint: ...
+   ...
+   ```
+
+   The warning is visual emphasis only — it does NOT block acceptance. Senders
+   MAY legitimately hand off secret keys (the core cipherpost use case); the
+   typed-z32 acceptance gate still applies in either case.
+
+   Parse failures on the PGP banner return `Error::InvalidMaterial { variant:
+   "pgp_key", reason: "malformed PGP packet stream" }` — same single literal as
+   ingest, so an oracle adversary cannot distinguish "ingest rejection" from
+   "preview rejection" via the error string.
 
    Stdin AND stderr MUST both be TTYs; else `Error::Config`, exit 1 (D-ACCEPT-03).
 10. Read user input; compare byte-equal (after `trim()`) to the sender's full 52-char z-base-32
     pubkey. Mismatch → `Error::Declined`, exit 7 (D-ACCEPT-01, RECV-04).
 11. Write decrypted payload to `--output <path>` or stdout (default) (RECV-05).
-    With `--armor` (cipherpost/v1.1), a typed X.509 variant output is wrapped as
-    PEM (`-----BEGIN CERTIFICATE-----` + base64-STANDARD body 64-char-wrapped +
-    `-----END CERTIFICATE-----\n`) — byte-compatible with
-    `openssl x509 -in <der> -inform DER -outform PEM`. `--armor` on a
-    `generic_secret` variant is rejected with
-    `Error::Config("--armor requires --material x509-cert or pgp-key")` at exit 1 (OQ-1).
-    Phase 7 widened the literal as `pgp-key` gained armor-output support; the
-    full per-variant matrix (PGP via rpgp `to_armored_bytes`; SSH armor reject)
-    is documented in the Phase 7 PGP/SSH SPEC sections.
+    With `--armor` (cipherpost/v1.1):
+    - **`x509-cert`** → wrapped as PEM (`-----BEGIN CERTIFICATE-----` +
+      base64-STANDARD body 64-char-wrapped + `-----END CERTIFICATE-----\n`),
+      byte-compatible with `openssl x509 -in <der> -inform DER -outform PEM`.
+    - **`pgp-key`** (Phase 7) → wrapped as RFC 4880 ASCII armor via rpgp's
+      `SignedPublicKey::to_armored_bytes(ArmorOptions::default())` for tag-6
+      primaries (header `-----BEGIN PGP PUBLIC KEY BLOCK-----`) or
+      `SignedSecretKey::to_armored_bytes(ArmorOptions::default())` for tag-5
+      primaries (header `-----BEGIN PGP PRIVATE KEY BLOCK-----`). Default
+      `ArmorOptions` = `{ headers: None, include_checksum: true }` (CRC24 line
+      per RFC 4880 §6.1).
+    - **`generic-secret` and `ssh-key`** → REJECTED with
+      `Error::Config("--armor requires --material x509-cert or pgp-key")`
+      at exit 1 (OQ-1). Plan 05+ may further specialize the rejection literal
+      for `ssh-key` (per D-P7-13: `"--armor not applicable to ssh-key —
+      OpenSSH v1 is self-armored"`).
+
+    Armor matrix as of Phase 7 PGP plans:
+    ```
+    --armor accepted for:   x509-cert | pgp-key
+    --armor rejected for:   generic-secret | ssh-key
+    ```
 12. Create sentinel `~/.cipherpost/state/accepted/<share_ref>` (mode 0600); append a ledger
     line to `~/.cipherpost/state/accepted.jsonl` (mode 0600) with `receipt_published_at: null` (D-STATE-01, D-SEQ-04).
 13. Construct `Receipt`, sign with recipient's Ed25519 key, call `Transport::publish_receipt`.
@@ -480,6 +586,83 @@ CLI argument parse failures (e.g., `--passphrase <value>` inline argv) exit via 
 default path (typically exit `2` from clap, distinct from cipherpost's `Error::Expired`
 exit `2` — the clap-level exit only happens before cipherpost's dispatcher runs, so there
 is no ambiguity at runtime).
+
+## Supply-Chain Deferrals
+
+Three acceptances documented here, with the rationale for each. Revisit when the noted
+upstream condition is satisfied.
+
+### MSRV bumped to Rust 1.88 (Phase 7 D-P7-20)
+
+Required by `pgp 0.19.0`. Rust 1.88 has been stable since mid-2025 (~10 months at Phase 7
+ship time), so low compat risk. No cipherpost downstream users yet (pre-v1.1 public);
+MSRV bump is low-impact. The bump touches both `Cargo.toml` (`rust-version = "1.88"`)
+and `rust-toolchain.toml` (`channel = "1.88"`) so the toolchain itself does not reject
+its own MSRV pin. Revisit if rpgp's minimum lowers.
+
+### RUSTSEC-2023-0071 (Marvin Attack via `rsa 0.9`) — ACCEPTED (Phase 7 D-P7-21)
+
+Transitively pulled by `pgp 0.19.0` for RFC 4880 RSA key support. No patched `rsa` version
+exists at Phase 7 ship time. Cipherpost uses the pgp crate **only for packet parsing and
+metadata extraction** — NO RSA decryption/signing operations anywhere in the code. The
+Marvin timing attack requires a network-observable decryption/signing oracle; no such
+surface exists in cipherpost's parse-only code path. Impact: low. Accepted via
+`deny.toml [advisories] ignore` entry. **Revisit** when upstream `rsa` crate ships a
+constant-time patched version.
+
+### ed25519-dalek dual-version coexistence (Phase 7 D-P7-22)
+
+The `pgp 0.19.0` crate unconditionally pulls `ed25519-dalek 2.x` (the `>=2.1.1` cargo
+constraint resolves upward to the current latest 2.x release — measured `2.2.0` at Plan 01
+ship time); cipherpost's core identity uses `ed25519-dalek =3.0.0-pre.5` (pinned to match
+`pkarr 5.0.x`'s required pre-release). The cipherpost binary therefore carries TWO
+ed25519-dalek implementations.
+
+- **Runtime risk: LOW** — each crate uses its own pinned version; no cross-crate interop
+  of Ed25519 keys beyond what rpgp internally does for its own signatures.
+- **Supply-chain signal: doubled** for Ed25519 (two audited implementations in the dep
+  closure).
+- **Audit-test coverage:** `tests/x509_dep_tree_guard.rs::dep_tree_ed25519_dalek_coexistence_shape`
+  asserts BOTH versions are present and that no THIRD version has appeared.
+
+**Revisit** when EITHER (a) `pgp` releases a version that drops `ed25519-dalek 2.x`, OR
+(b) `pkarr` migrates to a stable `ed25519-dalek 3.x` release (the `=3.0.0-pre.5` pin can
+then drop the `=` exact-pin requirement).
+
+## Pitfall #22 — Wire-budget (what works today)
+
+Phase 6 shipped with a note that realistic X.509 certs exceed the 1000-byte PKARR BEP44
+ceiling. Phase 7 extends the picture with measured PGP and SSH numbers (Plan 04
+post-implementation):
+
+| Variant | Minimum fixture (raw) | Measured/predicted encoded | Fits <1000 B? |
+|---------|-----------------------|----------------------------|---------------|
+| `generic_secret` (trivial payload ~20 B) | 20 B | ~800 B | YES (Phase 5 baseline) |
+| `x509_cert` Ed25519 self-signed minimum | ~234 B | ~1290 B | NO |
+| `pgp_key` rpgp-minimal Ed25519 (UID ≤20 chars, no subkeys, empty pref-subpackets) | 202 B | **~1236 B (measured)** | **NO** |
+| `pgp_key` realistic key (UID >20 chars, RSA, OR subkeys) | ≥250 B | >1000 B | NO |
+| `ssh_key` Ed25519 OpenSSH v1 minimum | ~321 B | ~1340 B | NO (Plan 05 forecast) |
+| `ssh_key` RSA-2048+ or larger keys | ≥500 B | >2000 B | NO (Plan 05 forecast) |
+
+**Note on PGP wire-budget reality:** Research GAP-5 predicted `raw × 4.16 ≈ encoded`
+(~840 B for a 202 B fixture). Actual measurement at Plan 04 implementation time:
+**1236 B encoded**, expansion factor ≈ 6.1× — about 50% higher than predicted. The
+overhead is split between JCS envelope framing (~180 B for `{created_at, material:
+{type:pgp_key, bytes:b64}, protocol_version, purpose}` plus base64 expansion of the
+bytes field), age encryption framing, and OuterRecord JSON wrapping. Consequence: the
+`pgp_self_round_trip_recovers_packet_stream` test ships `#[ignore]`'d alongside the SSH
+round-trip per the same fallback pattern D-P7-03 carved for OpenSSH. The architectural
+fix (two-tier storage: small envelope in DHT pointing to encrypted blob in external
+store) belongs to the v1.2 milestone.
+
+Until then:
+- X.509 round-trip tests marked `#[ignore]` (Phase 6 Plan 04)
+- PGP round-trip + armor-output tests marked `#[ignore]` (Phase 7 Plan 04 — re-enable
+  with v1.2 two-tier storage)
+- PGP realistic-key send surfaces `Error::WireBudgetExceeded` cleanly (Phase 7 Plan 04
+  positive test `pgp_send_realistic_key_surfaces_wire_budget_exceeded_cleanly`)
+- SSH round-trip tests marked `#[ignore]` from day 1 (Phase 7 Plan 08 — D-P7-03 amended)
+- SSH send at any realistic size surfaces `Error::WireBudgetExceeded` cleanly
 
 ## 7. Passphrase Contract
 
