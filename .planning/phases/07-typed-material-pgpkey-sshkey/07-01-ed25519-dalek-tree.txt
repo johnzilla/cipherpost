@@ -1,0 +1,134 @@
+=== cargo tree -p 'ed25519-dalek@2.2.0' (from pgp 0.19.0) ===
+ed25519-dalek v2.2.0
+├── curve25519-dalek v4.1.3
+│   ├── cfg-if v1.0.4
+│   ├── cpufeatures v0.2.17
+│   ├── curve25519-dalek-derive v0.1.1 (proc-macro)
+│   │   ├── proc-macro2 v1.0.106
+│   │   │   └── unicode-ident v1.0.24
+│   │   ├── quote v1.0.45
+│   │   │   └── proc-macro2 v1.0.106 (*)
+│   │   └── syn v2.0.117
+│   │       ├── proc-macro2 v1.0.106 (*)
+│   │       ├── quote v1.0.45 (*)
+│   │       └── unicode-ident v1.0.24
+│   ├── digest v0.10.7
+│   │   ├── block-buffer v0.10.4
+│   │   │   └── generic-array v0.14.7
+│   │   │       ├── typenum v1.20.0
+│   │   │       └── zeroize v1.8.2
+│   │   │           └── zeroize_derive v1.4.3 (proc-macro)
+│   │   │               ├── proc-macro2 v1.0.106 (*)
+│   │   │               ├── quote v1.0.45 (*)
+│   │   │               └── syn v2.0.117 (*)
+│   │   │       [build-dependencies]
+│   │   │       └── version_check v0.9.5
+│   │   ├── const-oid v0.9.6
+│   │   ├── crypto-common v0.1.7
+│   │   │   ├── generic-array v0.14.7 (*)
+│   │   │   ├── rand_core v0.6.4
+│   │   │   │   └── getrandom v0.2.17
+│   │   │   │       ├── cfg-if v1.0.4
+│   │   │   │       └── libc v0.2.185
+│   │   │   └── typenum v1.20.0
+│   │   └── subtle v2.6.1
+│   ├── subtle v2.6.1
+│   └── zeroize v1.8.2 (*)
+│   [build-dependencies]
+│   └── rustc_version v0.4.1
+│       └── semver v1.0.28
+├── ed25519 v2.2.3
+│   └── signature v2.2.0
+│       ├── digest v0.10.7 (*)
+│       └── rand_core v0.6.4 (*)
+├── rand_core v0.6.4 (*)
+├── sha2 v0.10.9
+│   ├── cfg-if v1.0.4
+│   ├── cpufeatures v0.2.17
+│   └── digest v0.10.7 (*)
+├── subtle v2.6.1
+└── zeroize v1.8.2 (*)
+
+=== cargo tree -p 'ed25519-dalek@3.0.0-pre.5' (from pkarr 5.0.4) ===
+ed25519-dalek v3.0.0-pre.5
+├── curve25519-dalek v5.0.0-pre.5
+│   ├── cfg-if v1.0.4
+│   ├── cpufeatures v0.2.17
+│   ├── curve25519-dalek-derive v0.1.1 (proc-macro)
+│   │   ├── proc-macro2 v1.0.106
+│   │   │   └── unicode-ident v1.0.24
+│   │   ├── quote v1.0.45
+│   │   │   └── proc-macro2 v1.0.106 (*)
+│   │   └── syn v2.0.117
+│   │       ├── proc-macro2 v1.0.106 (*)
+│   │       ├── quote v1.0.45 (*)
+│   │       └── unicode-ident v1.0.24
+│   ├── digest v0.11.0-rc.9
+│   │   ├── block-buffer v0.11.0
+│   │   │   └── hybrid-array v0.4.10
+│   │   │       └── typenum v1.20.0
+│   │   └── crypto-common v0.2.1
+│   │       └── hybrid-array v0.4.10 (*)
+│   ├── subtle v2.6.1
+│   └── zeroize v1.8.2
+│       └── zeroize_derive v1.4.3 (proc-macro)
+│           ├── proc-macro2 v1.0.106 (*)
+│           ├── quote v1.0.45 (*)
+│           └── syn v2.0.117 (*)
+│   [build-dependencies]
+│   └── rustc_version v0.4.1
+│       └── semver v1.0.28
+├── ed25519 v3.0.0-rc.4
+│   └── signature v3.0.0-rc.10
+├── sha2 v0.11.0-rc.4
+│   ├── cfg-if v1.0.4
+│   ├── cpufeatures v0.2.17
+│   └── digest v0.11.0-rc.9 (*)
+├── signature v3.0.0-rc.10
+├── subtle v2.6.1
+└── zeroize v1.8.2 (*)
+
+=== cargo tree -d filtered to ed25519-dalek (duplicate-deps view) ===
+│   ├── curve25519-dalek v4.1.3
+│   │   ├── ed25519-dalek v2.2.0
+│   │   │   └── pgp v0.19.0 (*)
+│   │   ├── pgp v0.19.0 (*)
+--
+│   │   ├── dsa v0.6.3 (*)
+│   │   ├── ed25519-dalek v2.2.0 (*)
+│   │   ├── k256 v0.13.4 (*)
+│   │   ├── p256 v0.13.2 (*)
+--
+│       ├── ed25519 v2.2.3
+│       │   └── ed25519-dalek v2.2.0 (*)
+│       ├── k256 v0.13.4 (*)
+│       ├── pgp v0.19.0 (*)
+--
+    ├── curve25519-dalek v5.0.0-pre.5
+    │   └── ed25519-dalek v3.0.0-pre.5
+    │       ├── cipherpost v0.1.0 (/home/john/vault/projects/github.com/cipherpost/.claude/worktrees/agent-aaf40d1e)
+    │       ├── mainline v6.1.1
+--
+    └── sha2 v0.11.0-rc.4
+        └── ed25519-dalek v3.0.0-pre.5 (*)
+
+crypto-common v0.1.7
+--
+ed25519 v3.0.0-rc.4
+└── ed25519-dalek v3.0.0-pre.5 (*)
+
+ed25519-dalek v2.2.0 (*)
+
+ed25519-dalek v3.0.0-pre.5 (*)
+
+generic-array v0.14.7
+--
+    ├── cx448 v0.1.1 (*)
+    ├── ed25519-dalek v2.2.0 (*)
+    ├── elliptic-curve v0.13.8 (*)
+    ├── ff v0.13.1
+--
+├── ed25519 v3.0.0-rc.4 (*)
+└── ed25519-dalek v3.0.0-pre.5 (*)
+
+thiserror v1.0.69
