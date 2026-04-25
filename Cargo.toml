@@ -239,6 +239,11 @@ path = "tests/x509_error_oracle.rs"
 name = "x509_dep_tree_guard"
 path = "tests/x509_dep_tree_guard.rs"
 
+# Phase 7 Plan 04: PGP Envelope JCS fixture byte-identity.
+[[test]]
+name = "material_pgp_envelope_round_trip"
+path = "tests/material_pgp_envelope_round_trip.rs"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"

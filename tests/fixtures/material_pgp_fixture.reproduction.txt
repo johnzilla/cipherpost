@@ -1,0 +1,68 @@
+tests/fixtures/material_pgp_fixture.pgp — reproduction note
+===========================================================
+
+This file is a hand-crafted Ed25519-primary OpenPGP public key, generated once,
+bytes committed. We do NOT regenerate at CI time because Ed25519 key generation
+uses OS randomness — same recipe produces a different fixture each run (Name/
+Email/Expire deterministic; key bytes + signature bytes random).
+
+Deterministic content:
+  Primary algorithm:  Ed25519 (RFC 4880 §13.2 / RFC 9580 §5.5.5.5; algo ID 22 EDDSA)
+  Primary UID:        cp <f@cp.t>             (10 chars — under D-P7-03 + GAP 5 ≤20-char budget)
+  Subkeys:            none
+  Expiration:         none (Expire-Date: 0)
+  Packet version:     v4 (40-hex SHA-1 fingerprint; RFC 4880)
+
+Generation recipe (requires GnuPG 2.2+):
+
+  export GNUPGHOME=$(mktemp -d)
+  cat > /tmp/batch <<EOF
+  %no-protection
+  %no-ask-passphrase
+  Key-Type: EDDSA
+  Key-Curve: ed25519
+  Name-Real: cp
+  Name-Email: f@cp.t
+  Expire-Date: 0
+  %commit
+  EOF
+  gpg --batch --generate-key /tmp/batch
+  KEYID=$(gpg --list-keys --with-colons | awk -F: '/^pub/ {print $5; exit}')
+  gpg --export "$KEYID" > tests/fixtures/material_pgp_fixture.pgp
+  gpg --export-secret-keys "$KEYID" > tests/fixtures/material_pgp_secret_fixture.pgp
+
+Verification (deterministic on parser state, not signature bytes):
+
+  gpg --list-packets < tests/fixtures/material_pgp_fixture.pgp
+  # ->  :public key packet: algo 22 (EDDSA), version 4
+  #     :user ID packet: "cp <f@cp.t>"
+  #     :signature packet: algo 22 (EDDSA), digest algo 10 (SHA-512), sigclass 0x13
+
+Fixture size budget (Phase 7 research GAP 5 + D-P7-03):
+  raw packet stream:     215 bytes (target ≤200 B; allow ≤230 B per acceptance band)
+  predicted encoded:     215 × 4.16 ≈ 894 bytes (fits under 1000 B PKARR BEP44)
+  Actual public size:    215 bytes
+  Actual secret size:    252 bytes
+
+SHA-256 of the committed file (recorded at generation time, for tamper
+detection during reviews):
+  public:  f5e5a79c6570f8531f39d1cdbae772d09ed7cbfa0eeb664c644788001626daa8
+  secret:  86e4fe6e5cf7c354439050e676178c48f8858b5501124f321e69991859a8f1ca
+
+(The SHA-256 above will MISMATCH on regeneration because Ed25519 key bytes are
+random — the values are recorded for forensic tamper detection across reviewers
+working with the SAME committed bytes, not as a regeneration target.)
+
+PGP fingerprint as rendered by `gpg --list-keys --with-fingerprint` for the
+committed copy:
+  8F718A07242DC77D95FC8A5A45A2450314668B99   (40-hex SHA-1, v4 format)
+
+Secret-key fixture: tests/fixtures/material_pgp_secret_fixture.pgp
+  Generated via: gpg --export-secret-keys "$KEYID" > tests/fixtures/material_pgp_secret_fixture.pgp
+  Purpose: golden-string test for [WARNING: SECRET key] line placement
+           (preview::render_pgp_preview tag-5 path; D-P7-07).
+
+JCS envelope fixture: tests/fixtures/material_pgp_signable.bin
+  Regenerate via:
+    cargo test --test material_pgp_envelope_round_trip -- --ignored regenerate_material_pgp_envelope_fixture
+  Then commit the new bytes; the byte-identity assertion will lock the new shape.
