@@ -45,6 +45,14 @@ use pgp::packet::PacketTrait;
 use pgp::types::{EcdsaPublicParams, KeyDetails, PublicParams, Tag};
 use rsa::traits::PublicKeyParts;
 
+// Phase 7 Plan 06: ssh-key imports — confined to this module + payload/ingest
+// per D-P7-16. PrivateKey::from_openssh + PublicKey::fingerprint + KeyData
+// give us parse, SHA-256 fingerprint, and per-algorithm bit-size derivation.
+// HashAlg::Sha256 is the ONLY hash form rendered (D-P7-15: MD5/SHA-1 explicitly
+// excluded; Fingerprint::Display formats as "SHA256:<base64-unpadded>").
+use ssh_key::public::KeyData as SshKeyData;
+use ssh_key::{Algorithm as SshAlgorithm, EcdsaCurve, HashAlg, PrivateKey as SshPrivateKey};
+
 /// Truncation limit for Subject / Issuer DN rendering (D-P6-10).
 /// Keeps the 80-column TTY-friendly constraint with one `…` char budget.
 const DN_TRUNC_LIMIT: usize = 80;
@@ -283,12 +291,11 @@ pub fn render_pgp_preview(bytes: &[u8]) -> Result<String, Error> {
     let is_secret = pgp_primary_is_secret(bytes)?;
 
     // Step 2: extract metadata via the high-level composed API.
-    let (fingerprint_hex, primary_uid, key_alg, subkey_summary, created_unix) =
-        if is_secret {
-            extract_secret_metadata(bytes)?
-        } else {
-            extract_public_metadata(bytes)?
-        };
+    let (fingerprint_hex, primary_uid, key_alg, subkey_summary, created_unix) = if is_secret {
+        extract_secret_metadata(bytes)?
+    } else {
+        extract_public_metadata(bytes)?
+    };
 
     // Step 3: format the subblock string. UID truncation reuses the existing
     // Phase 6 `truncate_display` helper (D-P6-10 pattern). Created timestamp
@@ -346,9 +353,7 @@ fn pgp_parse_error() -> Error {
 
 /// Extract the PGP banner-fields tuple from a public-key packet stream
 /// (top-level Tag::PublicKey).
-fn extract_public_metadata(
-    bytes: &[u8],
-) -> Result<(String, String, String, String, i64), Error> {
+fn extract_public_metadata(bytes: &[u8]) -> Result<(String, String, String, String, i64), Error> {
     let key = SignedPublicKey::from_bytes(bytes).map_err(|_| pgp_parse_error())?;
     let fp_hex = format_fingerprint_upper(&key.fingerprint());
     let primary_uid = first_uid_string(&key.details.users);
@@ -362,9 +367,7 @@ fn extract_public_metadata(
 /// (top-level Tag::SecretKey). Re-uses the public-key view via
 /// `SignedSecretKey::to_public_key()` for uniform field extraction (the public
 /// half is always present alongside the secret material per RFC 4880 §5.5.3).
-fn extract_secret_metadata(
-    bytes: &[u8],
-) -> Result<(String, String, String, String, i64), Error> {
+fn extract_secret_metadata(bytes: &[u8]) -> Result<(String, String, String, String, i64), Error> {
     let key = SignedSecretKey::from_bytes(bytes).map_err(|_| pgp_parse_error())?;
     let fp_hex = format_fingerprint_upper(&key.fingerprint());
     let primary_uid = first_uid_string(&key.details.users);
@@ -422,9 +425,7 @@ fn first_uid_string(users: &[pgp::types::SignedUser]) -> String {
 /// hardening pattern Phase 2 applies to the `purpose` field. Keeps the
 /// printable + extended-UTF8 range.
 fn strip_control_chars(s: &str) -> String {
-    s.chars()
-        .filter(|c| !c.is_control())
-        .collect()
+    s.chars().filter(|c| !c.is_control()).collect()
 }
 
 /// Render an OpenPGP public-key algorithm + parameters as a human-readable
@@ -441,12 +442,10 @@ fn render_pgp_key_algorithm(alg: PublicKeyAlgorithm, params: &PublicParams) -> S
         PublicKeyAlgorithm::X25519 => "X25519".to_string(),
         PublicKeyAlgorithm::X448 => "X448".to_string(),
         PublicKeyAlgorithm::DSA => "DSA".to_string(),
-        PublicKeyAlgorithm::ElgamalEncrypt | PublicKeyAlgorithm::Elgamal => {
-            "Elgamal".to_string()
+        PublicKeyAlgorithm::ElgamalEncrypt | PublicKeyAlgorithm::Elgamal => "Elgamal".to_string(),
+        PublicKeyAlgorithm::RSA | PublicKeyAlgorithm::RSAEncrypt | PublicKeyAlgorithm::RSASign => {
+            render_rsa_with_size(params)
         }
-        PublicKeyAlgorithm::RSA
-        | PublicKeyAlgorithm::RSAEncrypt
-        | PublicKeyAlgorithm::RSASign => render_rsa_with_size(params),
         PublicKeyAlgorithm::ECDSA => render_ecdsa(params),
         PublicKeyAlgorithm::ECDH => render_ecdh(params),
         // Catch-all for the remaining `#[non_exhaustive]` PQC + Private*
@@ -564,6 +563,172 @@ fn render_pgp_public_subkey_summary(subkeys: &[pgp::composed::SignedPublicSubKey
         .map(|sk| render_pgp_key_algorithm(sk.key.algorithm(), sk.key.public_params()))
         .collect();
     format!("{} ({})", subkeys.len(), names.join(", "))
+}
+
+// =============================================================================
+// Phase 7 Plan 06 — SSH preview renderer.
+// =============================================================================
+
+/// 57 dashes after `--- SSH ` per Phase 7 CONTEXT.md §specifics.
+/// Total separator line width = `--- SSH ` (8 chars) + 57 dashes = 65 chars,
+/// matching the PGP subblock width (12 + 53 = 65).
+const SSH_SEPARATOR_DASH_COUNT: usize = 57;
+
+/// Comment truncation limit per D-P7-15 — SSH key comments are free-form
+/// UTF-8 (typically `user@host`, often longer for deploy keys). Mirrors
+/// PGP_UID_TRUNC_LIMIT for visual consistency in the acceptance banner.
+const SSH_COMMENT_TRUNC_LIMIT: usize = 64;
+
+/// Algorithms that get the `[DEPRECATED]` display tag on the Key: line per
+/// D-P7-14. Display-only — never blocks acceptance (a user MAY legitimately
+/// be migrating legacy infra). Detection rules:
+///   - `ssh-dss` (DSA): always deprecated, regardless of size. OpenSSH 7.0+
+///     rejects DSA outright; we keep it as a soft warning to surface the
+///     legacy nature without blocking.
+///   - `ssh-rsa` with bit-size <2048: deprecated per NIST SP 800-131A.
+///     RSA at 1024/1536 bits is below the modern minimum.
+///   - All other algorithms (ed25519, ecdsa-sha2-nistp{256,384,521},
+///     sk-* FIDO variants, AlgorithmName::Other): not flagged.
+fn is_deprecated_ssh_algorithm(algorithm: &str, bits: Option<u32>) -> bool {
+    if algorithm == "ssh-dss" {
+        return true;
+    }
+    if algorithm == "ssh-rsa" {
+        if let Some(b) = bits {
+            if b < 2048 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Derive the bit size of an SSH public key based on its algorithm and
+/// raw key data. ssh-key 0.6.7's `Algorithm` enum exposes the algorithm
+/// shape; bits are computed per-variant:
+///   - Ed25519 / SkEd25519: 256 (Curve25519)
+///   - ECDSA NistP256 / SkEcdsaSha2NistP256: 256
+///   - ECDSA NistP384: 384
+///   - ECDSA NistP521: 521
+///   - RSA: derive from the modulus (`KeyData::Rsa(rsa).n`) — `Mpint`'s
+///     positive-bytes length × 8 is the conventional RSA key size
+///     (2048 / 3072 / 4096 / etc.).
+///   - DSA: derive from the prime modulus (`KeyData::Dsa(dsa).p`) — same
+///     positive-bytes-times-8 derivation. Conventional `ssh-dss` keys are
+///     1024 bits.
+///   - `Algorithm::Other(_)`: unknown — return `None`.
+fn ssh_public_key_bit_size(key_data: &SshKeyData, algorithm: &SshAlgorithm) -> Option<u32> {
+    match algorithm {
+        SshAlgorithm::Ed25519 => Some(256),
+        SshAlgorithm::SkEd25519 => Some(256),
+        SshAlgorithm::Ecdsa { curve } => match curve {
+            EcdsaCurve::NistP256 => Some(256),
+            EcdsaCurve::NistP384 => Some(384),
+            EcdsaCurve::NistP521 => Some(521),
+        },
+        SshAlgorithm::SkEcdsaSha2NistP256 => Some(256),
+        SshAlgorithm::Rsa { .. } => key_data
+            .rsa()
+            .map(|rsa| mpint_bit_size(rsa.n.as_ref()) as u32),
+        SshAlgorithm::Dsa => key_data
+            .dsa()
+            .map(|dsa| mpint_bit_size(dsa.p.as_ref()) as u32),
+        // `Algorithm::Other(_)` (alloc-feature variant; unknown crate-internal
+        // names like `ssh-rsa-cert-v01@openssh.com` etc.). No bit derivation.
+        _ => None,
+    }
+}
+
+/// Compute the bit length of an `Mpint`-encoded big-integer byte slice.
+/// SSH `Mpint` may carry a leading `0x00` byte to disambiguate a positive
+/// number whose MSB is set. We strip that leading zero before counting bits.
+/// Bit count is `bytes.len() * 8` (conventional "modulus bit size") — we do
+/// not subtract leading-zero bits inside the most-significant byte because
+/// the conventional "RSA key size" is rounded up to the byte boundary
+/// (`RSA-2048` = 256-byte modulus regardless of MSB density).
+fn mpint_bit_size(raw_bytes: &[u8]) -> usize {
+    let trimmed = match raw_bytes.first() {
+        Some(0x00) => &raw_bytes[1..],
+        _ => raw_bytes,
+    };
+    trimmed.len() * 8
+}
+
+/// Render an SSH acceptance-banner subblock from the canonical OpenSSH v1
+/// wire blob (`Material::SshKey.bytes` after Plan 05's re-encode).
+///
+/// Returns a multi-line String (no leading or trailing newline). Field
+/// ordering: Key (algorithm + size + optional `[DEPRECATED]`) → Fingerprint
+/// (SHA-256 base64-unpadded) → Comment ([sender-attested] + truncated).
+///
+/// Lines (in order):
+///   --- SSH -------------------------------------------------    (57 dashes after prefix)
+///   Key:         ssh-ed25519 256 | ssh-rsa 4096 | ssh-rsa 1024 [DEPRECATED] | ssh-dss [DEPRECATED] | ...
+///   Fingerprint: SHA256:<base64-unpadded>
+///   Comment:     [sender-attested] <comment, truncated 64 chars with …>
+///                       (or "(none)" if empty)
+///
+/// NO SECRET-key warning line: OpenSSH v1 ALWAYS contains a private key
+/// (the format is for private keys); warning every time would be noise.
+/// D-P7-14 chose the lighter `[DEPRECATED]` treatment for legacy algorithms
+/// (DSA any size, RSA<2048) instead.
+///
+/// Caller (run_receive in Plan 07) passes the returned string through
+/// `Option<&str>` to TtyPrompter's `preview_subblock` parameter.
+///
+/// Error contract (D-P7-12 mirror): every parse failure surfaces as
+/// `Error::InvalidMaterial { variant: "ssh_key", reason: "malformed OpenSSH
+/// v1 blob" }` — the same curated literal used by `payload::ingest::ssh_key`.
+/// NEVER wraps an ssh-key crate error chain (oracle hygiene; D-P7-16).
+pub fn render_ssh_preview(bytes: &[u8]) -> Result<String, Error> {
+    // --- Step 1: parse via ssh-key. ---------------------------------
+    // bytes are UTF-8 PEM-armored OpenSSH v1 (per Plan 05's canonical
+    // re-encode). ssh-key's PrivateKey::from_openssh accepts impl AsRef<[u8]>
+    // directly — no UTF-8 conversion needed.
+    let key = SshPrivateKey::from_openssh(bytes).map_err(|_| Error::InvalidMaterial {
+        variant: "ssh_key".into(),
+        reason: "malformed OpenSSH v1 blob".into(),
+    })?;
+
+    // --- Step 2: extract fields. ------------------------------------
+    let public_key = key.public_key();
+    let algorithm = public_key.algorithm();
+    let algorithm_str = algorithm.as_str().to_string();
+    let bits = ssh_public_key_bit_size(public_key.key_data(), &algorithm);
+    let deprecated = is_deprecated_ssh_algorithm(&algorithm_str, bits);
+
+    // SHA-256 fingerprint — Fingerprint's Display impl outputs
+    // "SHA256:<base64-unpadded>" (matches `ssh-keygen -lf`).
+    // D-P7-15: MD5 and SHA-1 are explicitly NOT called.
+    let fingerprint = public_key.fingerprint(HashAlg::Sha256);
+    let fingerprint_str = format!("{}", fingerprint);
+
+    // Comment is the sender-attested label; ssh-key's PrivateKey::comment()
+    // returns &str (empty string for no comment, not Option).
+    let comment_raw = key.comment();
+    let comment_display = if comment_raw.is_empty() {
+        "(none)".to_string()
+    } else {
+        truncate_display(comment_raw, SSH_COMMENT_TRUNC_LIMIT)
+    };
+
+    // --- Step 3: format. --------------------------------------------
+    let separator: String = format!("--- SSH {}", "-".repeat(SSH_SEPARATOR_DASH_COUNT));
+    let key_line = match (bits, deprecated) {
+        (Some(b), true) => format!("{} {} [DEPRECATED]", algorithm_str, b),
+        (Some(b), false) => format!("{} {}", algorithm_str, b),
+        (None, true) => format!("{} [DEPRECATED]", algorithm_str),
+        (None, false) => algorithm_str,
+    };
+
+    let mut out = String::new();
+    out.push_str(&separator);
+    out.push('\n');
+    writeln!(out, "Key:         {}", key_line).expect("String write");
+    writeln!(out, "Fingerprint: {}", fingerprint_str).expect("String write");
+    // Last line — no trailing newline (caller owns outer banner layout).
+    write!(out, "Comment:     [sender-attested] {}", comment_display).expect("String write");
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -790,8 +955,17 @@ mod tests {
     #[test]
     fn is_deprecated_ssh_algorithm_modern_algorithms_not_deprecated() {
         assert!(!is_deprecated_ssh_algorithm("ssh-ed25519", Some(256)));
-        assert!(!is_deprecated_ssh_algorithm("ecdsa-sha2-nistp256", Some(256)));
-        assert!(!is_deprecated_ssh_algorithm("ecdsa-sha2-nistp384", Some(384)));
-        assert!(!is_deprecated_ssh_algorithm("ecdsa-sha2-nistp521", Some(521)));
+        assert!(!is_deprecated_ssh_algorithm(
+            "ecdsa-sha2-nistp256",
+            Some(256)
+        ));
+        assert!(!is_deprecated_ssh_algorithm(
+            "ecdsa-sha2-nistp384",
+            Some(384)
+        ));
+        assert!(!is_deprecated_ssh_algorithm(
+            "ecdsa-sha2-nistp521",
+            Some(521)
+        ));
     }
 }
