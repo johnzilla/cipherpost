@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: "Completed 08-01: PIN crypto core + wire fields"
-last_updated: "2026-04-25T22:44:50.558Z"
-last_activity: 2026-04-25 -- Phase --phase execution started
+stopped_at: "Completed 08-02: PIN ship-gate (validate_pin + prompt_pin + CLI flag + nested age-decrypt + JCS fixture + oracle + leak-scan + SPEC.md §3.6)"
+last_updated: "2026-04-25T23:30:00.000Z"
+last_activity: 2026-04-25 -- Plan 08-02 complete
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 16
-  percent: 76
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 ## Current Position
 
 Phase: 08 (pin-and-burn-encryption-modes) — EXECUTING
-Plan: 1 / 6 complete (08-01 PIN crypto core landed)
-Status: Executing Phase 08 — Plan 02 next (PIN ship-gate)
-Last activity: 2026-04-25 -- Plan 08-01 complete
+Plan: 2 / 6 complete (08-02 PIN ship-gate landed; PIN side ships completely — 7 PIN REQ-IDs covered this plan; PIN-03/04/05/09/10 from Plan 01 carried forward → all 10 PIN REQ-IDs done)
+Status: Executing Phase 08 — Plan 03 next (BURN core)
+Last activity: 2026-04-25 -- Plan 08-02 complete
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 86%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 76%
 | Phase 06 P03 | 19min | 3 tasks | 16 files |
 | Phase 06 P04 | 21min | 6 tasks | 11 files |
 | Phase 8 P1 | 20 | 3 tasks | 22 files |
+| Phase 8 P2 | 37min | 5 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -137,11 +138,23 @@ Recent decisions affecting current work:
 - PIN crypto landed (Phase 8 Plan 01): cclink KDF shape forked verbatim; HKDF info adapted cclink-pin-v1 → cipherpost/v1/pin; direct chacha20poly1305 rejected → nested age (CLAUDE.md load-bearing); zero new direct deps verified by 08-01-pin-deps-tree.txt
 - Phase 8 Plan 01 wire-budget reality (parallels Phase 6/7): pin-protected shares exceed 1000-byte BEP44 ceiling for any non-trivial plaintext; happy-path round-trip #[ignore]'d, WireBudgetExceeded clean-surface test added; escape hatch deferred to Phase 9
 
+**v1.1 Phase 8 Plan 02 (2026-04-25):**
+
+- PIN ship-gate complete — all 10 PIN REQ-IDs covered (PIN-01..10). validate_pin (PIN-02) entropy floor + anti-pattern + blocklist; prompt_pin (PIN-01, PIN-06) TTY-only with double-entry on confirm=true; CLI --pin flag; run_receive STEP 6a salt-split + nested age-decrypt; JCS fixture (212 B) pinning pin_required alphabetic placement; PIN-07 narrow oracle (wrong-PIN ≡ wrong-passphrase ≡ tampered-inner Display + exit 4); leak-scan (T-08-11); SPEC.md §3.6 PIN Crypto Stack
+- D-P8-12 supersedes REQUIREMENTS PIN-02 wording: user-facing Display is GENERIC ("PIN does not meet entropy requirements") — specific reason asserted at test layer, never in user-facing output (oracle hygiene per PITFALLS #23/#24)
+- Wrong-PIN funnels through existing Error::DecryptFailed (no new variant) — IDENTICAL Display + exit 4 as wrong-passphrase, distinct from sig-failures (exit 3) which keep their own D-16 unified Display
+- AD-5 cfg-gated env-var injection pattern (CIPHERPOST_TEST_PIN) mirrors flow::tty_check_skipped — production builds compile out the override; tests inject via env. Works under both cfg(test) AND feature=mock
+- clap-bool natural rejection of argv-inline `--pin <value>` verified empirically (RESEARCH Open Risk #6 closed) — no runtime check needed
+- PIN-08 case (c) ships concretely (NOT a docstring placeholder) via direct OuterRecord synthesis — bypasses wire-budget round-trip dependency because run_receive aborts at prompt_pin BEFORE age-decrypt (iteration-1 B3 resolution shipped)
+- Synthetic-variant intrinsic-Display oracle pattern: pin_error_oracle.rs proves Display equivalence using Error::DecryptFailed unit-variant constructions directly — no wire-budget round-trip dependency; pattern reusable for future variant-equivalence assertions
+- Rust E0449 enum-variant visibility rule: `pub pin: bool` invalid in Send variant; landed as `pin: bool` (no public-API change). Plan-grep markers updated
+
 ### Pending Todos
 
-- Complete cclink pin/burn survey before planning Phase 8 (see SUMMARY.md Open Questions — manual bash commands provided)
+- ~~Complete cclink pin/burn survey before planning Phase 8~~ (closed in 08-01 SUMMARY.md cclink-divergence write-up)
 - Run `cargo tree | grep ed25519-dalek` after adding `ssh-key` to Cargo.toml at Phase 7 plan time; document outcome in plan 01
 - Verify pkarr 5.0.4 ClientBuilder bootstrap configurability at Phase 9 plan time
+- Optional follow-up: append clarification to `.planning/REQUIREMENTS.md` PIN-02 noting D-P8-12 supersession of "specific reason" wording (non-blocking — 08-02 SUMMARY is authoritative)
 
 ### Blockers/Concerns
 
@@ -160,9 +173,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-25T22:44:41.636Z
-Stopped at: Completed 08-01: PIN crypto core + wire fields
+Last session: 2026-04-25T23:30:00.000Z
+Stopped at: Completed 08-02: PIN ship-gate (validate_pin + prompt_pin + CLI flag + nested age-decrypt + JCS fixture + oracle + leak-scan + SPEC.md §3.6)
 Resume file: None
 
 **Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
-**Next action:** `/gsd-execute-phase 6` (continues with Plan 03 — CLI `--material` flag + `Receive --armor` + run_send/run_receive wiring)
+**Next action:** `/gsd-execute-phase 8` (continues with Plan 03 — BURN core: Envelope.burn_after_read inner-signed wiring + run_receive burn-state-handling + state-ledger BURN-01..05)

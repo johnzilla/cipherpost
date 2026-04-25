@@ -126,7 +126,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 5. Non-interactive automation E2E | v1.1 | 3/3 | Complete    | 2026-04-24 |
 | 6. Typed Material: X509Cert | v1.1 | 4/4 | Complete    | 2026-04-24 |
 | 7. Typed Material: PgpKey + SshKey | v1.1 | 8/8 | Complete    | 2026-04-25 |
-| 8. --pin and --burn modes | v1.1 | 0/6 | Planned | - |
+| 8. --pin and --burn modes | v1.1 | 2/6 | Executing | - |
 | 9. Real-DHT E2E + CAS race gate | v1.1 | 0/TBD | Not started | - |
 
 ---
