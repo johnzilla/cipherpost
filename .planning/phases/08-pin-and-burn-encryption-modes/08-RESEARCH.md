@@ -759,18 +759,18 @@ pub fn check_already_consumed(share_ref_hex: &str) -> LedgerState {
 
 **All other claims are [VERIFIED] against shipped code or [CITED] from `Cargo.toml`, `cargo tree`, source comments, or RFCs.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `LedgerState::Accepted` and `LedgerState::Burned` carry the same field name (`at: String`) or different names (`accepted_at` vs `burned_at`)?**
+1. **RESOLVED — Should `LedgerState::Accepted` and `LedgerState::Burned` carry the same field name (`at: String`) or different names (`accepted_at` vs `burned_at`)?**
    - What we know: the wire-format ledger-row JSON uses `accepted_at` for the timestamp; the new `state` field is a separate string column.
    - What's unclear: when constructing `LedgerState::Burned { burned_at: ts }` in Rust, should the timestamp field name match the wire field (always `accepted_at`) or differ semantically (`burned_at`)?
    - Recommendation: Use `accepted_at` in both variants — matches the wire field; simpler. If the test suite ever wants to assert the burn timestamp specifically, it does so through the variant match, not the field name.
 
-2. **Is there an `is_false` helper to add at crate scope, or inline per-module?**
+2. **RESOLVED — Is there an `is_false` helper to add at crate scope, or inline per-module?**
    - Convention: `serde-with` provides one; cipherpost doesn't pull `serde-with`. Hand-roll.
    - Recommendation: Inline `pub(crate) fn is_false(b: &bool) -> bool { !*b }` in `src/lib.rs` or each module. Single source of truth recommended (lib.rs).
 
-3. **Should the cclink-divergence write-up live as a separate `.md` file or inline in Plan 01 SUMMARY?**
+3. **RESOLVED — Should the cclink-divergence write-up live as a separate `.md` file or inline in Plan 01 SUMMARY?**
    - Per D-P8-01, "Plan 01 SUMMARY.md MUST contain this divergence write-up". Recommend: inline in Plan 01's `SUMMARY.md`. Don't fragment into a separate file unless the write-up exceeds ~300 lines.
 
 ## Sources
