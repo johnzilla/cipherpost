@@ -419,7 +419,10 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
     `-----END CERTIFICATE-----\n`) — byte-compatible with
     `openssl x509 -in <der> -inform DER -outform PEM`. `--armor` on a
     `generic_secret` variant is rejected with
-    `Error::Config("--armor requires --material x509-cert")` at exit 1 (OQ-1).
+    `Error::Config("--armor requires --material x509-cert or pgp-key")` at exit 1 (OQ-1).
+    Phase 7 widened the literal as `pgp-key` gained armor-output support; the
+    full per-variant matrix (PGP via rpgp `to_armored_bytes`; SSH armor reject)
+    is documented in the Phase 7 PGP/SSH SPEC sections.
 12. Create sentinel `~/.cipherpost/state/accepted/<share_ref>` (mode 0600); append a ledger
     line to `~/.cipherpost/state/accepted.jsonl` (mode 0600) with `receipt_published_at: null` (D-STATE-01, D-SEQ-04).
 13. Construct `Receipt`, sign with recipient's Ed25519 key, call `Transport::publish_receipt`.
