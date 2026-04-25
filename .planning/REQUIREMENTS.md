@@ -113,14 +113,19 @@ Phase 8. Forks cclink's PIN crypto shape; stays inside `age` for AEAD.
 
 Phase 8. State-ledger inversion of v1.0 idempotency; orthogonal to PIN.
 
-- [ ] **BURN-01 [Phase 8]**: `cipherpost send --burn` sets `Envelope.burn_after_read: bool = true` (inner-signed, `#[serde(default, skip_serializing_if = "is_false")]` — preserves byte-identity for non-burn shares)
+- [x] **BURN-01
+ [Phase 8]**: `cipherpost send --burn` sets `Envelope.burn_after_read: bool = true` (inner-signed, `#[serde(default, skip_serializing_if = "is_false")]` — preserves byte-identity for non-burn shares)
 - [ ] **BURN-02 [Phase 8]**: `cipherpost receive` on a `burn_after_read` share: first successful receive writes state-ledger entry with new `burned` state (distinct from v1.0's `accepted`); subsequent receives on same `share_ref` return exit 7 `"share already consumed"` — burn inverts v1.0's idempotency
 - [ ] **BURN-03 [Phase 8]**: State-ledger atomicity: stdout emit happens BEFORE `burned` state write. Crash between emit and write leaves the share re-receivable — safer failure mode (user keeps access) than the reverse (user loses data to a crashed state-write).
 - [ ] **BURN-04 [Phase 8]**: Receipt IS published on successful burn-receive (same semantics as non-burn). Burn does not prevent attestation; it only prevents a second local decryption. Sender still sees a single receipt via `receipts --from <z32>`.
-- [ ] **BURN-05 [Phase 8]**: Send-time stderr warning when `--burn` is used: explicit `"⚠ --burn is local-state-only; ciphertext remains on DHT until TTL (24h by default). This prevents YOUR second decryption, not a second machine's."`
-- [ ] **BURN-06 [Phase 8]**: Receive-time acceptance banner on a burn share: prepends `[BURN — you will only see this once]` marker before the typed-z32 prompt; user warned before commit
-- [ ] **BURN-07 [Phase 8]**: `--burn` and `--pin` compose orthogonally; wire can carry both (`pin_required=true` + `burn_after_read=true` both serialized)
-- [ ] **BURN-08 [Phase 8]**: THREAT-MODEL.md §X.Y "Burn mode" documents local-state-only semantics, DHT-packet-survives-TTL caveat, multi-machine race (two receivers with fresh ledgers can both decrypt), positioned as UX affordance not cryptographic destruction
+- [x] **BURN-05
+ [Phase 8]**: Send-time stderr warning when `--burn` is used: explicit `"⚠ --burn is local-state-only; ciphertext remains on DHT until TTL (24h by default). This prevents YOUR second decryption, not a second machine's."`
+- [x] **BURN-06
+ [Phase 8]**: Receive-time acceptance banner on a burn share: prepends `[BURN — you will only see this once]` marker before the typed-z32 prompt; user warned before commit
+- [x] **BURN-07
+ [Phase 8]**: `--burn` and `--pin` compose orthogonally; wire can carry both (`pin_required=true` + `burn_after_read=true` both serialized)
+- [x] **BURN-08
+ [Phase 8]**: THREAT-MODEL.md §X.Y "Burn mode" documents local-state-only semantics, DHT-packet-survives-TTL caveat, multi-machine race (two receivers with fresh ledgers can both decrypt), positioned as UX affordance not cryptographic destruction
 - [ ] **BURN-09 [Phase 8]**: Integration test: two consecutive receives of same burn share return exit 0 then exit 7 in that order; ledger inspection confirms `burned` state after first; receipt count = 1 (not 2) after second attempt
 
 ### Real-DHT + merge-update race gate (DHT)

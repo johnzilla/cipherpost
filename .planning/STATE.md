@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: "Completed 08-02: PIN ship-gate (validate_pin + prompt_pin + CLI flag + nested age-decrypt + JCS fixture + oracle + leak-scan + SPEC.md §3.6)"
-last_updated: "2026-04-25T23:30:00.000Z"
-last_activity: 2026-04-25 -- Plan 08-02 complete
+stopped_at: "Completed 08-03: BURN core (LedgerState enum + check_already_consumed rename + LedgerEntry schema migration + --burn CLI flag + BURN-05 stderr warning)"
+last_updated: "2026-04-25T23:55:17.074Z"
+last_activity: 2026-04-25 -- Plan 08-03 complete
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 ## Current Position
 
 Phase: 08 (pin-and-burn-encryption-modes) — EXECUTING
-Plan: 2 / 6 complete (08-02 PIN ship-gate landed; PIN side ships completely — 7 PIN REQ-IDs covered this plan; PIN-03/04/05/09/10 from Plan 01 carried forward → all 10 PIN REQ-IDs done)
-Status: Executing Phase 08 — Plan 03 next (BURN core)
-Last activity: 2026-04-25 -- Plan 08-02 complete
+Plan: 3 / 6 complete (08-03 BURN core landed; 5 of 9 BURN REQ-IDs covered — BURN-01 wire field end-to-end on send, BURN-05 stderr warning, BURN-06 CLI surface, BURN-07 compose orthogonality, BURN-08 caveat link in CLI doc; LedgerState enum + check_already_consumed rename + LedgerEntry.state schema migration land atomically)
+Status: Executing Phase 08 — Plan 04 next (BURN ship-gate: receive-side burn marking + banner [BURN] tag + emit-before-mark write order + BURN-09 round-trip test + PITFALLS.md #26 supersession)
+Last activity: 2026-04-25 -- Plan 08-03 complete
 
-Progress: [████████░░] 86%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [████████░░] 86%
 | Phase 06 P04 | 21min | 6 tasks | 11 files |
 | Phase 8 P1 | 20 | 3 tasks | 22 files |
 | Phase 8 P2 | 37min | 5 tasks | 13 files |
+| Phase 08 P03 | 14min | 2 tasks tasks | 4 files files |
 
 ## Accumulated Context
 
@@ -148,6 +149,10 @@ Recent decisions affecting current work:
 - PIN-08 case (c) ships concretely (NOT a docstring placeholder) via direct OuterRecord synthesis — bypasses wire-budget round-trip dependency because run_receive aborts at prompt_pin BEFORE age-decrypt (iteration-1 B3 resolution shipped)
 - Synthetic-variant intrinsic-Display oracle pattern: pin_error_oracle.rs proves Display equivalence using Error::DecryptFailed unit-variant constructions directly — no wire-budget round-trip dependency; pattern reusable for future variant-equivalence assertions
 - Rust E0449 enum-variant visibility rule: `pub pin: bool` invalid in Send variant; landed as `pin: bool` (no public-API change). Plan-grep markers updated
+- v1.1 Phase 8 Plan 03 (2026-04-25): BURN core SHIPPED (5 of 9 BURN REQ-IDs covered; BURN-01 wire field end-to-end on send; BURN-05 stderr warning verbatim; BURN-06 CLI surface; BURN-07 compose orthogonality; BURN-08 caveat link in CLI doc)
+- v1.1 Phase 8 Plan 03: AD-3 confirmed — LedgerState enum lives in src/flow.rs (NOT a new src/state.rs). check_already_accepted -> check_already_consumed rename atomic across 2 callers (run_receive STEP 1 + main.rs CLI dispatch); Rust enum exhaustiveness ensures all 3 LedgerState arms (None/Accepted/Burned) handled
+- v1.1 Phase 8 Plan 03: Schema migration shape — LedgerEntry.state on the wire is Option<&str> (open-set string for external tooling); typed LedgerState is a runtime abstraction in check_already_consumed return type. v1.0 rows (no state field) deserialize via serde default to None and map CONSERVATIVELY to LedgerState::Accepted (T-08-17 — never silently classify Accepted as Burned)
+- v1.1 Phase 8 Plan 03: Rust E0364 (Rule 1 fix) — pub use of pub(crate) items forbidden. test_paths cfg-gated module exposes pub fn wrappers around pub(crate) helpers; semantically equivalent to plan's intent (Plans 04+5 import unchanged). Plan 02's E0449 fix for pin: bool extends to burn: bool — no pub on enum-variant fields
 
 ### Pending Todos
 
@@ -173,8 +178,8 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-25T23:30:00.000Z
-Stopped at: Completed 08-02: PIN ship-gate (validate_pin + prompt_pin + CLI flag + nested age-decrypt + JCS fixture + oracle + leak-scan + SPEC.md §3.6)
+Last session: 2026-04-25T23:54:57.784Z
+Stopped at: Completed 08-03: BURN core (LedgerState enum + check_already_consumed rename + LedgerEntry schema migration + --burn CLI flag + BURN-05 stderr warning)
 Resume file: None
 
 **Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
