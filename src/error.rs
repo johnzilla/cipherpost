@@ -72,6 +72,21 @@ pub enum Error {
     #[error("invalid material: variant={variant}, reason={reason}")]
     InvalidMaterial { variant: String, reason: String },
 
+    /// D-P7-12 (Phase 7 Plan 05): SSH input format not OpenSSH v1.
+    /// Distinct variant (not InvalidMaterial) because the user-facing message
+    /// embeds a copy-pasteable `ssh-keygen` hint that is variant-specific —
+    /// users in legacy-PEM/RFC4716/FIDO format need to convert before retry.
+    ///
+    /// Display intentionally omits both the rejected format (avoiding an
+    /// info-disclosure oracle: "your input looked like RSA-PEM") and any
+    /// ssh-key crate internals (oracle hygiene; mirrors InvalidMaterial rule).
+    ///
+    /// Maps to exit 1 — same content-error class as InvalidMaterial.
+    #[error(
+        "SSH key format not supported — convert to OpenSSH v1 via `ssh-keygen -p -o -f <path>`"
+    )]
+    SshKeyFormatNotSupported,
+
     #[error("invalid share URI: {0}")]
     InvalidShareUri(String),
 
@@ -106,6 +121,7 @@ pub fn exit_code(err: &Error) -> i32 {
         Error::Declined => 7,
         Error::ShareRefMismatch | Error::WireBudgetExceeded { .. } | Error::InvalidShareUri(_) => 1,
         Error::InvalidMaterial { .. } => 1, // X509-08: content error, NOT sig (exit 3)
+        Error::SshKeyFormatNotSupported => 1, // D-P7-12: distinct format-rejection class
         _ => 1,
     }
 }

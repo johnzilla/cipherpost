@@ -3,7 +3,7 @@
 //! dispatcher prevents D-15 source-chain leakage.
 
 use anyhow::Result;
-use cipherpost::cli::{Cli, Command, IdentityCmd, MaterialVariant};
+use cipherpost::cli::{Cli, Command, IdentityCmd};
 use cipherpost::error::{exit_code, user_message, Error};
 use clap::Parser;
 
@@ -120,13 +120,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                     (None, Some(_)) => unreachable!("validated above"),
                 };
 
-            // D-P6-01: reject unimplemented typed variants at dispatch, before
-            // any passphrase resolution. Keeps the error-code surface clean
-            // (exit 1 via NotImplemented) and avoids loading identity unnecessarily.
-            // Plan 01: PgpKey dispatched live via run_send. SshKey still waiting on Plan 05.
-            if matches!(material, MaterialVariant::SshKey) {
-                return Err(cipherpost::Error::NotImplemented { phase: 7 }.into());
-            }
+            // Phase 7 Plan 05: belt-and-suspenders dispatch guard fully removed.
+            // All four MaterialVariant values (GenericSecret, X509Cert, PgpKey,
+            // SshKey) now dispatch live through run_send → payload::ingest::*.
+            // Per-variant rejection / unimplemented gating is handled inside
+            // run_send and the per-variant ingest functions, not here.
 
             // D-P5-01 precedence (enforced in resolve_passphrase body): fd > file > env > TTY.
             // confirm_on_tty: false — unlock path.

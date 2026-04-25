@@ -246,10 +246,9 @@ pub fn run_send(
         // Phase 7 Plan 01: PgpKey dispatch is now live — calls payload::ingest::pgp_key
         // (strict armor reject + multi-primary reject + trailing-bytes check).
         MaterialVariant::PgpKey => payload::ingest::pgp_key(&plaintext_bytes)?,
-        MaterialVariant::SshKey => {
-            // SshKey still waiting on Plan 05.
-            return Err(Error::NotImplemented { phase: 7 });
-        }
+        // Phase 7 Plan 05: SshKey dispatch is now live — calls payload::ingest::ssh_key
+        // (strict OpenSSH-v1 sniff + canonical re-encode + trailing-bytes check).
+        MaterialVariant::SshKey => payload::ingest::ssh_key(&plaintext_bytes)?,
     };
 
     // 3. plaintext cap (pre-encrypt; D-PS-01 / D-P6-16). Uses the typed
