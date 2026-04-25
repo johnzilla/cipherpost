@@ -75,3 +75,83 @@ fn dep_tree_contains_x509_parser_0_16_x() {
         first_line
     );
 }
+
+// Phase 7 Plan 04: pgp crate version pin assertion.
+// Asserts the locked exact-pin from D-P7-04 (Cargo.toml: `pgp = "=0.19.0"`).
+// If `cargo update -p pgp` accidentally bumps the major/minor, this fails first.
+#[test]
+fn dep_tree_contains_pgp_0_19_x() {
+    let out = Command::new("cargo")
+        .arg("tree")
+        .arg("-p")
+        .arg("pgp")
+        .output()
+        .expect("cargo tree -p pgp must run");
+    assert!(
+        out.status.success(),
+        "cargo tree -p pgp failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("UTF-8");
+    let first_line = stdout
+        .lines()
+        .next()
+        .expect("non-empty cargo tree output");
+    assert!(
+        first_line.starts_with("pgp v0.19."),
+        "Expected pgp v0.19.x (not 0.18, not 0.20), got: {:?}",
+        first_line
+    );
+}
+
+// Phase 7 Plan 04: assert ed25519-dalek coexistence is the DOCUMENTED shape
+// (2.x from pgp 0.19.0 + 3.0.0-pre.5 from pkarr). If a third version appears,
+// SOMETHING upstream changed — fail loudly so we re-run research.
+//
+// Note: Plan 01 SUMMARY documented that pgp 0.19.0 actually pulls 2.2.0 (not
+// 2.1.1 as research GAP predicted). The assertion below checks `v2.` prefix
+// rather than a specific patch level — version-class invariance per D-P7-22.
+#[test]
+fn dep_tree_ed25519_dalek_coexistence_shape() {
+    let out = Command::new("cargo")
+        .arg("tree")
+        .output()
+        .expect("cargo tree must run");
+    assert!(
+        out.status.success(),
+        "cargo tree failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("UTF-8");
+
+    let mut versions = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        if let Some(start) = line.find("ed25519-dalek v") {
+            let rest = &line[start + "ed25519-dalek v".len()..];
+            let end = rest
+                .find(|c: char| c == ' ' || c == '\n' || c == '(')
+                .unwrap_or(rest.len());
+            versions.insert(rest[..end].to_string());
+        }
+    }
+
+    let has_2x = versions.iter().any(|v| v.starts_with("2."));
+    let has_3_0_0_pre5 = versions.iter().any(|v| v == "3.0.0-pre.5");
+
+    assert!(
+        has_2x,
+        "ed25519-dalek 2.x (from pgp 0.19.0 transitive) must be present, got versions: {:?}",
+        versions
+    );
+    assert!(
+        has_3_0_0_pre5,
+        "ed25519-dalek =3.0.0-pre.5 (from pkarr) must be present, got versions: {:?}",
+        versions
+    );
+    assert!(
+        versions.len() <= 2,
+        "Expected ≤2 distinct ed25519-dalek versions (2.x + 3.0.0-pre.5), got {}: {:?}",
+        versions.len(),
+        versions
+    );
+}

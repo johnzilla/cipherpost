@@ -148,11 +148,23 @@ pub fn pgp_key(raw: &[u8]) -> Result<Material, Error> {
     // via `&mut cursor` so `cursor.position()` is available for the trailing-
     // bytes check after iteration finishes. `PacketTrait` is brought in-scope
     // so `packet.tag()` resolves (method lives on the trait, not the enum).
+    //
+    // We additionally sum the SERIALIZED length of each yielded packet (via
+    // `pgp::ser::Serialize::to_writer`) and compare to raw.len() in step 3.
+    // Cursor.position() alone is insufficient: rpgp 0.19.0's PacketParser
+    // silently advances the cursor past trailing 0xFF bytes (interpreting them
+    // as a stream-end magic), so a fixture+`[0xFF, 0xFF, 0xFF]` ends with
+    // cursor.position() == raw.len() despite the trailing garbage. Summing
+    // serialized lengths is the WR-01 invariant mirror that catches this case
+    // — only bytes that round-trip through the parser+serializer count toward
+    // "consumed".
     use pgp::packet::PacketTrait;
+    use pgp::ser::Serialize;
     use std::io::Cursor;
     let mut cursor = Cursor::new(raw);
     let mut primary_count: usize = 0;
     let mut total_packets: usize = 0;
+    let mut bytes_serialized: usize = 0;
 
     {
         let parser = pgp::packet::PacketParser::new(&mut cursor);
@@ -168,9 +180,19 @@ pub fn pgp_key(raw: &[u8]) -> Result<Material, Error> {
                 }
                 _ => {}
             }
+            // Sum the canonical serialized length of each packet. This is the
+            // WR-01 trailing-bytes oracle that doesn't rely on cursor.position
+            // (which rpgp may advance past 0xFF stream-end magic).
+            let mut sink = Vec::new();
+            packet
+                .to_writer(&mut sink)
+                .map_err(|_| Error::InvalidMaterial {
+                    variant: "pgp_key".into(),
+                    reason: "malformed PGP packet stream".into(),
+                })?;
+            bytes_serialized += sink.len();
         }
     }
-    let bytes_consumed = cursor.position() as usize;
 
     if total_packets == 0 {
         return Err(Error::InvalidMaterial {
@@ -195,10 +217,12 @@ pub fn pgp_key(raw: &[u8]) -> Result<Material, Error> {
     }
 
     // --- Step 3: trailing-bytes check (WR-01 invariant / D-P7-07). -----------
-    // PacketParser::next returns None on UnexpectedEof cleanly, so if there's
-    // anything after the last valid packet the cursor position will be short
-    // of raw.len(). That remaining tail is rejected.
-    if bytes_consumed != raw.len() {
+    // The total bytes consumed by yielded packets (sum of serialized lengths)
+    // must equal raw.len(). PacketParser::next returns None on UnexpectedEof
+    // cleanly AND silently swallows trailing 0xFF stream-end bytes, so cursor
+    // position alone misses garbage tails. Summed serialized length closes
+    // the oracle: any byte that does not round-trip is "trailing" and rejected.
+    if bytes_serialized != raw.len() {
         return Err(Error::InvalidMaterial {
             variant: "pgp_key".into(),
             reason: "trailing bytes after PGP packet stream".into(),
