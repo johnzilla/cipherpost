@@ -79,14 +79,23 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 - ✓ CLAUDE.md `## Planning docs convention` section locks the inline-phase-tag traceability rule project-wide; archived v1.0 REQUIREMENTS.md traceability table dropped (49 Complete rows removed — Pitfall #32)
 - ✓ 98 tests pass under `cargo test --features mock` (86 baseline + 12 new across Plans 05-01/02/03)
 
+**`--pin` and `--burn` encryption modes (Phase 8 — 2026-04-26)**
+- ✓ `cipherpost send --pin` ships TTY-only PIN prompt + 8-char/anti-pattern validation (PIN-02); PIN crypto is cclink-fork-with-divergence — Argon2id(PIN + 32-byte salt) → HKDF-SHA256 `cipherpost/v1/pin` → 32-byte X25519 scalar wrapped into age `Identity` for nested-age inner layer (no direct `chacha20poly1305` calls per CLAUDE.md load-bearing rule)
+- ✓ `cipherpost send --burn` ships full receive-side burn semantics: `Envelope.burn_after_read=true` (inner-signed, post-decrypt; NOT OuterRecord per ciphertext-only-on-wire principle); first receive emit-before-mark order (D-P8-12) — emit decrypted bytes → fsync stdout → append `state: "burned"` ledger row → fsync ledger → touch sentinel; second receive returns exit 7 "share already consumed"; receipt published unconditionally (no `if !envelope.burn_after_read` guard — burn does NOT suppress attestation per BURN-04)
+- ✓ Acceptance banner shows `[BURN — you will only see this once]` marker (literal em-dash) at TOP of header before Purpose line; PIN prompt rendered to stderr BEFORE typed-z32 acceptance prompt (D-P8-07/08)
+- ✓ Compose orthogonality: pin × burn × {GenericSecret, X509Cert, PgpKey, SshKey} 23-test matrix in `tests/pin_burn_compose.rs` — wrong-PIN-on-burn doesn't-mark-burned, typed-z32-declined-on-burn doesn't-mark-burned, pin+burn+typed-material wire-budget surfaces clean `Error::WireBudgetExceeded` for budget-exceeding composites
+- ✓ Wire-byte preservation: v1.0 fixtures (`outer_record_signable.bin` 192 B, `receipt_signable.bin` 424 B, `envelope_jcs_generic_secret.bin` 119 B) byte-identical via `is_false` skip-serializing-if; new fixtures `outer_record_pin_required_signable.bin` (212 B) + `envelope_burn_signable.bin` (142 B) committed
+- ✓ Error-oracle hygiene extended: wrong-PIN folds into existing `Error::DecryptFailed` (NO new variant); Display ≡ wrong-passphrase ≡ tampered at exit 4 (PIN-07); HKDF info enumeration test auto-discovers `cipherpost/v1/pin`; leak-scan extended for PIN-holding structs
+- ✓ State-ledger schema migration: `state: Option<String>` field on `LedgerEntry` (v1.0 rows missing the field deserialize via serde default); `LedgerState` enum with None/Accepted/Burned; `check_already_accepted` renamed to `check_already_consumed` returning `LedgerState`; `pub mod test_paths` cfg-gated re-export so integration tests don't duplicate path logic
+- ✓ THREAT-MODEL.md §6.5 PIN mode + §6.6 Burn mode (multi-machine race, DHT-survives-TTL, indistinguishability, emit-before-mark); SPEC.md §3.6 PIN crypto stack + §3.7 Burn semantics + §5.1/§5.2/§6 cross-refs; CLAUDE.md +3 load-bearing lock-ins (HKDF `cipherpost/v1/pin`, ledger `state` field invariant, emit-before-mark contract); PITFALLS #26 SUPERSEDED-by-D-P8-12 (preserves original mark-then-emit analysis)
+- ✓ 309 tests pass / 0 failed / 19 ignored under `cargo test --features mock`; cclink fork-and-diverge survey closed (cclink chacha20poly1305-direct AEAD path rejected; cclink DHT-revoke burn rejected per BURN-08); zero new direct deps (argon2/hkdf/age all pre-existing)
+
 ### Active
 
 <!-- Milestone v1.1 "Real v1" — finish the PRD's full v1 scope and de-risk the protocol on real Mainline DHT. Full requirements with REQ-IDs in .planning/REQUIREMENTS.md; phase structure in .planning/ROADMAP.md. -->
 
-v1.1 remaining work (Phases 6–9):
+v1.1 remaining work (Phase 9):
 
-- **All three remaining `Material` variants** — `X509Cert`, `PgpKey` (single key, not keyring), `SshKey`
-- **`--pin` and `--burn` encryption modes** on typed payloads
 - **Real-DHT cross-identity round trip** + explicit PKARR `cas` merge-update race test as release-acceptance gate
 
 ### Out of Scope
@@ -185,4 +194,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-24 after Phase 5 (Non-interactive automation E2E) — scripted send/receive without TTY shipped; SPEC.md §7 precedence + §3.5 DHT Label Stability + API-range version prose; traceability format locked project-wide. Next: Phase 6 Typed Material — X509Cert.*
+*Last updated: 2026-04-26 after Phase 8 (--pin and --burn encryption modes) — PIN as second factor (cclink-fork crypto, no direct chacha20poly1305) + burn as single-consumption (local-state-only, emit-before-mark, receipt still published) shipped on top of typed materials; compose orthogonality across {GenericSecret, X509Cert, PgpKey, SshKey} pinned by 23-test matrix; v1.0 wire fixtures byte-identical; THREAT-MODEL §6.5/§6.6 + CLAUDE.md +3 load-bearing lock-ins. 309 tests pass under `cargo test --features mock`. Next: Phase 9 Real-DHT cross-identity round trip + PKARR `cas` merge-update race gate.*
