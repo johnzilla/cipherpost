@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: planning
+status: executing
 stopped_at: Phase 9 context gathered
-last_updated: "2026-04-26T18:11:06.489Z"
-last_activity: 2026-04-26
+last_updated: "2026-04-26T18:53:04.027Z"
+last_activity: 2026-04-26 -- Phase 09 execution started
 progress:
   total_phases: 5
   completed_phases: 4
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickoff)
 
 **Core value:** Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
-**Current focus:** Phase --phase — 08
+**Current focus:** Phase 09 — real-dht-e2e-cas-merge-update-race-gate
 
 ## Current Position
 
-Phase: 9
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-04-26
+Phase: 09 (real-dht-e2e-cas-merge-update-race-gate) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 09
+Last activity: 2026-04-26 -- Phase 09 execution started
 
 Progress: [██████████] 100%
 
