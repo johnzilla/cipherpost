@@ -14,7 +14,7 @@ fn main() {
         })
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    println!("cargo:rustc-env=CIPHERPOST_GIT_SHA={}", sha);
+    println!("cargo:rustc-env=CIPHERPOST_GIT_SHA={sha}");
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/refs/heads");
 }
