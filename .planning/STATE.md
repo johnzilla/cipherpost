@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
-status: executing
+status: ready_to_plan
 stopped_at: "Completed 08-06: Phase 8 docs closure (THREAT-MODEL §6.5/§6.6, SPEC.md cross-refs, CLAUDE.md lock-ins)"
 last_updated: "2026-04-26T01:15:00.553Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 21
   completed_plans: 21
   percent: 100
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 
 ## Current Position
 
-Phase: 08 (pin-and-burn-encryption-modes) — COMPLETE (pending verifier sign-off)
-Plan: 6 / 6 complete (08-06 docs closure shipped — THREAT-MODEL.md §6.5 PIN mode + §6.6 Burn mode prose, SPEC.md §3.6/§3.7 cross-refs + §5.1 --burn flag + §5.2 ledger pre-check / banner marker + §6 exit-4 §3.6 ref + §Pitfall #22 wire-budget continuation, CLAUDE.md §Load-bearing lock-ins +3 entries; W6 RESEARCH.md audit hygiene confirmed; lychee link-check clean; cargo test --features mock = 309 passed / 0 failed / 19 ignored; Phase 8 fixtures byte-identical 192+424+212+142; all 19 PIN+BURN REQ-IDs covered: PIN-01..10 + BURN-01..09)
-Status: Phase 8 ready for verifier (regression gate + schema-drift gate + goal-backward verification). Next phase = 09 (Real-DHT cross-identity round-trip + CAS merge-update race gate).
+Phase: 9
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-04-26
 
 Progress: [██████████] 100%
@@ -51,6 +51,7 @@ Progress: [██████████] 100%
 | 9. Real-DHT E2E + CAS race gate | 0/TBD | — | — |
 | 5 | 3 | - | - |
 | 07 | 8 | - | - |
+| 08 | 6 | - | - |
 
 **Recent Trend:**
 
