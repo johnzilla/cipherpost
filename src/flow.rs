@@ -88,6 +88,10 @@ pub trait Prompter {
         sender_openssh_fp: &str,
         sender_z32: &str,
         share_ref_hex: &str,
+        // Phase 8 Plan 04 (D-P8-08): optional banner marker emitted at the TOP
+        // of the acceptance banner, before the Purpose line. Used today for
+        // `[BURN — you will only see this once]`. None for non-burn shares.
+        marker: Option<&str>,
         material_type: &str,
         size_bytes: usize,
         preview_subblock: Option<&str>,
@@ -730,11 +734,20 @@ pub fn run_receive(
     };
 
     let ttl_remaining = (expires_at - now).max(0) as u64;
+    // Phase 8 Plan 04 (D-P8-08): banner marker emitted at TOP of acceptance
+    // banner when envelope.burn_after_read=true. Em-dash is U+2014 literal
+    // (matches CONTEXT.md banner mockup verbatim).
+    let marker: Option<&str> = if envelope.burn_after_read {
+        Some("[BURN — you will only see this once]")
+    } else {
+        None
+    };
     prompter.render_and_confirm(
         &envelope.purpose,
         &sender_openssh_fp,
         &record.pubkey,
         &record.share_ref,
+        marker,
         material_type_string(&envelope.material),
         material_bytes.len(),
         preview_subblock.as_deref(),
@@ -1254,6 +1267,7 @@ pub mod test_helpers {
             _sender_openssh_fp: &str,
             _sender_z32: &str,
             _share_ref_hex: &str,
+            _marker: Option<&str>,
             _material_type: &str,
             _size_bytes: usize,
             _preview_subblock: Option<&str>,
@@ -1274,6 +1288,7 @@ pub mod test_helpers {
             _sender_openssh_fp: &str,
             _sender_z32: &str,
             _share_ref_hex: &str,
+            _marker: Option<&str>,
             _material_type: &str,
             _size_bytes: usize,
             _preview_subblock: Option<&str>,
@@ -1376,6 +1391,7 @@ impl Prompter for TtyPrompter {
         sender_openssh_fp: &str,
         sender_z32: &str,
         share_ref_hex: &str,
+        marker: Option<&str>,
         material_type: &str,
         size_bytes: usize,
         preview_subblock: Option<&str>,
@@ -1401,6 +1417,12 @@ impl Prompter for TtyPrompter {
         let ttl_str = format_ttl_remaining(ttl_remaining_seconds);
 
         eprintln!("=== CIPHERPOST ACCEPTANCE ===============================");
+        // Phase 8 Plan 04 (D-P8-08): optional banner marker AT TOP, before
+        // the Purpose line. Used today for the [BURN — you will only see
+        // this once] tag when envelope.burn_after_read=true.
+        if let Some(m) = marker {
+            eprintln!("{}", m);
+        }
         eprintln!("Purpose:     \"{}\"", safe_purpose);
         eprintln!("Sender:      {}", sender_openssh_fp);
         eprintln!("             {}", sender_z32);
@@ -1527,6 +1549,7 @@ mod tests {
             "SHA256:dummy",     // sender_openssh_fp
             "sender_z32_dummy", // sender_z32
             "deadbeef",         // share_ref_hex
+            None,               // marker (Phase 8 Plan 04: None for v1.0-shape banner)
             "generic_blob",     // material_type
             42,                 // size_bytes
             None,               // preview_subblock
