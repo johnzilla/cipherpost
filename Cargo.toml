@@ -385,6 +385,25 @@ name = "pin_burn_compose"
 path = "tests/pin_burn_compose.rs"
 required-features = ["mock"]
 
+# Phase 9 Plan 01 (DHT-01 + DHT-02): MockTransport CAS racer — two threads
+# Barrier-synced both call publish_receipt; both receipts persist after the
+# trait-internal single-retry resolves the conflict. PITFALLS.md #28
+# mandated pattern — true Barrier-synced threads, NEVER sleep simulation.
+[[test]]
+name = "cas_racer"
+path = "tests/cas_racer.rs"
+required-features = ["mock"]
+
+# Phase 9 Plan 01 (DHT-07): pin + burn + 2KB GenericSecret payload wire-budget
+# composite — Pitfall #22 third instance after Phase 6 X.509 and Phase 7
+# PGP/SSH. Asserts the cleanly-surfaced Error::WireBudgetExceeded path on
+# the worst-case Phase 8 compose. Synthesized 2KB byte vector (not the
+# PGP fixture — D-P9-E1 + Pitfall E in 09-RESEARCH.md).
+[[test]]
+name = "wire_budget_compose_pin_burn_pgp"
+path = "tests/wire_budget_compose_pin_burn_pgp.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
