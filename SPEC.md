@@ -115,6 +115,21 @@ ciphertext) must fit within **550 bytes** (measured at v1.0 cut; see
 leaves room for the JSON structure and the recipient z-base-32. A blob exceeding this
 ceiling surfaces `Error::WireBudgetExceeded` at publish time (§3.3, §3.4, §5.1 step 7).
 
+**Bootstrap nodes (v1.1):** v1.1 uses the pkarr default Mainline bootstrap node set
+(`router.bittorrent.com:6881`, `dht.transmissionbt.com:6881`,
+`dht.libtorrent.org:25401`, `relay.pkarr.org:6881`); no user-tunable bootstrap
+configuration is exposed in this milestone. Future milestones may revisit if private-
+testnet support is requested (see CLAUDE.md §Load-bearing lock-ins).
+
+**CAS contract on `publish_receipt` (Phase 9 lock-in):** `cas` semantics on
+`publish_receipt` are contractual: implementations MUST single-retry-then-fail on
+`pkarr::errors::ConcurrencyError` (`ConflictRisk` / `NotMostRecent` / `CasFailed` —
+all three are conflict-class signals per pkarr 5.0.4). Final-conflict failures
+surface via `Error::Transport` (no public `Error::CasConflict` variant — error-oracle
+hygiene per Pitfall #16). The retry loop lives inside the `Transport` trait method;
+callers see `Ok(())` or final `Err`. Divergence from this contract requires a
+`protocol_version` bump.
+
 ### 3.1 Envelope
 
 The plaintext payload. Serialized as JCS, then age-encrypted to produce `OuterRecord.blob`.
@@ -1089,6 +1104,16 @@ error, NOT a partial publish). The pre-flight test
 pins this contract explicitly. Phase 9 (DHT-07) measures the wire-budget
 distribution empirically against the real DHT; v1.2 ships the wire-budget
 escape hatch (chunking / two-tier storage / out-of-band).
+
+**Phase 9 composite measurement (DHT-07):** `pin_required=true` +
+`burn_after_read=true` + `Material::GenericSecret { bytes: vec![0u8; 2048] }`
+exceeds the 1000-byte BEP44 ceiling and surfaces
+`Error::WireBudgetExceeded { encoded, budget: 1000, plaintext }` cleanly at
+send time — encoded = 5123 bytes vs budget = 1000 bytes (overflow = 4123
+bytes, expansion factor ≈ 2.5× over the 2048 B plaintext). Test:
+`tests/wire_budget_compose_pin_burn_pgp.rs::pin_burn_realistic_payload_surfaces_wire_budget_exceeded`.
+Recorded for the regression-guard byte-count table in `RELEASE-CHECKLIST.md`
+when v1.2's two-tier-storage fix lands.
 
 ## 7. Passphrase Contract
 

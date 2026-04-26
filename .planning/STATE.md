@@ -172,7 +172,7 @@ Recent decisions affecting current work:
 
 - ~~Complete cclink pin/burn survey before planning Phase 8~~ (closed in 08-01 SUMMARY.md cclink-divergence write-up)
 - Run `cargo tree | grep ed25519-dalek` after adding `ssh-key` to Cargo.toml at Phase 7 plan time; document outcome in plan 01
-- Verify pkarr 5.0.4 ClientBuilder bootstrap configurability at Phase 9 plan time
+- ~~Verify pkarr 5.0.4 ClientBuilder bootstrap configurability at Phase 9 plan time~~ (closed by D-P9-B1: pkarr defaults only for v1.1; bootstrap IS configurable via `ClientBuilder::bootstrap` per `pkarr-5.0.4/src/client/builder.rs:164` — verified in 09-RESEARCH.md OQ-4 — but the API is not exercised in v1.1. Revisit at v1.2+ if private-testnet support is requested.)
 - Optional follow-up: append clarification to `.planning/REQUIREMENTS.md` PIN-02 noting D-P8-12 supersession of "specific reason" wording (non-blocking — 08-02 SUMMARY is authoritative)
 
 ### Blockers/Concerns

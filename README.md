@@ -19,7 +19,7 @@ cargo build --release
 # binary: ./target/release/cipherpost
 ```
 
-Requires Rust 1.85+ (pinned in `rust-toolchain.toml`). No `tokio` dependency at the cipherpost layer — uses `pkarr::ClientBlocking`.
+Requires Rust 1.85+ (pinned in `rust-toolchain.toml`). No `tokio` dependency at the cipherpost layer — uses `pkarr::ClientBlocking`. Bootstrap nodes are pkarr defaults (Mainline DHT — `router.bittorrent.com:6881` and three peers); no user-tunable bootstrap configuration in v1.1.
 
 ### Generate an identity
 
