@@ -93,10 +93,7 @@ fn dep_tree_contains_pgp_0_19_x() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).expect("UTF-8");
-    let first_line = stdout
-        .lines()
-        .next()
-        .expect("non-empty cargo tree output");
+    let first_line = stdout.lines().next().expect("non-empty cargo tree output");
     assert!(
         first_line.starts_with("pgp v0.19."),
         "Expected pgp v0.19.x (not 0.18, not 0.20), got: {:?}",
@@ -176,10 +173,7 @@ fn dep_tree_contains_ssh_key_0_6_x() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8(out.stdout).expect("UTF-8");
-    let first_line = stdout
-        .lines()
-        .next()
-        .expect("non-empty cargo tree output");
+    let first_line = stdout.lines().next().expect("non-empty cargo tree output");
     assert!(
         first_line.starts_with("ssh-key v0.6."),
         "Expected ssh-key v0.6.x (not 0.7, not 0.5), got: {:?}",

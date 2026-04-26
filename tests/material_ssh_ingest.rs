@@ -21,8 +21,8 @@ fn ssh_key_happy_path_produces_ssh_variant_with_canonical_bytes() {
             // Bytes are the canonical re-encode (D-P7-11) — they must re-parse
             // cleanly. ssh-key 0.6.7's from_openssh accepts impl AsRef<[u8]>;
             // canonical UTF-8 PEM is acceptable directly.
-            let _ = ssh_key::PrivateKey::from_openssh(&bytes)
-                .expect("canonical bytes must re-parse");
+            let _ =
+                ssh_key::PrivateKey::from_openssh(&bytes).expect("canonical bytes must re-parse");
             // Stored bytes must contain the OpenSSH v1 BEGIN/END markers.
             assert!(
                 bytes.starts_with(b"-----BEGIN OPENSSH PRIVATE KEY-----"),
@@ -66,7 +66,9 @@ fn ssh_key_legacy_pem_rsa_rejected() {
 
 #[test]
 fn ssh_key_legacy_pem_dsa_rejected() {
-    let err = ingest::ssh_key(b"-----BEGIN DSA PRIVATE KEY-----\nstuff\n-----END DSA PRIVATE KEY-----\n").unwrap_err();
+    let err =
+        ingest::ssh_key(b"-----BEGIN DSA PRIVATE KEY-----\nstuff\n-----END DSA PRIVATE KEY-----\n")
+            .unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
         "legacy DSA-PEM must trigger SshKeyFormatNotSupported, got: {:?}",
@@ -76,7 +78,9 @@ fn ssh_key_legacy_pem_dsa_rejected() {
 
 #[test]
 fn ssh_key_legacy_pem_ec_rejected() {
-    let err = ingest::ssh_key(b"-----BEGIN EC PRIVATE KEY-----\nstuff\n-----END EC PRIVATE KEY-----\n").unwrap_err();
+    let err =
+        ingest::ssh_key(b"-----BEGIN EC PRIVATE KEY-----\nstuff\n-----END EC PRIVATE KEY-----\n")
+            .unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
         "legacy EC-PEM must trigger SshKeyFormatNotSupported, got: {:?}",
@@ -185,10 +189,8 @@ fn ssh_key_error_display_contains_no_parser_internals() {
     ];
 
     let errors = vec![
-        ingest::ssh_key(
-            b"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n",
-        )
-        .unwrap_err(),
+        ingest::ssh_key(b"-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n")
+            .unwrap_err(),
         ingest::ssh_key(b"random garbage with no header").unwrap_err(),
         ingest::ssh_key(
             b"-----BEGIN OPENSSH PRIVATE KEY-----\nGARBAGE\n-----END OPENSSH PRIVATE KEY-----\n",

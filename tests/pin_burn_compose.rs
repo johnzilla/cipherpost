@@ -94,13 +94,9 @@ fn fixture_for(variant: MaterialVariant) -> Vec<u8> {
     match variant {
         MaterialVariant::GenericSecret => b"generic-payload-bytes".to_vec(),
         // Phase 6 fixture: 388-byte Ed25519 X.509 DER cert.
-        MaterialVariant::X509Cert => {
-            fs::read("tests/fixtures/x509_cert_fixture.der").unwrap()
-        }
+        MaterialVariant::X509Cert => fs::read("tests/fixtures/x509_cert_fixture.der").unwrap(),
         // Phase 7 fixture: 202-byte rpgp-minimal Ed25519 public TPK.
-        MaterialVariant::PgpKey => {
-            fs::read("tests/fixtures/material_pgp_fixture.pgp").unwrap()
-        }
+        MaterialVariant::PgpKey => fs::read("tests/fixtures/material_pgp_fixture.pgp").unwrap(),
         // Phase 7 fixture: 387-byte OpenSSH v1 Ed25519 keypair.
         MaterialVariant::SshKey => {
             fs::read("tests/fixtures/material_ssh_fixture.openssh-v1").unwrap()
@@ -208,8 +204,7 @@ macro_rules! compose_base_test_strict {
         fn $name() {
             let dir = TempDir::new().unwrap();
             let (_transport, _uri, recovered, _id, _kp) =
-                compose_round_trip(&dir, $variant, $pin, $burn)
-                    .expect(stringify!($name));
+                compose_round_trip(&dir, $variant, $pin, $burn).expect(stringify!($name));
             let expected = fixture_for($variant);
             assert_eq!(
                 recovered,
@@ -270,14 +265,24 @@ macro_rules! compose_base_test_lenient {
 
 // Pin only (4 variants — pin nesting exceeds budget for ANY non-trivial
 // plaintext per Plan 01; all four use the lenient pattern).
-compose_base_test_lenient!(generic_pin_only, MaterialVariant::GenericSecret, true, false);
+compose_base_test_lenient!(
+    generic_pin_only,
+    MaterialVariant::GenericSecret,
+    true,
+    false
+);
 compose_base_test_lenient!(x509_pin_only, MaterialVariant::X509Cert, true, false);
 compose_base_test_lenient!(pgp_pin_only, MaterialVariant::PgpKey, true, false);
 compose_base_test_lenient!(ssh_pin_only, MaterialVariant::SshKey, true, false);
 
 // Burn only — only GenericSecret (small payload, single age layer) fits
 // within budget; typed-material variants use the lenient pattern.
-compose_base_test_strict!(generic_burn_only, MaterialVariant::GenericSecret, false, true);
+compose_base_test_strict!(
+    generic_burn_only,
+    MaterialVariant::GenericSecret,
+    false,
+    true
+);
 compose_base_test_lenient!(x509_burn_only, MaterialVariant::X509Cert, false, true);
 compose_base_test_lenient!(pgp_burn_only, MaterialVariant::PgpKey, false, true);
 compose_base_test_lenient!(ssh_burn_only, MaterialVariant::SshKey, false, true);
@@ -341,18 +346,9 @@ receipt_count_after_burn_first_receive!(
     generic_burn_publishes_one_receipt,
     MaterialVariant::GenericSecret
 );
-receipt_count_after_burn_first_receive!(
-    x509_burn_publishes_one_receipt,
-    MaterialVariant::X509Cert
-);
-receipt_count_after_burn_first_receive!(
-    pgp_burn_publishes_one_receipt,
-    MaterialVariant::PgpKey
-);
-receipt_count_after_burn_first_receive!(
-    ssh_burn_publishes_one_receipt,
-    MaterialVariant::SshKey
-);
+receipt_count_after_burn_first_receive!(x509_burn_publishes_one_receipt, MaterialVariant::X509Cert);
+receipt_count_after_burn_first_receive!(pgp_burn_publishes_one_receipt, MaterialVariant::PgpKey);
+receipt_count_after_burn_first_receive!(ssh_burn_publishes_one_receipt, MaterialVariant::SshKey);
 
 // ---------------------------------------------------------------------------
 // Step D — Second-receive on burned share returns exit 7 (4 variants).
@@ -408,18 +404,9 @@ second_receive_burn_returns_exit_7!(
     generic_burn_second_receive_exit_7,
     MaterialVariant::GenericSecret
 );
-second_receive_burn_returns_exit_7!(
-    x509_burn_second_receive_exit_7,
-    MaterialVariant::X509Cert
-);
-second_receive_burn_returns_exit_7!(
-    pgp_burn_second_receive_exit_7,
-    MaterialVariant::PgpKey
-);
-second_receive_burn_returns_exit_7!(
-    ssh_burn_second_receive_exit_7,
-    MaterialVariant::SshKey
-);
+second_receive_burn_returns_exit_7!(x509_burn_second_receive_exit_7, MaterialVariant::X509Cert);
+second_receive_burn_returns_exit_7!(pgp_burn_second_receive_exit_7, MaterialVariant::PgpKey);
+second_receive_burn_returns_exit_7!(ssh_burn_second_receive_exit_7, MaterialVariant::SshKey);
 
 // ---------------------------------------------------------------------------
 // Step E — Negative-path safety: wrong-PIN-on-burn doesn't mark burned.
@@ -471,8 +458,7 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
         .as_secs() as i64;
     let dummy_blob_bytes = vec![0u8; 64];
     let blob = base64::engine::general_purpose::STANDARD.encode(&dummy_blob_bytes);
-    let share_ref =
-        cipherpost::record::share_ref_from_bytes(&dummy_blob_bytes, now);
+    let share_ref = cipherpost::record::share_ref_from_bytes(&dummy_blob_bytes, now);
 
     let signable = OuterRecordSignable {
         blob: blob.clone(),
@@ -496,13 +482,11 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
         signature,
         ttl_seconds: DEFAULT_TTL_SECONDS,
     };
-    transport.publish(&kp, &record).expect(
-        "MockTransport accepts pin-required record under wire ceiling",
-    );
+    transport
+        .publish(&kp, &record)
+        .expect("MockTransport accepts pin-required record under wire ceiling");
 
-    let uri =
-        ShareUri::parse(&format!("cipherpost://{}/{}", id.z32_pubkey(), share_ref))
-            .unwrap();
+    let uri = ShareUri::parse(&format!("cipherpost://{}/{}", id.z32_pubkey(), share_ref)).unwrap();
 
     // First receive: WRONG PIN.
     std::env::set_var("CIPHERPOST_TEST_PIN", WRONG_PIN);
@@ -554,8 +538,7 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
     // No receipt published — publish_outcome runs only on successful
     // receive.
     let recipient_z32 = id.z32_pubkey();
-    let receipt_count =
-        count_receipts_for_share_ref(&transport, &recipient_z32, &share_ref);
+    let receipt_count = count_receipts_for_share_ref(&transport, &recipient_z32, &share_ref);
     assert_eq!(
         receipt_count, 0,
         "wrong-PIN must NOT publish a receipt; got {} receipts",

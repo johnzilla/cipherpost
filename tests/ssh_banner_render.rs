@@ -22,7 +22,8 @@
 use cipherpost::preview;
 
 const SSH_FIXTURE_ED25519: &[u8] = include_bytes!("fixtures/material_ssh_fixture.openssh-v1");
-const SSH_FIXTURE_RSA1024: &[u8] = include_bytes!("fixtures/material_ssh_fixture_rsa1024.openssh-v1");
+const SSH_FIXTURE_RSA1024: &[u8] =
+    include_bytes!("fixtures/material_ssh_fixture_rsa1024.openssh-v1");
 
 #[test]
 fn render_ssh_preview_ed25519_contains_all_expected_fields() {

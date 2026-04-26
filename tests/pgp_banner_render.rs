@@ -115,15 +115,24 @@ fn render_pgp_preview_uid_contains_fixture_identity() {
 #[test]
 fn render_pgp_preview_no_leading_or_trailing_newline() {
     let s = preview::render_pgp_preview(FIXTURE_PGP_PUBLIC).unwrap();
-    assert!(!s.starts_with('\n'), "public preview must NOT start with newline");
-    assert!(!s.ends_with('\n'), "public preview must NOT end with newline");
+    assert!(
+        !s.starts_with('\n'),
+        "public preview must NOT start with newline"
+    );
+    assert!(
+        !s.ends_with('\n'),
+        "public preview must NOT end with newline"
+    );
 
     let s = preview::render_pgp_preview(FIXTURE_PGP_SECRET).unwrap();
     assert!(
         s.starts_with('['),
         "secret preview starts with [WARNING: — not a newline"
     );
-    assert!(!s.ends_with('\n'), "secret preview must NOT end with newline");
+    assert!(
+        !s.ends_with('\n'),
+        "secret preview must NOT end with newline"
+    );
 }
 
 #[test]
@@ -138,5 +147,8 @@ fn render_pgp_preview_separator_line_is_53_dashes_after_prefix() {
         "separator dash count must be 53, got {}",
         dashes.len()
     );
-    assert!(dashes.chars().all(|c| c == '-'), "separator must be all dashes");
+    assert!(
+        dashes.chars().all(|c| c == '-'),
+        "separator must be all dashes"
+    );
 }

@@ -102,8 +102,8 @@ fn burn_share_first_receive_succeeds_second_returns_exit_7() {
     // Ledger row must carry state=burned. Use the test_paths re-export
     // (W5 fix; flow.rs path layout is the source of truth).
     let lp = ledger_path();
-    let ledger = std::fs::read_to_string(&lp)
-        .expect("ledger file must exist after first burn receive");
+    let ledger =
+        std::fs::read_to_string(&lp).expect("ledger file must exist after first burn receive");
     assert!(
         ledger.contains(r#""state":"burned""#),
         "burn ledger row must carry state=burned; ledger contents: {}",

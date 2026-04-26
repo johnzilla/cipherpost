@@ -169,7 +169,8 @@ fn ssh_legacy_pem_send_rejected_at_ingest() {
 fn ssh_malformed_openssh_v1_send_rejected_at_ingest() {
     let (id, kp, _dir) = fresh_identity();
     let transport = MockTransport::new();
-    let malformed = b"-----BEGIN OPENSSH PRIVATE KEY-----\nGARBAGE\n-----END OPENSSH PRIVATE KEY-----\n";
+    let malformed =
+        b"-----BEGIN OPENSSH PRIVATE KEY-----\nGARBAGE\n-----END OPENSSH PRIVATE KEY-----\n";
     let err = run_send(
         &id,
         &transport,
