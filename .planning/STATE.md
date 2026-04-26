@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: "Completed 08-03: BURN core (LedgerState enum + check_already_consumed rename + LedgerEntry schema migration + --burn CLI flag + BURN-05 stderr warning)"
-last_updated: "2026-04-25T23:55:17.074Z"
-last_activity: 2026-04-25 -- Plan 08-03 complete
+stopped_at: "Completed 08-04: BURN ship-gate (Prompter marker + emit-before-mark + JCS fixture + BURN-09 round-trip + SPEC §3.7)"
+last_updated: "2026-04-26T00:28:48.897Z"
+last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 3
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 ## Current Position
 
 Phase: 08 (pin-and-burn-encryption-modes) — EXECUTING
-Plan: 3 / 6 complete (08-03 BURN core landed; 5 of 9 BURN REQ-IDs covered — BURN-01 wire field end-to-end on send, BURN-05 stderr warning, BURN-06 CLI surface, BURN-07 compose orthogonality, BURN-08 caveat link in CLI doc; LedgerState enum + check_already_consumed rename + LedgerEntry.state schema migration land atomically)
-Status: Executing Phase 08 — Plan 04 next (BURN ship-gate: receive-side burn marking + banner [BURN] tag + emit-before-mark write order + BURN-09 round-trip test + PITFALLS.md #26 supersession)
-Last activity: 2026-04-25 -- Plan 08-03 complete
+Plan: 4 / 6 complete (08-04 BURN ship-gate landed; all 9 BURN REQ-IDs covered modulo BURN-08 prose deferred to Plan 06 THREAT-MODEL.md — Plan 04 added BURN-02 receive-flow integration, BURN-03 emit-before-mark ledger write order per D-P8-12, BURN-04 receipt-on-burn lock with NO publish_receipt guard, BURN-09 two-receive round-trip with receipt-count==1; Prompter trait gains marker: Option<&str> param + [BURN] banner tag at TOP; append_ledger_entry_with_state peer helper; envelope_burn_signable.bin fixture (142 B); SPEC.md §3.7 Burn Semantics; PITFALLS.md #26 SUPERSEDED header preserving original mark-then-emit analysis)
+Status: Ready to execute Plan 08-05 (PIN+BURN+typed-material compose grid)
+Last activity: 2026-04-26
 
 Progress: [█████████░] 90%
 
@@ -64,6 +64,7 @@ Progress: [█████████░] 90%
 | Phase 8 P1 | 20 | 3 tasks | 22 files |
 | Phase 8 P2 | 37min | 5 tasks | 13 files |
 | Phase 08 P03 | 14min | 2 tasks tasks | 4 files files |
+| Phase 08 P04 | 22 | 4 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,10 @@ Recent decisions affecting current work:
 - v1.1 Phase 8 Plan 03: AD-3 confirmed — LedgerState enum lives in src/flow.rs (NOT a new src/state.rs). check_already_accepted -> check_already_consumed rename atomic across 2 callers (run_receive STEP 1 + main.rs CLI dispatch); Rust enum exhaustiveness ensures all 3 LedgerState arms (None/Accepted/Burned) handled
 - v1.1 Phase 8 Plan 03: Schema migration shape — LedgerEntry.state on the wire is Option<&str> (open-set string for external tooling); typed LedgerState is a runtime abstraction in check_already_consumed return type. v1.0 rows (no state field) deserialize via serde default to None and map CONSERVATIVELY to LedgerState::Accepted (T-08-17 — never silently classify Accepted as Burned)
 - v1.1 Phase 8 Plan 03: Rust E0364 (Rule 1 fix) — pub use of pub(crate) items forbidden. test_paths cfg-gated module exposes pub fn wrappers around pub(crate) helpers; semantically equivalent to plan's intent (Plans 04+5 import unchanged). Plan 02's E0449 fix for pin: bool extends to burn: bool — no pub on enum-variant fields
+- v1.1 Phase 8 Plan 04 (2026-04-26): BURN ship-gate complete. All 9 BURN REQ-IDs (BURN-01..09) wire-end-to-wire shipped (modulo BURN-08 prose deferred to Plan 06 THREAT-MODEL.md); BURN-02/03/04/09 covered in Plan 04 (receive-flow integration, emit-before-mark ledger write, receipt-on-burn lock with NO publish_receipt guard, two-receive round-trip)
+- v1.1 Phase 8 Plan 04: D-P8-12 emit-before-mark for burn ONLY ships in code; v1.0 accepted-flow mark-then-emit ordering preserved unchanged. The two flows have OPPOSITE atomicity contracts (burn = one-shot consume, data loss is worst outcome; accepted = idempotent persistence, re-emit on crash is fine). PITFALLS.md #26 SUPERSEDED-by-D-P8-12 header preserves original mark-then-emit analysis below
+- v1.1 Phase 8 Plan 04: Receipt-on-burn lock (BURN-04 / RESEARCH Open Risk #4): publish_outcome closure UNCHANGED — no conditional guard around publish_receipt. Asserted by tests/burn_roundtrip.rs receipt-count == 1 across both first-success and second-declined receives. Receipt = delivery confirmation, not suppressed by burn
+- v1.1 Phase 8 Plan 04: Doc-comments on fn parameters rejected by rustc (Rule 1 fix). Plan 04's Prompter trait marker: Option<&str> param landed with // (non-doc) line comments instead of /// — functionally equivalent to plan intent; future Rust may relax this restriction
 
 ### Pending Todos
 
@@ -178,8 +183,8 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-25T23:54:57.784Z
-Stopped at: Completed 08-03: BURN core (LedgerState enum + check_already_consumed rename + LedgerEntry schema migration + --burn CLI flag + BURN-05 stderr warning)
+Last session: 2026-04-26T00:28:29.472Z
+Stopped at: Completed 08-04: BURN ship-gate (Prompter marker + emit-before-mark + JCS fixture + BURN-09 round-trip + SPEC §3.7)
 Resume file: None
 
 **Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
