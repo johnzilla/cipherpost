@@ -394,6 +394,32 @@ pkarr client will still find the old signed packet on other nodes if seq numbers
 
 ### Pitfall 26: Atomic ordering of burn vs. emit in `run_receive` — failure modes differ from v1.0
 
+> **SUPERSEDED 2026-04-25 by D-P8-12 (emit-before-mark for burn).** This pitfall
+> predates Phase 8 BURN-03 lock-in. The original analysis (preserved below)
+> recommended `mark-then-emit` as the canonical write order for burn mode.
+> Phase 8's resolution: BURN-03 + D-P8-12 require `emit-then-mark` for burn
+> shares specifically — a crash between emit and ledger-write leaves the share
+> re-receivable on next invocation, which is the safer failure mode (the user
+> keeps access to their data) compared to mark-then-emit (the user loses their
+> data to a half-completed state write).
+>
+> The original "delete-the-sentinel-after-emit" footgun this pitfall warned
+> against is still rejected — Plan 04 NEVER deletes the sentinel or removes
+> the ledger row. The supersession only flips the *order* of (emit, mark);
+> sentinel and ledger row are append-only and never removed.
+>
+> v1.0's accepted-flow ordering is UNCHANGED: mark-then-emit there preserves
+> the idempotent-success contract (re-receive returns the same data without
+> re-decrypting). The two flows have OPPOSITE atomicity contracts because
+> `burned` represents a one-shot consume (where data-loss-on-crash is the
+> worst outcome) while `accepted` represents idempotent persistence (where
+> re-emit on crash is fine).
+>
+> See: `src/flow.rs::run_receive` STEP 11/12; `src/flow.rs::append_ledger_entry_with_state`;
+> D-P8-12 in `.planning/phases/08-pin-and-burn-encryption-modes/08-CONTEXT.md`;
+> SPEC.md §3.7 Burn Semantics; Plan 04 ship-gate
+> `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7`.
+
 **Category:** `state`
 
 **What goes wrong:** v1.0's `run_receive` marks the ledger sentinel BEFORE emitting the

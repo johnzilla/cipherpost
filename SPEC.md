@@ -479,6 +479,100 @@ IS asserted at the test layer (`tests/pin_validation.rs::rejects_*`), so
 implementations remain testable. Length validation runs BEFORE Argon2id so
 length-failures don't leak via wall-clock timing (T-08-15).
 
+### 3.7 Burn Semantics (Phase 8 — D-P8-04, D-P8-09..12)
+
+Burn shares (`Envelope.burn_after_read = true`) are single-consumption from
+the receiver's perspective. After a successful first receive, the local
+ledger records `state: "burned"` and any subsequent receive against the same
+`share_ref` returns exit 7 (`Error::Declined`) with stderr message
+`share already consumed (burned at <timestamp>)`.
+
+**Architectural choice — local-state-only.** Cipherpost burn is **local-state-only**
+and explicitly REJECTS cclink's burn pattern (which publishes an empty PKARR
+packet over the share's DHT slot to revoke it). Two reasons:
+
+1. **Honest threat model.** Public DHT ciphertext cannot be force-deleted; it
+   remains queryable until TTL expires (24h default). Cryptographic
+   destruction is impossible without the receiver's identity passphrase.
+2. **No DHT mutation.** Burn is a receiver-side semantics knob; mutating the
+   DHT to enforce it would couple two threat surfaces unnecessarily, and would
+   be ineffective against any observer who already cached the ciphertext.
+
+**Wire shape:**
+
+- `Envelope.burn_after_read: bool` — inner-signed, post-decrypt. DHT observers
+  do NOT see this field (CLAUDE.md ciphertext-only-on-wire principle).
+- `#[serde(default, skip_serializing_if = "is_false")]` — non-burn shares
+  preserve v1.0 byte-identity (no `protocol_version` bump).
+- JCS alphabetic placement: FIRST (before `created_at` because `b` < `c`).
+- Pinned by `tests/fixtures/envelope_burn_signable.bin` (~142 B).
+
+**Receive flow ordering (D-P8-12 emit-before-mark for burn).** §5.2's
+13-step pipeline gains a STEP 1 ledger pre-check (Phase 8 Plan 03) and an
+emit-then-mark dispatch at STEP 11/12 (Phase 8 Plan 04):
+
+1. STEP 1 — early ledger pre-check returns `LedgerState`:
+   - `LedgerState::Burned { burned_at }` → return `Error::Declined` (exit 7);
+     stderr `share already consumed (burned at <ts>)`; NO new receipt
+     published.
+   - `LedgerState::Accepted { ... }` → existing v1.0 idempotent-success path
+     (no re-decrypt, no new emit, no new receipt; exit 0).
+   - `LedgerState::None` → proceed.
+2-10. Standard receive flow (outer-verify → optional PIN prompt per §3.6 →
+    nested age-decrypt when `pin_required` → inner-verify → JCS parse →
+    typed-material preview render → acceptance banner with optional
+    `[BURN — you will only see this once]` marker at TOP → typed-z32
+    acceptance prompt). The marker emits ONLY when `burn_after_read=true`;
+    non-burn shares see the v1.0 banner shape verbatim.
+11. **Emit decrypted bytes to stdout / file / sink.**
+12. **`create_sentinel(&share_ref)` then ledger row write.** The dispatch
+    selects the helper by `envelope.burn_after_read`:
+    - **Burn flow:** `append_ledger_entry_with_state(Some("burned"), ...)`.
+      Crash sequence guarantee: emit (STEP 11) → sentinel (STEP 12 part 1)
+      → ledger row with `state: "burned"` (STEP 12 part 2). A crash between
+      STEP 11 (emit) and the ledger write leaves the share re-receivable
+      on next invocation — this is the **safer failure mode** (the user
+      keeps access to their data) compared to mark-then-emit, which would
+      lose the user's data to a half-completed state write.
+    - **Accepted flow (v1.0 unchanged):** `append_ledger_entry(...)`. The
+      ledger row has no `state` field; deserializes via serde default to
+      `state: None` and maps to `LedgerState::Accepted` on read.
+13. **Publish receipt — UNCONDITIONAL (BURN-04).** No `if !envelope.burn_after_read`
+    guard around `publish_receipt`. Receipt = delivery confirmation; burn does
+    NOT suppress attestation. Asserted by `tests/burn_roundtrip.rs`'s
+    receipt-count assertion (== 1 after first-then-second receive).
+
+**Burn ≠ cryptographic destruction.** A second machine with a fresh
+ledger can still decrypt the same share until TTL expires. Burn IS:
+
+- A safeguard against accidental re-decryption on the same machine.
+- A signal of intent (the sender wanted single-consumption).
+
+Burn is NOT:
+
+- Cryptographic erasure of the DHT ciphertext.
+- Multi-machine consumption coordination.
+- A replacement for TTL-based ciphertext expiry.
+
+See THREAT-MODEL.md §Burn mode for the multi-machine race threat analysis
+(Plan 06 lands the prose).
+
+**PITFALLS.md #26 supersession.** Phase 8's emit-before-mark write order
+supersedes the original mark-then-emit analysis in
+`.planning/research/PITFALLS.md` section #26. The header in that file
+documents the resolution; the original analysis is preserved as the
+rejected alternative. The rejection rationale: data-loss-on-crash is the
+worst outcome for burn (one-shot consume), while re-receivable-on-crash
+is acceptable (the share is still TTL-bounded, and the user keeps their
+data). v1.0's accepted flow keeps mark-then-emit unchanged (re-emit on
+crash is fine for the idempotent-persistence contract).
+
+**PIN × BURN compose orthogonality (D-P8-13).** PIN and BURN are
+independent flags. PIN lives on `OuterRecord.pin_required` (outer-signed,
+DHT-visible — see §3.6); BURN lives on `Envelope.burn_after_read`
+(inner-signed, post-decrypt). A share can carry both flags simultaneously
+without collision; neither flag silently overrides the other.
+
 ## 4. Share URI
 
 A share URI is a single copy-paste token that identifies where to resolve a share and what
@@ -813,7 +907,7 @@ attacks (D-16).
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
 | 4 | Passphrase / decryption failure | `wrong passphrase or identity decryption failed` | `DecryptFailed` (Phase 8 PIN-07: covers wrong identity-passphrase OR wrong PIN OR tampered inner age ciphertext — IDENTICAL Display across all three credential-failure modes; oracle hygiene), `IdentityPermissions`, `PassphraseInvalidInput` |
 | 5 | Not found on DHT | `not found` | `NotFound` |
-| 7 | User declined acceptance | `declined` | `Declined` |
+| 7 | User declined acceptance OR (Phase 8 BURN-02) share already consumed (burned). Stderr message: `declined` for typed-z32 mismatch; `share already consumed (burned at <timestamp>)` for the burn-already-consumed case (§3.7). | `declined` / `share already consumed (burned at <ts>)` | `Declined` |
 
 **Source chains are never displayed** (D-15). The binary matches on the top-level `Error`
 variant to pick exit code + sanitized user message; the `#[source]` chain (e.g., `age::DecryptError`,
