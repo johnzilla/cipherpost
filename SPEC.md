@@ -479,6 +479,12 @@ IS asserted at the test layer (`tests/pin_validation.rs::rejects_*`), so
 implementations remain testable. Length validation runs BEFORE Argon2id so
 length-failures don't leak via wall-clock timing (T-08-15).
 
+**Threat model.** See THREAT-MODEL.md §6.5 PIN mode for the threat-model
+treatment — second-factor semantics, offline brute-force bound,
+intentional indistinguishability invariant, and multi-machine
+non-coordination caveat. PIN composes orthogonally with `--burn` (§3.7);
+the two flags are independent and neither silently overrides the other.
+
 ### 3.7 Burn Semantics (Phase 8 — D-P8-04, D-P8-09..12)
 
 Burn shares (`Envelope.burn_after_read = true`) are single-consumption from
@@ -572,6 +578,12 @@ independent flags. PIN lives on `OuterRecord.pin_required` (outer-signed,
 DHT-visible — see §3.6); BURN lives on `Envelope.burn_after_read`
 (inner-signed, post-decrypt). A share can carry both flags simultaneously
 without collision; neither flag silently overrides the other.
+
+**Threat model.** See THREAT-MODEL.md §6.6 Burn mode for the threat-model
+treatment — multi-machine race, DHT-survives-TTL, burn ≠ cryptographic
+destruction, and the emit-before-mark atomicity invariant.
+`.planning/research/PITFALLS.md` #26 carries the SUPERSEDED-by-D-P8-12
+header preserving the rejected mark-then-emit alternative.
 
 ## 4. Share URI
 
@@ -697,6 +709,28 @@ KDF + wire-blob layout + receive-flow ordering.
 cipherpost send --pin --self -p 'high-value backup' --material-file ./vault.key
 ```
 
+**`--burn` (cipherpost/v1.1, Phase 8 BURN-01):** Mark the share as
+single-consumption. Bool flag. Sets `Envelope.burn_after_read = true`
+(inner-signed, post-decrypt — DHT observers cannot distinguish burn-marked
+shares from regular shares on the wire). Send-time stderr surfaces a
+warning that burn is **local-state-only** (BURN-05) — different machines
+with fresh ledgers can each decrypt the share once until TTL expires; burn
+is NOT cryptographic destruction. Receive-time prepends a
+`[BURN — you will only see this once]` marker above the acceptance banner
+(D-P8-08). On the FIRST successful receive, the local ledger writes
+`state: "burned"`; subsequent receives against the same `share_ref` return
+exit 7 (`Error::Declined`) with stderr message
+`share already consumed (burned at <ts>)`. Receipt publication is
+UNCONDITIONAL on burn-receive (BURN-04 — burn does not suppress
+attestation). Composes orthogonally with `--pin` (D-P8-13); see §3.7 for
+the receive-flow ordering, emit-before-mark atomicity contract, and the
+ledger row schema migration path.
+
+```
+cipherpost send --burn --self -p 'one-shot bootstrap token' --material-file ./token.txt
+cipherpost send --pin --burn --self -p 'pin+burn compose' --material-file ./secret.bin
+```
+
 ### 5.2 Receive
 
 Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
@@ -704,6 +738,14 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
 1. Parse URI; extract `sender_z32` and `url_share_ref`. Malformed → `Error::InvalidShareUri` (D-URI-03).
 2. Check sentinel file at `~/.cipherpost/state/accepted/<url_share_ref>`; if present, print
    prior acceptance timestamp and exit 0 (RECV-06, D-RECV-02, D-STATE-01). No network call.
+
+   **cipherpost/v1.1: BURN ledger pre-check (Phase 8 D-P8-09 / BURN-02).** The sentinel
+   step is augmented with a ledger-state probe: if the sentinel exists, look up the
+   matching ledger row by `share_ref`. If the row carries `state: "burned"`, return
+   `Error::Declined` (exit 7) with stderr message
+   `share already consumed (burned at <timestamp>)`. v1.0 rows missing the `state`
+   field deserialize via serde default to `LedgerState::Accepted` (T-08-17 conservative
+   classification). See §3.7 for the receive-flow ordering and ledger schema details.
 3. `Transport::resolve(sender_z32)` — returns `OuterRecord` only after the outer PKARR
    SignedPacket signature passes (verified inside `pkarr::ClientBlocking`). NotFound → exit 5.
 4. Verify inner Ed25519 signature on `OuterRecord` via `verify_record` (round-trip-reserialize
@@ -740,6 +782,16 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    To accept, paste the sender's z32 pubkey and press Enter:
    >
    ```
+
+   **cipherpost/v1.1: [BURN] banner marker (Phase 8 D-P8-08 / BURN-05).** When
+   `Envelope.burn_after_read = true`, a single literal-em-dash marker line
+   `[BURN — you will only see this once]` is prepended to the acceptance banner
+   ABOVE the `Purpose:` line (and ABOVE any X.509 / OpenPGP / SSH subblock). The
+   marker fires AFTER inner-verify gates (the verify-before-reveal invariant
+   below — burn is an inner-signed `Envelope` field, not an outer field — so a
+   tampered share never surfaces the marker). Non-burn shares see the v1.0
+   banner shape verbatim. See §3.7 for the receive-flow ordering and the
+   emit-before-mark atomicity contract.
 
    **cipherpost/v1.1: X.509 subblock** — when `Type: x509_cert`, a typed subblock
    is inserted between the `Size:` and `TTL:` lines (Phase 6 D-P6-09 / X509-04):
@@ -905,7 +957,7 @@ attacks (D-16).
 | 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), **`SshKeyFormatNotSupported`** (Phase 7 Plan 05 / D-P7-12 — input not OpenSSH v1; distinct variant because Display embeds the `ssh-keygen -p -o -f <path>` conversion hint that would be wrong for non-SSH content errors; SPEC §3.2 SshKey), any unclassified |
 | 2 | TTL expired | `share expired` | `Expired` |
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
-| 4 | Passphrase / decryption failure | `wrong passphrase or identity decryption failed` | `DecryptFailed` (Phase 8 PIN-07: covers wrong identity-passphrase OR wrong PIN OR tampered inner age ciphertext — IDENTICAL Display across all three credential-failure modes; oracle hygiene), `IdentityPermissions`, `PassphraseInvalidInput` |
+| 4 | Passphrase / decryption failure | `wrong passphrase or identity decryption failed` | `DecryptFailed` (Phase 8 PIN-07: covers wrong identity-passphrase OR wrong PIN OR tampered inner age ciphertext — IDENTICAL Display across all three credential-failure modes; oracle hygiene — see §3.6 PIN Crypto Stack), `IdentityPermissions`, `PassphraseInvalidInput` |
 | 5 | Not found on DHT | `not found` | `NotFound` |
 | 7 | User declined acceptance OR (Phase 8 BURN-02) share already consumed (burned). Stderr message: `declined` for typed-z32 mismatch; `share already consumed (burned at <timestamp>)` for the burn-already-consumed case (§3.7). | `declined` / `share already consumed (burned at <ts>)` | `Declined` |
 
@@ -1020,6 +1072,23 @@ round-trip tests + active `WireBudgetExceeded` tests for X.509 + PGP + SSH.
 The `#[ignore]`'d tests are the regression suite for the v1.2 two-tier-storage
 fix — do NOT remove them. Each carries a `wire-budget: …` `#[ignore]` reason
 that points at this section + the v1.2 milestone.
+
+**Phase 8 wire-budget continuation (pin × burn × typed-material compose):**
+PIN-required shares add ~165 B per nested-age layer + 32 B salt prefix; the
+worst-case `pin + burn + pgp_key (secret-key)` compose is predicted to brush
+the 1000 B BEP44 ceiling (08-RESEARCH.md Open Risk #5). The compose-grid
+test suite (`tests/pin_burn_compose.rs`, 23 tests covering pin × burn × {
+GenericSecret, X509Cert, PgpKey, SshKey }) uses the W3 split-macro pattern:
+`compose_base_test_strict!` for the single sub-budget happy path
+(`generic_burn_only`), `compose_base_test_lenient!` for every PIN path and
+every typed-material variant — lenient gracefully surfaces
+`Error::WireBudgetExceeded` as `Ok` with a skip note, asserting the failure
+mode is a CLEAN `WireBudgetExceeded` (NOT a panic, NOT a Transport-internal
+error, NOT a partial publish). The pre-flight test
+`tests/pin_burn_compose.rs::pin_plus_burn_plus_pgp_wire_budget_surfaces_cleanly_or_succeeds`
+pins this contract explicitly. Phase 9 (DHT-07) measures the wire-budget
+distribution empirically against the real DHT; v1.2 ships the wire-budget
+escape hatch (chunking / two-tier storage / out-of-band).
 
 ## 7. Passphrase Contract
 
