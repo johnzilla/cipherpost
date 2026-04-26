@@ -349,6 +349,32 @@ name = "burn_send_smoke"
 path = "tests/burn_send_smoke.rs"
 required-features = ["mock"]
 
+# Phase 8 Plan 04 (BURN-01 + D-P8-04): JCS byte-identity fixture for
+# Envelope { burn_after_read=true, .. } — pins alphabetic placement
+# (`burn_after_read` lands FIRST before `created_at`) and asserts the
+# non-burn elision path preserves v1.0 byte-identity.
+[[test]]
+name = "envelope_burn_signable"
+path = "tests/envelope_burn_signable.rs"
+
+# Phase 8 Plan 04 (D-P8-10): state-schema migration invariants — v1.0 row
+# without `state` field deserializes as Accepted; v1.1 burned row
+# deserializes as Burned; sentinel-without-row falls back to Accepted.
+[[test]]
+name = "state_ledger"
+path = "tests/state_ledger.rs"
+required-features = ["mock"]
+
+# Phase 8 Plan 04 (BURN-09): two consecutive receives of the same burn
+# share return exit 0 then exit 7. Receipt published exactly ONCE on the
+# first successful receive (BURN-04). The receipt-count assertion
+# encodes the explicit lock that publish_receipt is NOT guarded by
+# !envelope.burn_after_read.
+[[test]]
+name = "burn_roundtrip"
+path = "tests/burn_roundtrip.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
