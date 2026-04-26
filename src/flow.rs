@@ -1339,7 +1339,13 @@ fn sender_openssh_fingerprint_and_z32(z32: &str) -> Result<(String, String), Err
 
 // ---- Test helpers (cfg-gated) ----------------------------------------------
 
-#[cfg(any(test, feature = "mock"))]
+// Phase 9 Plan 02: extend cfg-gate to include `real-dht-e2e` so the cross-
+// identity round-trip integration test (tests/real_dht_e2e.rs) can re-use
+// `AutoConfirmPrompter` without duplicating the impl. Integration tests are
+// compiled as a separate crate (cfg(test) on lib does NOT activate), so
+// gating only on `feature = "mock"` would force tests/real_dht_e2e.rs to
+// inline-define its own prompter.
+#[cfg(any(test, feature = "mock", feature = "real-dht-e2e"))]
 pub mod test_helpers {
     use super::*;
 
