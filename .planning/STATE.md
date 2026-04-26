@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: "Completed 08-04: BURN ship-gate (Prompter marker + emit-before-mark + JCS fixture + BURN-09 round-trip + SPEC §3.7)"
-last_updated: "2026-04-26T00:28:48.897Z"
+stopped_at: "Completed 08-05: PIN x BURN x typed-material compose matrix (23 tests; W3 split macros; negative-path safety pinned; wire-budget pre-flight clean)"
+last_updated: "2026-04-26T00:56:08.289Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 ## Current Position
 
 Phase: 08 (pin-and-burn-encryption-modes) — EXECUTING
-Plan: 4 / 6 complete (08-04 BURN ship-gate landed; all 9 BURN REQ-IDs covered modulo BURN-08 prose deferred to Plan 06 THREAT-MODEL.md — Plan 04 added BURN-02 receive-flow integration, BURN-03 emit-before-mark ledger write order per D-P8-12, BURN-04 receipt-on-burn lock with NO publish_receipt guard, BURN-09 two-receive round-trip with receipt-count==1; Prompter trait gains marker: Option<&str> param + [BURN] banner tag at TOP; append_ledger_entry_with_state peer helper; envelope_burn_signable.bin fixture (142 B); SPEC.md §3.7 Burn Semantics; PITFALLS.md #26 SUPERSEDED header preserving original mark-then-emit analysis)
-Status: Ready to execute Plan 08-05 (PIN+BURN+typed-material compose grid)
+Plan: 5 / 6 complete (08-05 compose matrix shipped; tests/pin_burn_compose.rs 752 lines / 23 tests covers pin × burn × {GenericSecret, X509Cert, PgpKey, SshKey} + 4 receipt-count cross-cutting + 4 second-receive cross-cutting + 2 negative-path safety (wrong-PIN-on-burn / declined-z32-on-burn don't mark burned) + 1 wire-budget pre-flight; W3 split macros — strict for generic_burn_only, lenient for every PIN path + typed-material variant; full suite 309 passed / 0 failed / 19 ignored; v1.0 + Plan 02 + Plan 04 fixtures byte-identical (119 + 192 + 424 + 212 + 142); zero new wire-format fields, zero new deps, zero new fixtures)
+Status: Ready to execute Plan 08-06 (Phase 8 docs close-out — THREAT-MODEL.md §Burn mode prose, CLAUDE.md load-bearing additions for PIN nesting + BURN local-state-only invariants, SPEC.md §3.6/§3.7 cross-references final, ROADMAP/STATE/RETROSPECTIVE final close-out for Phase 8)
 Last activity: 2026-04-26
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 90%
 | Phase 8 P2 | 37min | 5 tasks | 13 files |
 | Phase 08 P03 | 14min | 2 tasks tasks | 4 files files |
 | Phase 08 P04 | 22 | 4 tasks | 7 files |
+| Phase 08 P05 | 21 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -158,6 +159,10 @@ Recent decisions affecting current work:
 - v1.1 Phase 8 Plan 04: D-P8-12 emit-before-mark for burn ONLY ships in code; v1.0 accepted-flow mark-then-emit ordering preserved unchanged. The two flows have OPPOSITE atomicity contracts (burn = one-shot consume, data loss is worst outcome; accepted = idempotent persistence, re-emit on crash is fine). PITFALLS.md #26 SUPERSEDED-by-D-P8-12 header preserves original mark-then-emit analysis below
 - v1.1 Phase 8 Plan 04: Receipt-on-burn lock (BURN-04 / RESEARCH Open Risk #4): publish_outcome closure UNCHANGED — no conditional guard around publish_receipt. Asserted by tests/burn_roundtrip.rs receipt-count == 1 across both first-success and second-declined receives. Receipt = delivery confirmation, not suppressed by burn
 - v1.1 Phase 8 Plan 04: Doc-comments on fn parameters rejected by rustc (Rule 1 fix). Plan 04's Prompter trait marker: Option<&str> param landed with // (non-doc) line comments instead of /// — functionally equivalent to plan intent; future Rust may relax this restriction
+- v1.1 Phase 8 Plan 05 (2026-04-26): PIN x BURN x typed-material compose matrix landed. tests/pin_burn_compose.rs 752 lines / 23 tests cover 4 variants (GenericSecret, X509Cert, PgpKey, SshKey) x 3 modes (pin, burn, pin+burn) = 12 base round-trip + 4 receipt-count cross-cutting (BURN-04) + 4 second-receive cross-cutting (BURN-09) + 2 negative-path safety + 1 wire-budget pre-flight. W3 split macros: compose_base_test_strict! used ONLY for generic_burn_only (single sub-budget happy path); compose_base_test_lenient! used for every typed-material variant + every PIN path (gracefully surfaces WireBudgetExceeded as Ok with eprintln skip note).
+- v1.1 Phase 8 Plan 05 (Rule 1 fix): cipherpost::identity::generate overwrites the on-disk identity (create_new tmp + rename over dest), so calling setup(&dir) twice in the same TempDir destroys the original keypair. Plan 05's compose_round_trip helper RETURNS (transport, uri, recovered, identity, keypair) so callers issuing a second receive reuse the originals — refactored from plan's Step D pattern of re-calling setup() which would fail with key-derivation mismatch instead of LedgerState::Burned arm short-circuit.
+- v1.1 Phase 8 Plan 05 (Rule 3 fix): plan referenced fixture filenames that don't exist on disk (material_x509_fixture.der / material_ssh_fixture.bin). Actual filenames are tests/fixtures/x509_cert_fixture.der (Phase 6 Plan 04), tests/fixtures/material_pgp_fixture.pgp (Phase 7 Plan 04), tests/fixtures/material_ssh_fixture.openssh-v1 (Phase 7 Plan 08). Plan 05's fixture_for helper uses the actual filenames.
+- v1.1 Phase 8 Plan 05 (Rule 1 fix): plan's compose_base_test_strict! macro invocations on GenericSecret pin paths (pin-only, pin+burn) would have failed because Plan 01's wire-budget reality applies — pin-protected shares' nested age + 32 B salt prefix exceed 1000 B BEP44 ceiling for ANY non-trivial plaintext, even small GenericSecret. Switched ALL pin paths and all typed-material variants to compose_base_test_lenient!; only generic_burn_only is strict-passable.
 
 ### Pending Todos
 
@@ -183,9 +188,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-26T00:28:29.472Z
-Stopped at: Completed 08-04: BURN ship-gate (Prompter marker + emit-before-mark + JCS fixture + BURN-09 round-trip + SPEC §3.7)
+Last session: 2026-04-26T00:55:20.152Z
+Stopped at: Completed 08-05: PIN x BURN x typed-material compose matrix (23 tests; W3 split macros; negative-path safety pinned; wire-budget pre-flight clean)
 Resume file: None
 
 **Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
-**Next action:** `/gsd-execute-phase 8` (continues with Plan 03 — BURN core: Envelope.burn_after_read inner-signed wiring + run_receive burn-state-handling + state-ledger BURN-01..05)
+**Next action:** `/gsd-execute-phase 8` (continues with Plan 06 — Phase 8 docs close-out: THREAT-MODEL.md §Burn mode prose, CLAUDE.md load-bearing additions for PIN nesting + BURN local-state-only invariants, SPEC.md §3.6/§3.7 cross-references final, ROADMAP/STATE/RETROSPECTIVE final close-out for Phase 8)
