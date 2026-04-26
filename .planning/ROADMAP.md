@@ -112,7 +112,10 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   2. A real-DHT cross-identity round trip test exists behind `#[cfg(feature = "real-dht-e2e")]` + `#[ignore]`; it spawns two in-process clients with independent identities, publishes via client A, resolves via client B with 120-second exponential-backoff ceiling, decrypts, publishes receipt via B, fetches via A; UDP pre-flight skips gracefully if bootstrap is unreachable
   3. `RELEASE-CHECKLIST.md` at repo root documents the manual real-DHT invocation command, expected output pattern, and explicit pass/fail criteria; every v1.1+ release requires a human to run and pass this checklist
   4. A wire-budget coexistence test asserts that a share with `pin_required=true` + `burn_after_read=true` carrying a realistic PGP payload (~2 KB) produces a clean `Error::WireBudgetExceeded` at send time (not a PKARR-internal panic) if the payload exceeds the 550-byte `OuterRecord` budget
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 09-01-PLAN.md — CAS retry-and-merge contract + MockTransport per-key seq + DHT-07 wire-budget composite (DHT-01 + DHT-02 + DHT-07; wave 1; autonomous)
+- [ ] 09-02-PLAN.md — Real-DHT cross-identity round trip + cfg-feature + UDP pre-flight + nextest config (DHT-03 + DHT-04 + DHT-05; wave 1; autonomous=false — manual real-DHT invocation via RELEASE-CHECKLIST)
+- [ ] 09-03-PLAN.md — Docs: RELEASE-CHECKLIST template + v1.1 snapshot + CLAUDE.md +3 lock-ins + README/SPEC bootstrap notes + STATE.md todo closure (DHT-06; wave 2; depends on 09-01 + 09-02; autonomous)
 **UI hint**: no
 
 ## Progress
@@ -126,8 +129,8 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 5. Non-interactive automation E2E | v1.1 | 3/3 | Complete    | 2026-04-24 |
 | 6. Typed Material: X509Cert | v1.1 | 4/4 | Complete    | 2026-04-24 |
 | 7. Typed Material: PgpKey + SshKey | v1.1 | 8/8 | Complete    | 2026-04-25 |
-| 8. --pin and --burn modes | v1.1 | 2/6 | Executing | - |
-| 9. Real-DHT E2E + CAS race gate | v1.1 | 0/TBD | Not started | - |
+| 8. --pin and --burn modes | v1.1 | 6/6 | Complete | 2026-04-26 |
+| 9. Real-DHT E2E + CAS race gate | v1.1 | 0/3 | Planned | - |
 
 ---
-*Last updated: 2026-04-25 after Phase 8 plans landed — 6 strictly sequential plans (PIN core / PIN ship-gate / BURN core / BURN ship-gate / Compose / Docs) covering all 19 REQ-IDs (PIN-01..10 + BURN-01..09). PIN-first sequencing per D-P8-14; all plans autonomous per D-P8-16. Ready to execute Phase 8.*
+*Last updated: 2026-04-26 after Phase 9 plans landed — 3 plans following the Phase 8 plan-structure compression pattern (D-P9-F1 + 09-RESEARCH.md refinement). Wave 1: 09-01 (CAS racer + DHT-07 wire-budget) and 09-02 (real-DHT cross-identity round trip + nextest config) — independent file sets. Wave 2: 09-03 (docs: RELEASE-CHECKLIST + CLAUDE.md lock-ins + STATE.md todo closure) depends on 09-01 + 09-02 because RELEASE-CHECKLIST cites the nextest invocation finalised in 09-02 and the SPEC.md §Pitfall #22 composite measurement cites 09-01-SUMMARY.md. All 7 DHT-01..07 REQ-IDs covered. Ready to execute Phase 9.*
