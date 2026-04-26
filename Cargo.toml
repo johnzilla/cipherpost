@@ -375,6 +375,16 @@ name = "burn_roundtrip"
 path = "tests/burn_roundtrip.rs"
 required-features = ["mock"]
 
+# Phase 8 Plan 05: pin × burn × typed-material compose matrix. 12 base
+# round-trip cases (4 variants × {pin, burn, pin+burn}) + 4 receipt-count
+# cross-cutting (BURN-04) + 4 second-receive exit-7 cross-cutting (BURN-09)
+# + 2 negative-path safety (wrong-PIN-on-burn / declined-z32-on-burn don't
+# mark burned) + 1 pin+burn+pgp wire-budget pre-flight (Open Risk #5).
+[[test]]
+name = "pin_burn_compose"
+path = "tests/pin_burn_compose.rs"
+required-features = ["mock"]
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
