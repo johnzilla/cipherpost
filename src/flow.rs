@@ -782,14 +782,41 @@ pub fn run_receive(
     write_output(output, &output_bytes)?;
 
     // STEP 12: sentinel FIRST, ledger SECOND (crash-safe; see fn-doc rationale).
+    //
+    // Phase 8 Plan 04 (D-P8-12 — emit-before-mark for burn): write_output
+    // (STEP 11 above) already emitted the decrypted bytes. For BURN shares,
+    // the ledger row carries `state: "burned"`; a crash between emit and
+    // ledger write leaves the share re-receivable on next invocation
+    // (safer failure mode than mark-then-emit losing the user's data —
+    // supersedes PITFALLS.md #26 mark-then-emit recommendation; see SPEC.md
+    // §3.7 Burn Semantics for the full rationale). Non-burn shares retain
+    // v1.0 ordering: append_ledger_entry writes a row with state implicit
+    // None (deserializes as LedgerState::Accepted on read).
+    //
+    // Receipt publication (STEP 13 below) is UNCONDITIONAL (BURN-04 / RESEARCH
+    // Open Risk #4): the publish_outcome closure runs for both burn and
+    // non-burn shares without any branch on burn_after_read. Receipt =
+    // delivery confirmation; burn does not suppress attestation.
     create_sentinel(&record.share_ref)?;
-    append_ledger_entry(
-        &record.share_ref,
-        &record.pubkey,
-        &envelope.purpose,
-        &ciphertext,
-        &jcs_plain,
-    )?;
+    if envelope.burn_after_read {
+        // BURN flow (D-P8-12): write ledger row with state: Some("burned").
+        append_ledger_entry_with_state(
+            Some("burned"),
+            &record.share_ref,
+            &record.pubkey,
+            &envelope.purpose,
+            &ciphertext,
+            &jcs_plain,
+        )?;
+    } else {
+        append_ledger_entry(
+            &record.share_ref,
+            &record.pubkey,
+            &envelope.purpose,
+            &ciphertext,
+            &jcs_plain,
+        )?;
+    }
 
     // STEP 13: publish_receipt — best-effort, warn+degrade on failure (D-SEQ-01, D-SEQ-02).
     //
@@ -1143,6 +1170,67 @@ fn append_ledger_entry(
         .map_err(Error::Io)?;
     f.write_all(&line).map_err(Error::Io)?;
     // Re-apply perms (defensive vs umask on first creation).
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(Error::Io)?;
+    Ok(())
+}
+
+/// Phase 8 Plan 04 (BURN-03 / D-P8-12): append a ledger row with an explicit
+/// `state` field. Used for burn flow (state=Some("burned")). Non-burn flow
+/// continues to use `append_ledger_entry` (state implicit None → maps to
+/// LedgerState::Accepted on read).
+///
+/// **Emit-before-mark contract (crash-safety invariant):** caller MUST have
+/// completed `write_output` before invoking this helper. Crash sequence
+/// guarantee for burn shares: emit_to_stdout → create_sentinel →
+/// append_ledger_entry_with_state(state=Some("burned")) — a crash between
+/// emit and ledger write leaves the share re-receivable on next invocation
+/// (safer failure mode than mark-then-emit, which would lose the user's
+/// data). Supersedes PITFALLS.md #26 mark-then-emit recommendation. See
+/// SPEC.md §3.7 Burn Semantics for the full rationale.
+///
+/// Mirrors `append_ledger_entry`'s body verbatim except:
+///   - accepts `state: Option<&str>` (caller passes Some("burned") for burn)
+///   - constructs `LedgerEntry { ..., state }` instead of `state: None`
+fn append_ledger_entry_with_state(
+    state: Option<&str>,
+    share_ref: &str,
+    sender_z32: &str,
+    purpose: &str,
+    ciphertext: &[u8],
+    jcs_plain: &[u8],
+) -> Result<(), Error> {
+    ensure_state_dirs()?;
+    use sha2::{Digest, Sha256};
+    let ch = format!("{:x}", Sha256::digest(ciphertext));
+    let ph = format!("{:x}", Sha256::digest(jcs_plain));
+    let accepted_at = iso8601_utc_now()?;
+    let entry = LedgerEntry {
+        accepted_at: &accepted_at,
+        ciphertext_hash: ch,
+        cleartext_hash: ph,
+        purpose,
+        receipt_published_at: None,
+        sender: sender_z32,
+        share_ref,
+        // Phase 8 Plan 04: caller threads Some("burned") for burn flow;
+        // any other value is also accepted (Option<&str> is open-set on
+        // the wire so external tooling can write its own states without a
+        // protocol_version bump). The runtime read path in
+        // check_already_consumed maps unknown values CONSERVATIVELY to
+        // LedgerState::Accepted (T-08-17 — never silently classify
+        // Accepted as Burned).
+        state,
+    };
+    let mut line = crypto::jcs_serialize(&entry)?;
+    line.push(b'\n');
+    let path = ledger_path();
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(Error::Io)?;
+    f.write_all(&line).map_err(Error::Io)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(Error::Io)?;
     Ok(())
 }
