@@ -17,6 +17,12 @@ path = "src/main.rs"
 
 [features]
 mock = []
+# Phase 9 Plan 02 (D-P9-D2 + DHT-03): real-DHT cross-identity round trip is
+# behind this feature flag. CI NEVER enables it (PR + nightly stay mock-
+# only per Pitfall #29). The flag gates a single test in tests/real_dht_e2e.rs
+# that is also marked #[ignore] + #[serial] — belt-and-suspenders. Manual
+# invocation only via RELEASE-CHECKLIST.md (Plan 09-03).
+real-dht-e2e = []
 
 [dependencies]
 # DHT transport — no_relays + dht feature only; inherits ed25519-dalek 3.x pre-release
@@ -403,6 +409,17 @@ required-features = ["mock"]
 name = "wire_budget_compose_pin_burn_pgp"
 path = "tests/wire_budget_compose_pin_burn_pgp.rs"
 required-features = ["mock"]
+
+# Phase 9 Plan 02 (DHT-03 + DHT-04 + DHT-05): real-DHT cross-identity round
+# trip — Alice publishes, Bob resolves with 7-step exp-backoff and 120s
+# deadline, Bob decrypts + publishes receipt, Alice fetches. UDP pre-flight
+# to router.bittorrent.com:6881 skips gracefully if unreachable. NEVER runs
+# in CI (cfg-feature off + #[ignore] + #[serial] triple gate per D-P9-D2);
+# manual-only via RELEASE-CHECKLIST.md (Plan 09-03).
+[[test]]
+name = "real_dht_e2e"
+path = "tests/real_dht_e2e.rs"
+required-features = ["real-dht-e2e"]
 
 [dev-dependencies]
 tempfile = "3"
