@@ -113,9 +113,9 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
   3. `RELEASE-CHECKLIST.md` at repo root documents the manual real-DHT invocation command, expected output pattern, and explicit pass/fail criteria; every v1.1+ release requires a human to run and pass this checklist
   4. A wire-budget coexistence test asserts that a share with `pin_required=true` + `burn_after_read=true` carrying a realistic PGP payload (~2 KB) produces a clean `Error::WireBudgetExceeded` at send time (not a PKARR-internal panic) if the payload exceeds the 550-byte `OuterRecord` budget
 **Plans**: 3 plans
-- [ ] 09-01-PLAN.md — CAS retry-and-merge contract + MockTransport per-key seq + DHT-07 wire-budget composite (DHT-01 + DHT-02 + DHT-07; wave 1; autonomous)
-- [ ] 09-02-PLAN.md — Real-DHT cross-identity round trip + cfg-feature + UDP pre-flight + nextest config (DHT-03 + DHT-04 + DHT-05; wave 1; autonomous=false — manual real-DHT invocation via RELEASE-CHECKLIST)
-- [ ] 09-03-PLAN.md — Docs: RELEASE-CHECKLIST template + v1.1 snapshot + CLAUDE.md +3 lock-ins + README/SPEC bootstrap notes + STATE.md todo closure (DHT-06; wave 2; depends on 09-01 + 09-02; autonomous)
+- [x] 09-01-PLAN.md — CAS retry-and-merge contract + MockTransport per-key seq + DHT-07 wire-budget composite (DHT-01 + DHT-02 + DHT-07; wave 1; autonomous)
+- [x] 09-02-PLAN.md — Real-DHT cross-identity round trip + cfg-feature + UDP pre-flight + nextest config (DHT-03 + DHT-04 + DHT-05; wave 1; autonomous=false — manual real-DHT invocation via RELEASE-CHECKLIST)
+- [x] 09-03-PLAN.md — Docs: RELEASE-CHECKLIST template + v1.1 snapshot + CLAUDE.md +3 lock-ins + README/SPEC bootstrap notes + STATE.md todo closure (DHT-06; wave 2; depends on 09-01 + 09-02; autonomous)
 **UI hint**: no
 
 ## Progress
