@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Real v1
 status: executing
-stopped_at: "Completed 08-05: PIN x BURN x typed-material compose matrix (23 tests; W3 split macros; negative-path safety pinned; wire-budget pre-flight clean)"
-last_updated: "2026-04-26T00:56:08.289Z"
+stopped_at: "Completed 08-06: Phase 8 docs closure (THREAT-MODEL §6.5/§6.6, SPEC.md cross-refs, CLAUDE.md lock-ins)"
+last_updated: "2026-04-26T01:15:00.553Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-23 at v1.1 "Real v1" milestone kickof
 
 ## Current Position
 
-Phase: 08 (pin-and-burn-encryption-modes) — EXECUTING
-Plan: 5 / 6 complete (08-05 compose matrix shipped; tests/pin_burn_compose.rs 752 lines / 23 tests covers pin × burn × {GenericSecret, X509Cert, PgpKey, SshKey} + 4 receipt-count cross-cutting + 4 second-receive cross-cutting + 2 negative-path safety (wrong-PIN-on-burn / declined-z32-on-burn don't mark burned) + 1 wire-budget pre-flight; W3 split macros — strict for generic_burn_only, lenient for every PIN path + typed-material variant; full suite 309 passed / 0 failed / 19 ignored; v1.0 + Plan 02 + Plan 04 fixtures byte-identical (119 + 192 + 424 + 212 + 142); zero new wire-format fields, zero new deps, zero new fixtures)
-Status: Ready to execute Plan 08-06 (Phase 8 docs close-out — THREAT-MODEL.md §Burn mode prose, CLAUDE.md load-bearing additions for PIN nesting + BURN local-state-only invariants, SPEC.md §3.6/§3.7 cross-references final, ROADMAP/STATE/RETROSPECTIVE final close-out for Phase 8)
+Phase: 08 (pin-and-burn-encryption-modes) — COMPLETE (pending verifier sign-off)
+Plan: 6 / 6 complete (08-06 docs closure shipped — THREAT-MODEL.md §6.5 PIN mode + §6.6 Burn mode prose, SPEC.md §3.6/§3.7 cross-refs + §5.1 --burn flag + §5.2 ledger pre-check / banner marker + §6 exit-4 §3.6 ref + §Pitfall #22 wire-budget continuation, CLAUDE.md §Load-bearing lock-ins +3 entries; W6 RESEARCH.md audit hygiene confirmed; lychee link-check clean; cargo test --features mock = 309 passed / 0 failed / 19 ignored; Phase 8 fixtures byte-identical 192+424+212+142; all 19 PIN+BURN REQ-IDs covered: PIN-01..10 + BURN-01..09)
+Status: Phase 8 ready for verifier (regression gate + schema-drift gate + goal-backward verification). Next phase = 09 (Real-DHT cross-identity round-trip + CAS merge-update race gate).
 Last activity: 2026-04-26
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██████████] 95%
 | Phase 08 P03 | 14min | 2 tasks tasks | 4 files files |
 | Phase 08 P04 | 22 | 4 tasks | 7 files |
 | Phase 08 P05 | 21 | 1 tasks | 2 files |
+| Phase 08 P06 | 13min | 2 tasks tasks | 3 files files |
 
 ## Accumulated Context
 
@@ -163,6 +164,8 @@ Recent decisions affecting current work:
 - v1.1 Phase 8 Plan 05 (Rule 1 fix): cipherpost::identity::generate overwrites the on-disk identity (create_new tmp + rename over dest), so calling setup(&dir) twice in the same TempDir destroys the original keypair. Plan 05's compose_round_trip helper RETURNS (transport, uri, recovered, identity, keypair) so callers issuing a second receive reuse the originals — refactored from plan's Step D pattern of re-calling setup() which would fail with key-derivation mismatch instead of LedgerState::Burned arm short-circuit.
 - v1.1 Phase 8 Plan 05 (Rule 3 fix): plan referenced fixture filenames that don't exist on disk (material_x509_fixture.der / material_ssh_fixture.bin). Actual filenames are tests/fixtures/x509_cert_fixture.der (Phase 6 Plan 04), tests/fixtures/material_pgp_fixture.pgp (Phase 7 Plan 04), tests/fixtures/material_ssh_fixture.openssh-v1 (Phase 7 Plan 08). Plan 05's fixture_for helper uses the actual filenames.
 - v1.1 Phase 8 Plan 05 (Rule 1 fix): plan's compose_base_test_strict! macro invocations on GenericSecret pin paths (pin-only, pin+burn) would have failed because Plan 01's wire-budget reality applies — pin-protected shares' nested age + 32 B salt prefix exceed 1000 B BEP44 ceiling for ANY non-trivial plaintext, even small GenericSecret. Switched ALL pin paths and all typed-material variants to compose_base_test_lenient!; only generic_burn_only is strict-passable.
+- v1.1 Phase 8 Plan 06 (2026-04-26): Phase 8 closure complete. THREAT-MODEL.md §6.5 PIN mode + §6.6 Burn mode (additive sub-section under §6 Passphrase-MITM; no renumber of §7-§9). SPEC.md cross-references resolved end-to-end: §3.6 ↔ §6.5; §3.7 ↔ §6.6; §5.1 --burn flag paragraph (BURN-01); §5.2 step 2 BURN ledger pre-check (D-P8-09 / BURN-02) + step 9 [BURN] banner marker (D-P8-08 / BURN-05); §6 exit-4 §3.6 reference; §Pitfall #22 Phase 8 wire-budget continuation (pin × burn × typed-material). CLAUDE.md §Load-bearing lock-ins +3 entries: cipherpost/v1/pin HKDF info clause + accepted.jsonl state field schema migration (T-08-17 conservative default) + burn emit-before-mark contract (D-P8-12). All 19 PIN+BURN REQ-IDs covered. Zero source code, zero new tests, zero new fixtures. lychee link-check clean (44 total, 38 OK, 0 errors). cargo test --features mock = 309 passed / 0 failed / 19 ignored. Phase 8 fixtures byte-identical: 192 + 424 + 212 + 142.
+- v1.1 Phase 8 Plan 06 pattern: "phase-closure docs plan" (THREAT-MODEL §X.Y new sections + SPEC §X.Y cross-link cleanup + CLAUDE.md §Load-bearing lock-ins extension; zero source code) — first instance in Phase 8; consider promoting to a named pattern in RETROSPECTIVE.md at v1.1 close. Companion to "ship-gate plan = fixture + round-trip + oracle + leak-scan + SPEC update" pattern (X509/PGP/SSH/PIN/BURN — five independent variants without modification).
 
 ### Pending Todos
 
@@ -188,9 +191,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-04-26T00:55:20.152Z
-Stopped at: Completed 08-05: PIN x BURN x typed-material compose matrix (23 tests; W3 split macros; negative-path safety pinned; wire-budget pre-flight clean)
+Last session: 2026-04-26T01:15:00.547Z
+Stopped at: Completed 08-06: Phase 8 docs closure (THREAT-MODEL §6.5/§6.6, SPEC.md cross-refs, CLAUDE.md lock-ins)
 Resume file: None
 
-**Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z
-**Next action:** `/gsd-execute-phase 8` (continues with Plan 06 — Phase 8 docs close-out: THREAT-MODEL.md §Burn mode prose, CLAUDE.md load-bearing additions for PIN nesting + BURN local-state-only invariants, SPEC.md §3.6/§3.7 cross-references final, ROADMAP/STATE/RETROSPECTIVE final close-out for Phase 8)
+**Planned Phase:** 08 (pin-and-burn-encryption-modes) — 6 plans — 2026-04-25T20:24:44.773Z (COMPLETE 2026-04-26; pending verifier sign-off)
+**Next action:** Phase 8 verifier gate (regression / schema-drift / goal-backward verification). After verifier passes: `/gsd-plan-phase 9` to plan the v1.1 milestone closer (Real-DHT cross-identity round-trip + CAS merge-update race gate).
