@@ -21,6 +21,8 @@
 4. [Sender-Purpose Adversary](#4-sender-purpose-adversary)
 5. [Acceptance-UX Adversary](#5-acceptance-ux-adversary)
 6. [Passphrase-MITM Adversary](#6-passphrase-mitm-adversary)
+   - 6.5 [PIN mode (second-factor share encryption)](#65-pin-mode-second-factor-share-encryption)
+   - 6.6 [Burn mode (local-state-only single-consume)](#66-burn-mode-local-state-only-single-consume)
 7. [Receipt-Replay / Race Adversary](#7-receipt-replay--race-adversary)
 8. [Out of Scope Adversaries](#8-out-of-scope-adversaries)
 9. [Lineage](#9-lineage)
@@ -300,6 +302,187 @@ wrapper captures it; the binary proceeds normally. Bob has no indication of comp
 environment (malicious wrapper, keylogger, rootkit). "Trusts the local environment" is
 explicit in §1 Trust Model. Users on untrusted systems MUST regenerate their identity on a
 clean system; no remediation is possible otherwise.
+
+### 6.5 PIN mode (second-factor share encryption)
+
+*Phase 8 — REQ PIN-10. See [`SPEC.md`](./SPEC.md) §3.6 PIN Crypto Stack for wire-shape
+and KDF parameters.*
+
+**Property.** PIN-protected shares (`OuterRecord.pin_required = true`) require BOTH the
+receiver's identity passphrase AND a PIN to decrypt. The PIN is layered via NESTED age
+encryption (`age_encrypt(envelope_jcs, pin_recipient)` then
+`age_encrypt(inner_ct, receiver_recipient)`); the 32-byte salt is embedded at the front
+of the base64-decoded blob. Both keys are required; possession of one without the other
+yields no decryption.
+
+**Threat coverage:**
+
+- **Passive DHT observer** cannot decrypt the share. The blob is doubly age-encrypted;
+  even with the salt visible (intentional — see SPEC.md §3.6), the attacker must still
+  derive the PIN-recipient via Argon2id (64 MiB × 3 iterations) AND obtain the receiver's
+  identity passphrase.
+- **Identity-key compromise alone** (e.g., stolen `~/.cipherpost/identity` file + breach
+  of the receiver's identity passphrase) does NOT enable decryption of PIN-protected
+  shares. The attacker still needs the PIN.
+- **Offline brute-force bound:** the PIN entropy floor (8-character minimum + the
+  anti-pattern blocklist preventing all-same / monotonic-ascending /
+  monotonic-descending / common 8-char breach-corpus entries) combined with Argon2id
+  64 MiB × 3 iter establishes the bound on offline brute-force feasibility. PIN entropy
+  ABOVE the floor is the user's responsibility.
+
+**Threats NOT covered:**
+
+- **Receiver-side endpoint compromise.** A compromised receiver machine (keylogger,
+  screen-capture, malicious shell history) can capture both the passphrase AND the PIN
+  at user input time. PIN is a second factor — not a magical defense against a
+  compromised endpoint.
+- **Multi-machine coordination.** A PIN-protected share can be decrypted from any
+  machine that has both the identity file AND the PIN. The PIN is not bound to a
+  specific receiver-machine; this is intentional (PIN flows out-of-band, not via
+  PKARR), but means a leaked PIN + leaked identity-file bypass on any machine.
+- **DHT-side share revocation.** PIN-protected ciphertext remains on the DHT until TTL
+  expires (24h default). Cipherpost cannot force-delete published shares.
+- **PIN reuse across shares.** Cipherpost does NOT enforce PIN uniqueness; if a sender
+  reuses the same PIN across multiple shares, an attacker who recovers it once
+  compromises every share that uses it.
+
+**Indistinguishability invariant.** Wrong-PIN, wrong-passphrase, and tampered-inner-
+ciphertext ALL produce `Error::DecryptFailed` with the IDENTICAL user-facing Display
+(`"wrong passphrase or identity decryption failed"`) and exit code 4. No PIN bytes
+appear in any user-facing output — not stderr, not Debug, not panic messages. This
+prevents the attacker who can run the receive command from learning which credential
+was wrong.
+
+PIN entropy-floor rejections (at send time) surface as a GENERIC
+`"PIN does not meet entropy requirements"` Display (exit code 1) — the specific failed
+predicate (length / monotonic / blocklist) is NEVER named in user-facing output, only
+asserted at the test layer (`tests/pin_validation.rs`). This is the same oracle-hygiene
+posture as the credential-failure lane: deny the attacker any signal beyond pass/fail.
+
+Sig-failures (`Error::Signature*`, exit 3) remain a DIFFERENT lane; an attacker
+observing the exit code can distinguish credential-failure (4) from sig-failure (3) but
+cannot distinguish wrong-PIN from wrong-passphrase within the credential lane.
+
+**Test references:**
+
+- `tests/pin_roundtrip.rs::pin_required_share_with_correct_pin_at_receive` — happy path
+- `tests/pin_roundtrip.rs::pin_required_share_with_wrong_pin_at_receive` — wrong-PIN exit 4
+- `tests/pin_roundtrip.rs::pin_required_share_with_no_pin_at_receive` — non-TTY context (PIN-08c) returns exit 1 / `Error::Config`, no state mutation
+- `tests/pin_error_oracle.rs::wrong_pin_display_matches_wrong_passphrase_display` — Display-equality across the credential lane
+- `tests/pin_error_oracle.rs::wrong_pin_display_does_not_match_signature_failure_display` — credential lane vs sig lane separation
+- `tests/pin_error_oracle.rs::pin_validation_failure_is_distinct_from_credential_failure` — entropy-floor rejection ≠ credential failure
+- `tests/pin_burn_compose.rs::wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — wrong-PIN safety property under compose
+- `tests/debug_leak_scan.rs::pin_secret_box_debug_redacts` — Debug-format redaction
+- `tests/debug_leak_scan.rs::pin_zeroizing_key_buffer_debug_does_not_panic` — Zeroize wrapper invariant
+- `tests/hkdf_info_enumeration.rs` — `cipherpost/v1/pin` namespace invariant
+
+**Cross-references:**
+
+- `SPEC.md` §3.6 PIN Crypto Stack — wire-shape, KDF parameters, salt encoding,
+  receive-flow ordering, error-oracle constraint, entropy floor algorithm.
+- `.planning/research/PITFALLS.md` #23 — PIN-as-distinguishable-oracle (mitigation
+  enforced here).
+- `.planning/research/PITFALLS.md` #24 — PIN entropy floor (algorithm landed in
+  `src/pin.rs::validate_pin`).
+
+### 6.6 Burn mode (local-state-only single-consume)
+
+*Phase 8 — REQ BURN-08. See [`SPEC.md`](./SPEC.md) §3.7 Burn Semantics for wire-shape
+and ledger ordering.*
+
+**Property.** Burn shares (`Envelope.burn_after_read = true`) are single-consumption
+from the receiver's perspective. After a successful first receive, the local ledger
+records `state: "burned"` and any subsequent receive against the same `share_ref`
+returns exit 7 (`Error::Declined`) with stderr message
+`"share already consumed (burned at <timestamp>)"`. Burn is a receiver-side semantic;
+the DHT ciphertext is not modified.
+
+The `burn_after_read` flag is INSIDE the inner age envelope (inner-signed,
+post-decrypt). DHT observers cannot distinguish burn-marked shares from non-burn shares
+on the wire alone — only post-decrypt + inner-verify reveals the flag.
+
+**Threat coverage:**
+
+- **Accidental same-machine re-decryption.** The user has multiple shells, scripts, or
+  crontabs pointing at the same ciphertext; burn ensures only ONE of them succeeds. The
+  ledger persists the burn-fact across reboots; a re-run of the same
+  `cipherpost receive <uri>` invocation returns exit 7.
+- **UX awareness surface.** BURN-05 send-time stderr warning surfaces the
+  local-state-only caveat BEFORE the user commits to send; the receive-time
+  `[BURN — you will only see this once]` banner marker (D-P8-08) prepends the
+  acceptance banner above the Purpose line. The user is informed twice.
+- **Receipt attestation preserved.** A receipt IS published on the first successful
+  burn-receive (BURN-04). The sender sees a single `receipts --from <z32>` entry — burn
+  does NOT suppress attestation.
+
+**Threats NOT covered:**
+
+- **Multi-machine race.** Two receivers with fresh ledgers (different `CIPHERPOST_HOME`
+  paths — e.g., a user with two laptops, or a script running in a fresh container) can
+  BOTH successfully decrypt the same burn share until the share's TTL expires (24h
+  default). Burn enforces only THIS machine's local consumption guard. There is no
+  cross-machine coordination protocol. Burn is a **UX affordance, NOT a cryptographic
+  destruction primitive.**
+- **DHT-survives-TTL.** The encrypted payload remains in the Mainline DHT until TTL
+  expires. Cipherpost cannot force-delete published ciphertext; the DHT is not under
+  our control. A passive observer who captured the SignedPacket BEFORE the TTL expires
+  can replay it forever.
+- **Cryptographic erasure.** Burn ≠ key destruction. The ciphertext can still be
+  decrypted by any party with the receiver's identity passphrase (and the PIN, if
+  pin_required) at any time before TTL expiry. Cipherpost makes no claim of
+  cryptographic forward secrecy or post-burn key erasure.
+- **Tampered ledger.** A malicious receiver can manually edit
+  `~/.cipherpost/state/accepted.jsonl` to remove a burned row; the next receive will
+  succeed. This is OUT-OF-SCOPE: the burn property is between the user and their own
+  ledger, not between users.
+- **Process kill mid-emit.** The emit-before-mark order means a crash between emit and
+  ledger-write leaves the share re-receivable. This is a SAFER failure mode than
+  mark-then-emit (which would lose user data on crash). Documented contract; see
+  atomicity invariant below.
+
+**Multi-machine race — explicit description:**
+
+```
+Receiver A (~/.cipherpost-A/) — receives burn share, marks state=burned
+Receiver B (~/.cipherpost-B/) — fresh ledger, receives same share, succeeds
+                                — marks state=burned in ITS OWN ledger
+Both receivers see the plaintext. Both publish a receipt. Sender sees TWO
+receipts (one per receiver). The DHT ciphertext remains queryable until TTL.
+```
+
+This is a UX affordance, not a cryptographic destruction primitive. **Burn ≠
+cryptographic destruction.** Users needing strong single-consumption semantics across
+machines must look outside cipherpost (e.g., a centralized rate-limiting key server —
+explicit non-goal for v1.x per CLAUDE.md "no servers" principle).
+
+**Atomicity invariant (D-P8-12).** Burn flow uses **emit-before-mark** ordering
+(inverts v1.0 accepted-flow): `write_output` happens BEFORE
+`append_ledger_entry_with_state(Some("burned"))`. Crash between emit and ledger-write
+leaves the share re-receivable — safer failure mode than losing user data to a crashed
+state-write. v1.0 accepted-flow ordering is UNCHANGED.
+
+`.planning/research/PITFALLS.md` #26 (which originally recommended mark-then-emit for
+burn) is SUPERSEDED by D-P8-12. The original analysis is preserved with a SUPERSEDED
+header for historical context.
+
+**Test references:**
+
+- `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7` — BURN-09 + receipt-count==1 (BURN-04)
+- `tests/state_ledger.rs::v1_0_ledger_row_without_state_field_deserializes_as_accepted` — schema migration safety
+- `tests/state_ledger.rs::explicit_state_burned_deserializes_as_burned` — burn row recognition
+- `tests/state_ledger.rs::sentinel_without_matching_ledger_row_returns_accepted_unknown` — orphan-sentinel conservative classification (T-08-17)
+- `tests/pin_burn_compose.rs::typed_z32_declined_on_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — declined-z32 safety
+- `tests/pin_burn_compose.rs::wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — wrong-PIN safety on compose
+- `tests/pin_burn_compose.rs::generic_burn_publishes_one_receipt`, `x509_burn_publishes_one_receipt`, `pgp_burn_publishes_one_receipt`, `ssh_burn_publishes_one_receipt` — receipt-count cross-cutting (4 typed-material variants)
+- `tests/pin_burn_compose.rs::generic_burn_second_receive_exit_7`, `x509_burn_second_receive_exit_7`, `pgp_burn_second_receive_exit_7`, `ssh_burn_second_receive_exit_7` — second-receive cross-cutting (4 typed-material variants)
+
+**Cross-references:**
+
+- `SPEC.md` §3.7 Burn Semantics — wire-shape, ledger inversion, receive-flow ordering.
+- `.planning/research/PITFALLS.md` #25 — burn-is-local-state-only (original research;
+  mitigation landed here).
+- `.planning/research/PITFALLS.md` #26 — SUPERSEDED by D-P8-12 (original mark-then-emit
+  recommendation; preserved as rejected alternative).
 
 ## 7. Receipt-Replay / Race Adversary
 
