@@ -1,0 +1,17 @@
+# Cargo-nextest configuration for cipherpost.
+#
+# Phase 9 Plan 02 (D-P9-D3): outer guard for the real-DHT round-trip test.
+# Pairs with the in-test `Instant`-deadline check inside
+# `tests/real_dht_e2e.rs`; nextest force-terminates the test after 2 × 60s
+# slow periods = 120s wall clock. Stable cargo has no equivalent flag
+# (RESEARCH.md OQ-5: `cargo --test-timeout` does not exist on stable cargo
+# or libtest).
+#
+# This override only applies when a developer explicitly invokes the
+# real-DHT test with `--features real-dht-e2e`; CI never does that
+# (D-P9-D2 + Pitfall #29). The override is a safety net for the manual
+# RELEASE-CHECKLIST run.
+
+[[profile.default.overrides]]
+filter = 'test(real_dht_e2e)'
+slow-timeout = { period = "60s", terminate-after = 2 }
