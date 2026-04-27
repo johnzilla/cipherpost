@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Real v1
 status: archived
 stopped_at: v1.1 milestone closed 2026-04-26
-last_updated: "2026-04-27T01:57:28Z"
-last_activity: 2026-04-26 -- v1.1 milestone close (archive + tag)
+last_updated: "2026-04-27T11:55:00Z"
+last_activity: 2026-04-27 -- Completed quick task 260427-axn: per-share_ref receive lock closes TOCTOU window
 progress:
   total_phases: 5
   completed_phases: 5
@@ -29,7 +29,7 @@ Milestone: v1.1 — closed
 Phase: — (none active)
 Plan: — (none active)
 Status: milestone archived
-Last activity: 2026-04-26 — `/gsd-complete-milestone 1.1`
+Last activity: 2026-04-27 — Completed quick task 260427-axn: per-share_ref receive lock closes TOCTOU window
 
 Progress: [██████████] 100% — v1.1 closed; next milestone pending scope-lock.
 
@@ -85,6 +85,12 @@ None blocking. Carry-forward items for next milestone:
 ### Blockers/Concerns
 
 None. v1.1 closed cleanly. Next milestone scope-lock is the natural next step.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260427-axn | Per-share_ref receive lock closes TOCTOU window between idempotency check and sentinel write in `run_receive` | 2026-04-27 | 3f3c821 | [260427-axn-introduce-a-process-level-lock-or-move-c](./quick/260427-axn-introduce-a-process-level-lock-or-move-c/) |
 
 ## Deferred Items
 
