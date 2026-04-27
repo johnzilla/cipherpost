@@ -25,7 +25,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 - [x] **Phase 6: Typed Material — X509Cert** — pattern-establish: DER-normalized X.509 end-to-end (parse, validate, render acceptance screen, JCS fixture, integration test) — completed 2026-04-24
 - [x] **Phase 7: Typed Material — PgpKey + SshKey** — apply Phase 6 pattern twice; ed25519-dalek conflict pre-flight; JCS fixtures for both variants — completed 2026-04-25
 - [x] **Phase 8: --pin and --burn encryption modes** — cclink-fork PIN crypto (Argon2id+HKDF→X25519→age); burn-after-read state-ledger inversion; THREAT-MODEL.md additions; pin/burn compose orthogonally [COMPLETE 2026-04-26 — pending verifier sign-off; all 19 PIN+BURN REQ-IDs covered]
-- [ ] **Phase 9: Real-DHT E2E + CAS merge-update race gate** — CAS racer in CI; real-DHT cross-identity round trip as manual release-acceptance gate; RELEASE-CHECKLIST.md
+- [x] **Phase 9: Real-DHT E2E + CAS merge-update race gate** — CAS racer in CI; real-DHT cross-identity round trip as manual release-acceptance gate; RELEASE-CHECKLIST.md (completed 2026-04-26)
 
 ## Phase Details
 
@@ -130,7 +130,7 @@ Full detail: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md) · Accom
 | 6. Typed Material: X509Cert | v1.1 | 4/4 | Complete    | 2026-04-24 |
 | 7. Typed Material: PgpKey + SshKey | v1.1 | 8/8 | Complete    | 2026-04-25 |
 | 8. --pin and --burn modes | v1.1 | 6/6 | Complete | 2026-04-26 |
-| 9. Real-DHT E2E + CAS race gate | v1.1 | 0/3 | Planned | - |
+| 9. Real-DHT E2E + CAS race gate | v1.1 | 3/3 | Complete | 2026-04-26 |
 
 ---
 *Last updated: 2026-04-26 after Phase 9 plans landed — 3 plans following the Phase 8 plan-structure compression pattern (D-P9-F1 + 09-RESEARCH.md refinement). Wave 1: 09-01 (CAS racer + DHT-07 wire-budget) and 09-02 (real-DHT cross-identity round trip + nextest config) — independent file sets. Wave 2: 09-03 (docs: RELEASE-CHECKLIST + CLAUDE.md lock-ins + STATE.md todo closure) depends on 09-01 + 09-02 because RELEASE-CHECKLIST cites the nextest invocation finalised in 09-02 and the SPEC.md §Pitfall #22 composite measurement cites 09-01-SUMMARY.md. All 7 DHT-01..07 REQ-IDs covered. Ready to execute Phase 9.*

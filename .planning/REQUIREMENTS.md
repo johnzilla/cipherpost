@@ -6,6 +6,8 @@
 
 **Structure note (DOC-03 transition):** This REQUIREMENTS.md does not include a separate traceability table. Each requirement is tagged inline with its phase, and phase `VERIFICATION.md` files are authoritative for implementation status. This change eliminates the drift class that hit v1.0 (29 "Pending" rows at milestone close).
 
+**Closure note (2026-04-26):** All 67 requirements ticked at v1.1 milestone close. Each `[x]` is sourced from the corresponding phase `VERIFICATION.md` (the canonical authority per DOC-03). Zero "Pending" rows survive into the archive — solo-builder hygiene rule from PROJECT.md held.
+
 ---
 
 ## v1.1 Requirements
@@ -18,24 +20,24 @@ Requirement ID format: `[CATEGORY]-[NUMBER] [Phase N]`. Categories cluster by fe
 
 Phase 5. Aligns `send`/`receive` with the `identity` subcommand non-interactive contract.
 
-- [ ] **PASS-01 [Phase 5]**: User can pass `--passphrase-file <path>` to `cipherpost send`; file mode must be 0600 or 0400 or the command errors with `"passphrase file permissions too open (mode 0NNN); use chmod 600"`
-- [ ] **PASS-02 [Phase 5]**: User can pass `--passphrase-fd <fd>` to `cipherpost send`; implementation uses `BorrowedFd`, not `FromRawFd` (no double-close)
-- [ ] **PASS-03 [Phase 5]**: User can pass `--passphrase-file <path>` to `cipherpost receive` with identical semantics to `send`
-- [ ] **PASS-04 [Phase 5]**: User can pass `--passphrase-fd <fd>` to `cipherpost receive` with identical semantics to `send`
-- [ ] **PASS-05 [Phase 5]**: Passphrase source precedence on `send`/`receive` matches the shipped `resolve_passphrase` contract: `--passphrase-fd > --passphrase-file > CIPHERPOST_PASSPHRASE > TTY`. Argv-inline `--passphrase <value>` is rejected at parse and at runtime. Identity subcommands (`generate`/`show`) use the same ordering.
-- [ ] **PASS-06 [Phase 5]**: `--passphrase <value>` inline flag on `send`/`receive` is `hide = true` and rejected at runtime with same message as identity subcommands
-- [ ] **PASS-07 [Phase 5]**: Newline-strip contract: `--passphrase-file` and `--passphrase-fd` strip exactly one trailing `\n` or `\r\n`, never `.trim()` (which silently corrupts passphrases ending in space). Documented in SPEC.md and `--help`.
-- [ ] **PASS-08 [Phase 5]**: `send`/`receive` `--help` lists all three non-interactive sources with scripting examples (env-var, file-with-mode, fd-with-pass_fds)
-- [ ] **PASS-09 [Phase 5]**: CI integration test: end-to-end scripted `send -` → `receive` round trip using only `--passphrase-fd 3` (no TTY available), proving automation unlock
+- [x] **PASS-01 [Phase 5]**: User can pass `--passphrase-file <path>` to `cipherpost send`; file mode must be 0600 or 0400 or the command errors with `"passphrase file permissions too open (mode 0NNN); use chmod 600"`
+- [x] **PASS-02 [Phase 5]**: User can pass `--passphrase-fd <fd>` to `cipherpost send`; implementation uses `BorrowedFd`, not `FromRawFd` (no double-close)
+- [x] **PASS-03 [Phase 5]**: User can pass `--passphrase-file <path>` to `cipherpost receive` with identical semantics to `send`
+- [x] **PASS-04 [Phase 5]**: User can pass `--passphrase-fd <fd>` to `cipherpost receive` with identical semantics to `send`
+- [x] **PASS-05 [Phase 5]**: Passphrase source precedence on `send`/`receive` matches the shipped `resolve_passphrase` contract: `--passphrase-fd > --passphrase-file > CIPHERPOST_PASSPHRASE > TTY`. Argv-inline `--passphrase <value>` is rejected at parse and at runtime. Identity subcommands (`generate`/`show`) use the same ordering.
+- [x] **PASS-06 [Phase 5]**: `--passphrase <value>` inline flag on `send`/`receive` is `hide = true` and rejected at runtime with same message as identity subcommands
+- [x] **PASS-07 [Phase 5]**: Newline-strip contract: `--passphrase-file` and `--passphrase-fd` strip exactly one trailing `\n` or `\r\n`, never `.trim()` (which silently corrupts passphrases ending in space). Documented in SPEC.md and `--help`.
+- [x] **PASS-08 [Phase 5]**: `send`/`receive` `--help` lists all three non-interactive sources with scripting examples (env-var, file-with-mode, fd-with-pass_fds)
+- [x] **PASS-09 [Phase 5]**: CI integration test: end-to-end scripted `send -` → `receive` round trip using only `--passphrase-fd 3` (no TTY available), proving automation unlock
 
 ### Protocol documentation housekeeping (DOC)
 
 Phase 5. Clears v1.0 bookkeeping debt; locks in anti-drift conventions.
 
-- [ ] **DOC-01 [Phase 5]**: SPEC.md blesses actually-shipped crate versions as the v1.1 baseline: `serde_canonical_json 1.0.0` (not planned 0.2), `pkarr 5.0.4` (not pinned 5.0.3), PKARR wire budget 550 B (not 600); historical "planned version" references removed or marked as v1.0 notes
-- [ ] **DOC-02 [Phase 5]**: DHT label audit written and committed: `_cipherpost` and `_cprcpt-<share_ref_hex>` reviewed, retained as-is; any future rename requires explicit protocol version bump (stated in SPEC.md §3.3)
-- [ ] **DOC-03 [Phase 5]**: REQUIREMENTS.md traceability-table format dropped project-wide; phase tags inline on each requirement are canonical; phase `VERIFICATION.md` files are authoritative for implementation status. Convention documented in this file's Structure note and in CLAUDE.md.
-- [ ] **DOC-04 [Phase 5]**: v1.0 archived REQUIREMENTS.md cleaned up — stale "Pending" rows in the traceability table removed (or the whole table dropped in the archive with a forward-reference to v1.0 phase VERIFICATION docs). No "Pending" row survives when implementation is complete.
+- [x] **DOC-01 [Phase 5]**: SPEC.md blesses actually-shipped crate versions as the v1.1 baseline: `serde_canonical_json 1.0.0` (not planned 0.2), `pkarr 5.0.4` (not pinned 5.0.3), PKARR wire budget 550 B (not 600); historical "planned version" references removed or marked as v1.0 notes
+- [x] **DOC-02 [Phase 5]**: DHT label audit written and committed: `_cipherpost` and `_cprcpt-<share_ref_hex>` reviewed, retained as-is; any future rename requires explicit protocol version bump (stated in SPEC.md §3.3)
+- [x] **DOC-03 [Phase 5]**: REQUIREMENTS.md traceability-table format dropped project-wide; phase tags inline on each requirement are canonical; phase `VERIFICATION.md` files are authoritative for implementation status. Convention documented in this file's Structure note and in CLAUDE.md.
+- [x] **DOC-04 [Phase 5]**: v1.0 archived REQUIREMENTS.md cleaned up — stale "Pending" rows in the traceability table removed (or the whole table dropped in the archive with a forward-reference to v1.0 phase VERIFICATION docs). No "Pending" row survives when implementation is complete.
 
 ### Typed Material: X.509 certificates (X509)
 
@@ -64,46 +66,46 @@ Phase 6. Pattern-establish variant — get the shape right here; Phase 7 is appl
 
 Phase 7. Applies the Phase 6 pattern to rPGP.
 
-- [ ] **PGP-01 [Phase 7]**: `Material::PgpKey { bytes: Vec<u8> }` holds binary OpenPGP packet stream; ASCII-armored keys rejected at `send` ingest (armor headers `Comment:`, `Version:` are non-deterministic — would break JCS byte-identity across re-sends)
-- [ ] **PGP-02 [Phase 7]**: Wire format: `{"type": "pgp_key", "bytes": "<base64-std-padded>"}`
-- [ ] **PGP-03 [Phase 7]**: `cipherpost send --material pgp-key` reads binary packet stream; strict single-primary-key — reject multi-primary keyrings with exit 1 `"PgpKey must contain exactly one primary key; keyrings are not supported in v1.1"`
-- [ ] **PGP-04 [Phase 7]**: `cipherpost receive` on a `PgpKey` share renders: v4 fingerprint (40 hex) or v5 fingerprint (64 hex), primary UID, key algorithm (e.g., `Ed25519`, `RSA-4096`, `ECDSA-P256`), subkey count + types, creation time (ISO UTC). Secret keys display `[WARNING: SECRET key]` but are not rejected (secret-key handoff is a legitimate use case).
-- [ ] **PGP-05 [Phase 7]**: `cipherpost receive` emits raw binary packet stream to stdout by default; `--armor` emits ASCII-armored output
-- [ ] **PGP-06 [Phase 7]**: Per-variant size check: PGP packet stream > 64 KB rejected at send (keyrings with many subkeys or long UIDs could exceed; enforce)
-- [ ] **PGP-07 [Phase 7]**: JCS fixture committed at `tests/fixtures/material_pgp_signable.bin`
-- [ ] **PGP-08 [Phase 7]**: Malformed PGP packets on receive return exit 1; generic Display (does not leak `pgp` crate internals)
-- [ ] **PGP-09 [Phase 7]**: Integration test: round-trip `PgpKey` self-send under MockTransport
+- [x] **PGP-01 [Phase 7]**: `Material::PgpKey { bytes: Vec<u8> }` holds binary OpenPGP packet stream; ASCII-armored keys rejected at `send` ingest (armor headers `Comment:`, `Version:` are non-deterministic — would break JCS byte-identity across re-sends)
+- [x] **PGP-02 [Phase 7]**: Wire format: `{"type": "pgp_key", "bytes": "<base64-std-padded>"}`
+- [x] **PGP-03 [Phase 7]**: `cipherpost send --material pgp-key` reads binary packet stream; strict single-primary-key — reject multi-primary keyrings with exit 1 `"PgpKey must contain exactly one primary key; keyrings are not supported in v1.1"`
+- [x] **PGP-04 [Phase 7]**: `cipherpost receive` on a `PgpKey` share renders: v4 fingerprint (40 hex) or v5 fingerprint (64 hex), primary UID, key algorithm (e.g., `Ed25519`, `RSA-4096`, `ECDSA-P256`), subkey count + types, creation time (ISO UTC). Secret keys display `[WARNING: SECRET key]` but are not rejected (secret-key handoff is a legitimate use case).
+- [x] **PGP-05 [Phase 7]**: `cipherpost receive` emits raw binary packet stream to stdout by default; `--armor` emits ASCII-armored output
+- [x] **PGP-06 [Phase 7]**: Per-variant size check: PGP packet stream > 64 KB rejected at send (keyrings with many subkeys or long UIDs could exceed; enforce)
+- [x] **PGP-07 [Phase 7]**: JCS fixture committed at `tests/fixtures/material_pgp_signable.bin`
+- [x] **PGP-08 [Phase 7]**: Malformed PGP packets on receive return exit 1; generic Display (does not leak `pgp` crate internals)
+- [x] **PGP-09 [Phase 7]**: Integration test: round-trip `PgpKey` self-send under MockTransport
 
 ### Typed Material: SSH keys (SSH)
 
 Phase 7. Applies the pattern to `ssh-key` crate; narrow format scope.
 
-- [ ] **SSH-01 [Phase 7]**: `Material::SshKey { bytes: Vec<u8> }` holds OpenSSH v1 format bytes (`-----BEGIN OPENSSH PRIVATE KEY-----` envelope); legacy PEM, RFC 4716, and FIDO-format keys return `Error::SshKeyFormatNotSupported` with exit 1 at ingest
-- [ ] **SSH-02 [Phase 7]**: Wire format: `{"type": "ssh_key", "bytes": "<base64-std-padded>"}`; the stored bytes are the canonical OpenSSH v1 wire blob (no trailing comment drift, no padding-to-block variance)
-- [ ] **SSH-03 [Phase 7]**: `cipherpost send --material ssh-key` reads OpenSSH v1 bytes
-- [ ] **SSH-04 [Phase 7]**: `cipherpost receive` on an `SshKey` share renders: key type (`ssh-ed25519`, `ecdsa-sha2-nistp256`, `ssh-rsa`, etc.), SHA-256 fingerprint (`SHA256:<base64>`), comment (marked "sender-attested, not cryptographically verified" — matches `purpose` field treatment), key size in bits. DSA and RSA < 2048 display `[DEPRECATED]` but are not rejected.
-- [ ] **SSH-05 [Phase 7]**: `cipherpost receive` emits raw OpenSSH v1 bytes to stdout
-- [ ] **SSH-06 [Phase 7]**: Per-variant size check: SSH OpenSSH v1 > 64 KB rejected at send
-- [ ] **SSH-07 [Phase 7]**: JCS fixture committed at `tests/fixtures/material_ssh_signable.bin`
-- [ ] **SSH-08 [Phase 7]**: Malformed SSH bytes on receive return exit 1; generic Display
-- [ ] **SSH-09 [Phase 7]**: Integration test: round-trip `SshKey` self-send under MockTransport
-- [ ] **SSH-10 [Phase 7]**: `cargo tree | grep ed25519-dalek` pre-flight check in Phase 7 plan 01 — verify `ssh-key 0.6` does not pull `ed25519-dalek 2.x` alongside the existing `=3.0.0-pre.5` pin. Document outcome; either "no 2.x leak" or explicit coexistence acceptance.
+- [x] **SSH-01 [Phase 7]**: `Material::SshKey { bytes: Vec<u8> }` holds OpenSSH v1 format bytes (`-----BEGIN OPENSSH PRIVATE KEY-----` envelope); legacy PEM, RFC 4716, and FIDO-format keys return `Error::SshKeyFormatNotSupported` with exit 1 at ingest
+- [x] **SSH-02 [Phase 7]**: Wire format: `{"type": "ssh_key", "bytes": "<base64-std-padded>"}`; the stored bytes are the canonical OpenSSH v1 wire blob (no trailing comment drift, no padding-to-block variance)
+- [x] **SSH-03 [Phase 7]**: `cipherpost send --material ssh-key` reads OpenSSH v1 bytes
+- [x] **SSH-04 [Phase 7]**: `cipherpost receive` on an `SshKey` share renders: key type (`ssh-ed25519`, `ecdsa-sha2-nistp256`, `ssh-rsa`, etc.), SHA-256 fingerprint (`SHA256:<base64>`), comment (marked "sender-attested, not cryptographically verified" — matches `purpose` field treatment), key size in bits. DSA and RSA < 2048 display `[DEPRECATED]` but are not rejected.
+- [x] **SSH-05 [Phase 7]**: `cipherpost receive` emits raw OpenSSH v1 bytes to stdout
+- [x] **SSH-06 [Phase 7]**: Per-variant size check: SSH OpenSSH v1 > 64 KB rejected at send
+- [x] **SSH-07 [Phase 7]**: JCS fixture committed at `tests/fixtures/material_ssh_signable.bin`
+- [x] **SSH-08 [Phase 7]**: Malformed SSH bytes on receive return exit 1; generic Display
+- [x] **SSH-09 [Phase 7]**: Integration test: round-trip `SshKey` self-send under MockTransport
+- [x] **SSH-10 [Phase 7]**: `cargo tree | grep ed25519-dalek` pre-flight check in Phase 7 plan 01 — verify `ssh-key 0.6` does not pull `ed25519-dalek 2.x` alongside the existing `=3.0.0-pre.5` pin. Document outcome; either "no 2.x leak" or explicit coexistence acceptance.
 
 ### PIN encryption mode (PIN)
 
 Phase 8. Forks cclink's PIN crypto shape; stays inside `age` for AEAD.
 
-- [ ] **PIN-01 [Phase 8]**: `cipherpost send --pin` enables PIN-required mode; PIN prompted interactively on TTY at send time; non-interactive PIN input (`--pin-file`/`--pin-fd`) deliberately deferred to v1.2+ (human-in-the-loop second factor is intentional)
-- [ ] **PIN-02 [Phase 8]**: PIN validation at send time (matching cclink's `validate_pin`): minimum 8 characters, rejects all-same (`"aaaaaaaa"`, `"00000000"`), rejects sequential (`"12345678"`, `"abcdefgh"` ascending or descending). Rejection returns exit 1 with specific reason (min length, all-same, sequential).
+- [x] **PIN-01 [Phase 8]**: `cipherpost send --pin` enables PIN-required mode; PIN prompted interactively on TTY at send time; non-interactive PIN input (`--pin-file`/`--pin-fd`) deliberately deferred to v1.2+ (human-in-the-loop second factor is intentional)
+- [x] **PIN-02 [Phase 8]**: PIN validation at send time (matching cclink's `validate_pin`): minimum 8 characters, rejects all-same (`"aaaaaaaa"`, `"00000000"`), rejects sequential (`"12345678"`, `"abcdefgh"` ascending or descending). Rejection returns exit 1 with specific reason (min length, all-same, sequential).
 - [x] **PIN-03
  [Phase 8]**: PIN crypto stack: Argon2id(PIN + 32-byte random salt) → HKDF-SHA256 with info `cipherpost/v1/pin` → 32-byte X25519 scalar → age `Identity` built from scalar → `age::Encryptor::with_recipients([pin_recipient])`. Matches cclink shape; HKDF namespace adapted from `cclink-pin-v1` to `cipherpost/v1/pin` per existing domain-separation convention. No direct `chacha20poly1305` calls — CLAUDE.md constraint holds unchanged.
 - [x] **PIN-04
  [Phase 8]**: `OuterRecord`/`OuterRecordSignable` gains `pin_required: bool` field (outer-signed, pre-decrypt readable); `#[serde(default, skip_serializing_if = "is_false")]` preserves byte-identity with v1.0 for non-pin shares (no protocol_version bump for this field alone)
 - [x] **PIN-05
  [Phase 8]**: PIN salt (32 bytes random per send) embedded in the blob: `blob = base64(salt || age_ciphertext)`. Salt is stored inside the outer-signed data so it's authenticated.
-- [ ] **PIN-06 [Phase 8]**: `cipherpost receive` on a `pin_required` share prompts for PIN on TTY BEFORE the typed-z32 acceptance banner; wrong PIN returns exit 4 with the same Display as wrong identity passphrase (error-oracle hygiene; PITFALL #16)
-- [ ] **PIN-07 [Phase 8]**: Error-oracle enumeration test extended: wrong-PIN variant, wrong-identity-key variant, sig-failure variants (outer, inner, canonical-mismatch) all produce identical user-facing Display strings under `format!("{}", err)`. Existing `lib::error::tests::signature_failure_variants_share_display` test expanded to cover PIN.
-- [ ] **PIN-08 [Phase 8]**: Integration test matrix for PIN: (a) send-with-pin → receive-no-pin attempts → exit 7 declined (PIN prompt bails before decrypt); (b) send-with-pin → receive-wrong-pin → exit 4 passphrase (same as wrong identity); (c) send-with-pin → receive-correct-pin → exit 0 + acceptance banner proceeds. Under MockTransport.
+- [x] **PIN-06 [Phase 8]**: `cipherpost receive` on a `pin_required` share prompts for PIN on TTY BEFORE the typed-z32 acceptance banner; wrong PIN returns exit 4 with the same Display as wrong identity passphrase (error-oracle hygiene; PITFALL #16)
+- [x] **PIN-07 [Phase 8]**: Error-oracle enumeration test extended: wrong-PIN variant, wrong-identity-key variant, sig-failure variants (outer, inner, canonical-mismatch) all produce identical user-facing Display strings under `format!("{}", err)`. Existing `lib::error::tests::signature_failure_variants_share_display` test expanded to cover PIN.
+- [x] **PIN-08 [Phase 8]**: Integration test matrix for PIN: (a) send-with-pin → receive-no-pin attempts → exit 7 declined (PIN prompt bails before decrypt); (b) send-with-pin → receive-wrong-pin → exit 4 passphrase (same as wrong identity); (c) send-with-pin → receive-correct-pin → exit 0 + acceptance banner proceeds. Under MockTransport.
 - [x] **PIN-09
  [Phase 8]**: SPEC.md documents PIN crypto: Argon2id params (matching cclink's — 64 MB, 3 iter), HKDF namespace, wire blob layout (salt || ciphertext), UX order (PIN before z32), error-oracle constraint, 8-char entropy floor + anti-pattern validation
 - [x] **PIN-10
@@ -136,13 +138,13 @@ Phase 8. State-ledger inversion of v1.0 idempotency; orthogonal to PIN.
 
 Phase 9. Release-acceptance: the "it's not just MockTransport" proof.
 
-- [ ] **DHT-01 [Phase 9]**: MockTransport updated to enforce PKARR `cas` (compare-and-swap) semantics for `publish_receipt` — current overwrite-or-merge behavior replaced with an explicit `cas` that returns `Err(CasConflict)` on concurrent publish with stale preimage. Pre-req for DHT-02.
-- [ ] **DHT-02 [Phase 9]**: CAS racer integration test: two threads synchronized via `std::sync::Barrier` both call `publish_receipt` under the same recipient PKARR key with different receipts; assert exactly one wins on first attempt, loser retries-and-merges, final state contains both receipts (resolve-merge-republish invariant holds under contention). Runs in CI under MockTransport.
-- [ ] **DHT-03 [Phase 9]**: Real-DHT e2e integration test behind `#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` — runs only via `cargo test --features real-dht-e2e -- --ignored dht_e2e`. Not a CI job.
-- [ ] **DHT-04 [Phase 9]**: Real-DHT test spawns two in-process cipherpost clients with independent identities; publishes via client A, resolves via client B with 120-second exponential-backoff ceiling (not fixed sleep), decrypts, publishes receipt via B, fetches via A. Asserts round trip end-to-end with real Mainline DHT propagation.
-- [ ] **DHT-05 [Phase 9]**: Real-DHT test pre-flight: UDP reachability probe to a known Mainline bootstrap node. If probe fails (GitHub Actions / corporate firewall), test skips with warning `"real-dht-e2e: UDP unreachable; test skipped (not counted as pass)"`. Manual runs on a real network have no such gate.
-- [ ] **DHT-06 [Phase 9]**: `RELEASE-CHECKLIST.md` created at repo root with the manual real-DHT test invocation, expected output pattern, and pass/fail criteria. Gates every v1.1+ release.
-- [ ] **DHT-07 [Phase 9]**: Wire-budget headroom test: a share with `pin_required=true` + `burn_after_read=true` carrying a realistic PGP payload (~2 KB) must fit within the 1000-byte PKARR dns_packet budget + follow-up receipt under the 550-byte `OuterRecord` budget. Assertion — explicit `Error::WireBudgetExceeded` path returned cleanly at send, not a PKARR-internal panic.
+- [x] **DHT-01 [Phase 9]**: MockTransport updated to enforce PKARR `cas` (compare-and-swap) semantics for `publish_receipt` — current overwrite-or-merge behavior replaced with an explicit `cas` that returns `Err(CasConflict)` on concurrent publish with stale preimage. Pre-req for DHT-02.
+- [x] **DHT-02 [Phase 9]**: CAS racer integration test: two threads synchronized via `std::sync::Barrier` both call `publish_receipt` under the same recipient PKARR key with different receipts; assert exactly one wins on first attempt, loser retries-and-merges, final state contains both receipts (resolve-merge-republish invariant holds under contention). Runs in CI under MockTransport.
+- [x] **DHT-03 [Phase 9]**: Real-DHT e2e integration test behind `#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` — runs only via `cargo test --features real-dht-e2e -- --ignored dht_e2e`. Not a CI job.
+- [x] **DHT-04 [Phase 9]**: Real-DHT test spawns two in-process cipherpost clients with independent identities; publishes via client A, resolves via client B with 120-second exponential-backoff ceiling (not fixed sleep), decrypts, publishes receipt via B, fetches via A. Asserts round trip end-to-end with real Mainline DHT propagation.
+- [x] **DHT-05 [Phase 9]**: Real-DHT test pre-flight: UDP reachability probe to a known Mainline bootstrap node. If probe fails (GitHub Actions / corporate firewall), test skips with warning `"real-dht-e2e: UDP unreachable; test skipped (not counted as pass)"`. Manual runs on a real network have no such gate.
+- [x] **DHT-06 [Phase 9]**: `RELEASE-CHECKLIST.md` created at repo root with the manual real-DHT test invocation, expected output pattern, and pass/fail criteria. Gates every v1.1+ release.
+- [x] **DHT-07 [Phase 9]**: Wire-budget headroom test: a share with `pin_required=true` + `burn_after_read=true` carrying a realistic PGP payload (~2 KB) must fit within the 1000-byte PKARR dns_packet budget + follow-up receipt under the 550-byte `OuterRecord` budget. Assertion — explicit `Error::WireBudgetExceeded` path returned cleanly at send, not a PKARR-internal panic.
 
 ---
 
