@@ -17,13 +17,13 @@ fn pgp_armor_wrap(bytes: &[u8], block: &str) -> Vec<u8> {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
     let mut out = String::new();
-    out.push_str(&format!("-----BEGIN PGP {}-----\n", block));
+    out.push_str(&format!("-----BEGIN PGP {block}-----\n"));
     out.push_str("Version: CipherpostTest\n\n");
     for chunk in b64.as_bytes().chunks(64) {
         out.push_str(std::str::from_utf8(chunk).expect("base64 is ASCII"));
         out.push('\n');
     }
-    out.push_str(&format!("-----END PGP {}-----\n", block));
+    out.push_str(&format!("-----END PGP {block}-----\n"));
     out.into_bytes()
 }
 
@@ -37,7 +37,7 @@ fn pgp_key_happy_path_produces_pgp_variant() {
                 "PGP ingest must store input bytes verbatim (no canonical re-encode)"
             );
         }
-        other => panic!("expected PgpKey variant, got {:?}", other),
+        other => panic!("expected PgpKey variant, got {other:?}"),
     }
 }
 
@@ -53,7 +53,7 @@ fn pgp_key_armor_public_block_rejected() {
                 "ASCII-armored input rejected — supply binary packet stream"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -68,7 +68,7 @@ fn pgp_key_armor_private_block_rejected() {
                 "ASCII-armored input rejected — supply binary packet stream"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -85,7 +85,7 @@ fn pgp_key_armor_signature_block_rejected() {
                 "ASCII-armored input rejected — supply binary packet stream"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -102,16 +102,14 @@ fn pgp_key_multi_primary_rejected() {
             assert_eq!(variant, "pgp_key");
             assert!(
                 reason.starts_with("PgpKey must contain exactly one primary key"),
-                "reason must start with the canonical prefix, got: {}",
-                reason
+                "reason must start with the canonical prefix, got: {reason}"
             );
             assert!(
                 reason.contains("found 2 primary keys"),
-                "reason must include substituted count 'found 2', got: {}",
-                reason
+                "reason must include substituted count 'found 2', got: {reason}"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -126,11 +124,10 @@ fn pgp_key_malformed_packet_rejected_with_generic_reason() {
             assert!(
                 reason == "malformed PGP packet stream"
                     || reason == "trailing bytes after PGP packet stream",
-                "expected curated reason literal, got: {}",
-                reason
+                "expected curated reason literal, got: {reason}"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -144,7 +141,7 @@ fn pgp_key_trailing_bytes_rejected() {
             assert_eq!(variant, "pgp_key");
             assert_eq!(reason, "trailing bytes after PGP packet stream");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -163,7 +160,7 @@ fn pgp_key_accessor_wrong_variant_returns_invalid_material() {
             assert_eq!(variant, "generic_secret");
             assert_eq!(reason, "accessor called on wrong variant");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -197,13 +194,11 @@ fn pgp_key_error_display_contains_no_parser_internals() {
     ];
 
     for err in errors {
-        let disp = format!("{}", err);
+        let disp = format!("{err}");
         for tok in forbidden {
             assert!(
                 !disp.contains(tok),
-                "PGP ingest Error::Display leaked forbidden token '{}' in: {:?}",
-                tok,
-                disp
+                "PGP ingest Error::Display leaked forbidden token '{tok}' in: {disp:?}"
             );
         }
     }

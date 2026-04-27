@@ -73,8 +73,7 @@ fn expired_share_aborts_with_error_expired_exit_2() {
     .unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::Expired),
-        "expected Expired, got {:?}",
-        err
+        "expected Expired, got {err:?}"
     );
     assert_eq!(cipherpost::error::exit_code(&err), 2);
 }

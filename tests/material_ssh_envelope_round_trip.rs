@@ -18,7 +18,7 @@ const SSH_FIXTURE: &[u8] = include_bytes!("fixtures/material_ssh_fixture.openssh
 fn canonical_ssh_bytes() -> Vec<u8> {
     match ingest::ssh_key(SSH_FIXTURE).expect("valid OpenSSH v1 fixture") {
         Material::SshKey { bytes } => bytes,
-        other => panic!("ingest::ssh_key produced non-SshKey variant: {:?}", other),
+        other => panic!("ingest::ssh_key produced non-SshKey variant: {other:?}"),
     }
 }
 
@@ -61,13 +61,11 @@ fn material_ssh_envelope_jcs_shape_contains_ssh_key_tag() {
     let as_str = std::str::from_utf8(&bytes).expect("JCS output is valid UTF-8");
     assert!(
         as_str.contains("\"type\":\"ssh_key\""),
-        "JCS must encode the snake_case tag `ssh_key`, got: {}",
-        as_str
+        "JCS must encode the snake_case tag `ssh_key`, got: {as_str}"
     );
     assert!(
         as_str.contains("\"bytes\":\""),
-        "JCS must encode the base64-STANDARD bytes field, got: {}",
-        as_str
+        "JCS must encode the base64-STANDARD bytes field, got: {as_str}"
     );
 }
 
@@ -77,5 +75,5 @@ fn regenerate_material_ssh_envelope_fixture() {
     let bytes = fixture_envelope().to_jcs_bytes().unwrap();
     std::fs::create_dir_all("tests/fixtures").unwrap();
     std::fs::write(FIXTURE_PATH, bytes).unwrap();
-    println!("Fixture written to {}", FIXTURE_PATH);
+    println!("Fixture written to {FIXTURE_PATH}");
 }

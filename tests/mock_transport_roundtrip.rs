@@ -57,8 +57,7 @@ fn mock_resolve_unpublished_returns_not_found() {
     let err = transport.resolve(&kp.public_key().to_z32()).unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::NotFound),
-        "expected NotFound, got {:?}",
-        err
+        "expected NotFound, got {err:?}"
     );
 }
 
@@ -75,6 +74,6 @@ fn mock_publish_receipt_stores_under_cprcpt_label() {
         .unwrap();
     let all = transport.resolve_all_txt(&kp.public_key().to_z32());
     assert_eq!(all.len(), 1);
-    assert_eq!(all[0].0, format!("_cprcpt-{}", share_ref));
+    assert_eq!(all[0].0, format!("_cprcpt-{share_ref}"));
     assert_eq!(all[0].1, receipt_json);
 }

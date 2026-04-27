@@ -210,8 +210,7 @@ pub fn pgp_key(raw: &[u8]) -> Result<Material, Error> {
         return Err(Error::InvalidMaterial {
             variant: "pgp_key".into(),
             reason: format!(
-                "PgpKey must contain exactly one primary key; keyrings are not supported in v1.1 (found {} primary keys)",
-                primary_count
+                "PgpKey must contain exactly one primary key; keyrings are not supported in v1.1 (found {primary_count} primary keys)"
             ),
         });
     }
@@ -359,7 +358,7 @@ mod tests {
         let m = generic_secret(vec![1, 2, 3]).unwrap();
         match m {
             Material::GenericSecret { bytes } => assert_eq!(bytes, vec![1, 2, 3]),
-            other => panic!("expected GenericSecret, got {:?}", other),
+            other => panic!("expected GenericSecret, got {other:?}"),
         }
     }
 
@@ -371,7 +370,7 @@ mod tests {
                 assert_eq!(variant, "x509_cert");
                 assert_eq!(reason, "malformed DER");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -398,7 +397,7 @@ mod tests {
                     "ASCII-armored input rejected — supply binary packet stream"
                 );
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -416,7 +415,7 @@ mod tests {
                     "ASCII-armored input rejected — supply binary packet stream"
                 );
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -438,11 +437,10 @@ mod tests {
                 assert!(
                     reason == "malformed PGP packet stream"
                         || reason == "trailing bytes after PGP packet stream",
-                    "unexpected reason literal: {}",
-                    reason
+                    "unexpected reason literal: {reason}"
                 );
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -454,7 +452,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "malformed PGP packet stream");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -475,8 +473,7 @@ mod tests {
                     !reason.contains("pgp::")
                         && !reason.contains("PacketParsing")
                         && !reason.contains("MpiTooLarge"),
-                    "reason leaked crate internals: {}",
-                    reason
+                    "reason leaked crate internals: {reason}"
                 );
             }
         }
@@ -553,15 +550,12 @@ mod ssh_tests {
         let disp = format!("{}", Error::SshKeyFormatNotSupported);
         assert!(
             disp.contains("ssh-keygen -p -o"),
-            "Display must include the ssh-keygen hint, got: {}",
-            disp
+            "Display must include the ssh-keygen hint, got: {disp}"
         );
         for forbidden in &["ssh-key::", "ssh_encoding", "ssh_cipher", "PemError"] {
             assert!(
                 !disp.contains(forbidden),
-                "Display leaked '{}': {}",
-                forbidden,
-                disp
+                "Display leaked '{forbidden}': {disp}"
             );
         }
     }
@@ -581,7 +575,7 @@ mod ssh_tests {
                 assert_eq!(variant, "ssh_key");
                 assert_eq!(reason, "malformed OpenSSH v1 blob");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -602,7 +596,7 @@ mod ssh_tests {
                     "stored canonical bytes must contain END marker"
                 );
             }
-            other => panic!("expected Material::SshKey, got {:?}", other),
+            other => panic!("expected Material::SshKey, got {other:?}"),
         }
     }
 
@@ -637,7 +631,7 @@ mod ssh_tests {
                 assert_eq!(variant, "ssh_key");
                 assert_eq!(reason, "trailing bytes after OpenSSH v1 blob");
             }
-            other => panic!("expected InvalidMaterial trailing-bytes, got {:?}", other),
+            other => panic!("expected InvalidMaterial trailing-bytes, got {other:?}"),
         }
     }
 

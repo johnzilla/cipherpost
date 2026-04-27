@@ -82,7 +82,7 @@ pub fn nonce_hex() -> String {
     OsRng.fill_bytes(&mut bytes);
     let mut out = String::with_capacity(32);
     for b in &bytes {
-        out.push_str(&format!("{:02x}", b));
+        out.push_str(&format!("{b:02x}"));
     }
     debug_assert_eq!(out.len(), 32);
     out

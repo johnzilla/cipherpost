@@ -15,8 +15,7 @@ fn x509_cert_generic_secret_accessor_returns_not_implemented_phase_2() {
     let err = m.as_generic_secret_bytes().unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::NotImplemented { phase: 2 }),
-        "expected NotImplemented{{phase:2}}, got {:?}",
-        err
+        "expected NotImplemented{{phase:2}}, got {err:?}"
     );
 }
 
@@ -48,7 +47,6 @@ fn ssh_key_generic_secret_accessor_returns_not_implemented_phase_2() {
     let err = m.as_generic_secret_bytes().unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::NotImplemented { phase: 2 }),
-        "expected NotImplemented{{phase:2}}, got {:?}",
-        err
+        "expected NotImplemented{{phase:2}}, got {err:?}"
     );
 }

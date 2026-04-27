@@ -132,7 +132,6 @@ fn bs_self_share_survives_publish_receipt() {
     );
     assert!(
         has_receipt,
-        "receipt must be published under B's key at {}",
-        expected_receipt_label
+        "receipt must be published under B's key at {expected_receipt_label}"
     );
 }

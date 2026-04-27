@@ -363,9 +363,8 @@ pub fn run_send(
             (None, rcpt)
         }
         SendMode::Share { ref recipient_z32 } => {
-            let pk = pkarr::PublicKey::try_from(recipient_z32.as_str()).map_err(|_| {
-                Error::Config(format!("invalid recipient pubkey: {}", recipient_z32))
-            })?;
+            let pk = pkarr::PublicKey::try_from(recipient_z32.as_str())
+                .map_err(|_| Error::Config(format!("invalid recipient pubkey: {recipient_z32}")))?;
             let ed_pub: [u8; 32] = *pk.as_bytes();
             let x25519_pub = crypto::ed25519_to_x25519_public(&ed_pub)?;
             let rcpt = crypto::recipient_from_x25519_bytes(&x25519_pub)?;
@@ -561,14 +560,14 @@ pub fn run_receive(
     match check_already_consumed(&uri.share_ref_hex) {
         LedgerState::None => { /* proceed with full receive flow */ }
         LedgerState::Accepted { accepted_at } => {
-            eprintln!("already accepted at {}; not re-decrypting", accepted_at);
+            eprintln!("already accepted at {accepted_at}; not re-decrypting");
             return Ok(());
         }
         LedgerState::Burned { burned_at } => {
             // Plan 04 will write `state: "burned"` rows; until then this arm
             // is dormant. When it fires: receive declines with exit 7 and a
             // user-facing message explaining single-consumption semantics.
-            eprintln!("share already consumed (burned at {})", burned_at);
+            eprintln!("share already consumed (burned at {burned_at})");
             return Err(Error::Declined);
         }
     }
@@ -869,7 +868,7 @@ pub fn run_receive(
             signature,
         };
         let receipt_json = serde_json::to_string(&receipt)
-            .map_err(|e| Error::Config(format!("receipt encode: {}", e)))?;
+            .map_err(|e| Error::Config(format!("receipt encode: {e}")))?;
 
         transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
 
@@ -946,12 +945,12 @@ pub fn run_receipts(
         valid.len()
     );
     if malformed > 0 {
-        summary.push_str(&format!(", {} malformed", malformed));
+        summary.push_str(&format!(", {malformed} malformed"));
     }
     if invalid_sig > 0 {
-        summary.push_str(&format!(", {} invalid-signature", invalid_sig));
+        summary.push_str(&format!(", {invalid_sig} invalid-signature"));
     }
-    eprintln!("{}", summary);
+    eprintln!("{summary}");
 
     // D-OUT-02: filter after verify.
     if let Some(filter) = share_ref_filter {
@@ -974,8 +973,8 @@ pub fn run_receipts(
         // RESEARCH §"Open Questions" #4: pretty-print for UX (output is display-only,
         // not signed). JCS stays on the signature path inside verify_receipt.
         let out = serde_json::to_string_pretty(&valid)
-            .map_err(|e| Error::Config(format!("json encode: {}", e)))?;
-        println!("{}", out);
+            .map_err(|e| Error::Config(format!("json encode: {e}")))?;
+        println!("{out}");
     } else {
         let audit_detail = share_ref_filter.is_some() && valid.len() == 1;
         render_receipts_table(&valid, audit_detail)?;
@@ -1000,7 +999,7 @@ fn render_receipts_table(
             format_unix_as_iso_local(r.accepted_at),
         );
         let safe_purpose: String = r.purpose.chars().filter(|c| !c.is_control()).collect();
-        println!("purpose:            \"{}\"", safe_purpose);
+        println!("purpose:            \"{safe_purpose}\"");
         println!("ciphertext_hash:    {}", r.ciphertext_hash);
         println!("cleartext_hash:     {}", r.cleartext_hash);
         println!("nonce:              {}", r.nonce);
@@ -1019,10 +1018,7 @@ fn render_receipts_table(
         let purpose_display = truncate_purpose(&r.purpose, 40);
         let utc = format_unix_as_iso_utc(r.accepted_at);
         let share_ref_short: String = r.share_ref.chars().take(16).collect();
-        println!(
-            "{:<16}  {:<20}  {:<40}  {}",
-            share_ref_short, utc, purpose_display, fp,
-        );
+        println!("{share_ref_short:<16}  {utc:<20}  {purpose_display:<40}  {fp}",);
     }
     Ok(())
 }
@@ -1036,7 +1032,7 @@ fn truncate_purpose(p: &str, max: usize) -> String {
     } else {
         // Truncate by chars (not bytes) to avoid splitting a UTF-8 codepoint.
         let prefix: String = stripped.chars().take(max.saturating_sub(1)).collect();
-        format!("{}…", prefix)
+        format!("{prefix}…")
     }
 }
 
@@ -1300,8 +1296,7 @@ fn iso8601_utc_now() -> Result<String, Error> {
     let second = rem % 60;
     let (y, m, d) = civil_from_days(days);
     Ok(format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, m, d, hour, minute, second
+        "{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z"
     ))
 }
 
@@ -1334,7 +1329,7 @@ fn sender_openssh_fingerprint_and_z32(z32: &str) -> Result<(String, String), Err
     let digest = Sha256::digest(&encoded);
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD_NO_PAD.encode(digest);
-    Ok((format!("ed25519:SHA256:{}", b64), z32.to_string()))
+    Ok((format!("ed25519:SHA256:{b64}"), z32.to_string()))
 }
 
 // ---- Test helpers (cfg-gated) ----------------------------------------------
@@ -1446,7 +1441,7 @@ fn tty_check_skipped() -> bool {
 fn format_ttl_remaining(seconds: u64) -> String {
     let h = seconds / 3600;
     let m = (seconds % 3600) / 60;
-    format!("{}h {:02}m", h, m)
+    format!("{h}h {m:02}m")
 }
 
 /// Format a unix-seconds timestamp as `YYYY-MM-DD HH:MM UTC`. Reuses the
@@ -1463,7 +1458,7 @@ pub(crate) fn format_unix_as_iso_utc(unix: i64) -> String {
     let (y, m, d) = civil_from_days(days);
     let hour = rem / 3600;
     let minute = (rem % 3600) / 60;
-    format!("{:04}-{:02}-{:02} {:02}:{:02} UTC", y, m, d, hour, minute)
+    format!("{y:04}-{m:02}-{d:02} {hour:02}:{minute:02} UTC")
 }
 
 /// Format a unix-seconds timestamp in the user's local timezone as
@@ -1515,23 +1510,22 @@ impl Prompter for TtyPrompter {
         // the Purpose line. Used today for the [BURN — you will only see
         // this once] tag when envelope.burn_after_read=true.
         if let Some(m) = marker {
-            eprintln!("{}", m);
+            eprintln!("{m}");
         }
-        eprintln!("Purpose:     \"{}\"", safe_purpose);
-        eprintln!("Sender:      {}", sender_openssh_fp);
-        eprintln!("             {}", sender_z32);
-        eprintln!("Share ref:   {}", share_ref_hex);
-        eprintln!("Type:        {}", material_type);
-        eprintln!("Size:        {} bytes", size_bytes);
+        eprintln!("Purpose:     \"{safe_purpose}\"");
+        eprintln!("Sender:      {sender_openssh_fp}");
+        eprintln!("             {sender_z32}");
+        eprintln!("Share ref:   {share_ref_hex}");
+        eprintln!("Type:        {material_type}");
+        eprintln!("Size:        {size_bytes} bytes");
         // D-P6-09: typed-variant subblock between Size and TTL.
         // Caller (run_receive) pre-renders the multi-line string; this arm
         // is agnostic to the variant.
         if let Some(sub) = preview_subblock {
-            eprintln!("{}", sub);
+            eprintln!("{sub}");
         }
         eprintln!(
-            "TTL:         {} remaining (expires {} / {} local)",
-            ttl_str, expires_utc, expires_local
+            "TTL:         {ttl_str} remaining (expires {expires_utc} / {expires_local} local)"
         );
         eprintln!("=========================================================");
         eprintln!("To accept, paste the sender's z32 pubkey and press Enter:");
@@ -1616,8 +1610,7 @@ mod tests {
         assert_eq!(
             s.len(),
             16,
-            "expected `YYYY-MM-DD HH:MM` (16 chars), got {:?}",
-            s
+            "expected `YYYY-MM-DD HH:MM` (16 chars), got {s:?}"
         );
         assert_eq!(&s[4..5], "-");
         assert_eq!(&s[7..8], "-");
@@ -1663,7 +1656,7 @@ mod tests {
                     "D-ACCEPT-03 error message must be exact"
                 );
             }
-            Err(other) => panic!("expected Error::Config, got {:?}", other),
+            Err(other) => panic!("expected Error::Config, got {other:?}"),
             Ok(()) => panic!("expected TTY pre-check to refuse in non-TTY cargo-test env"),
         }
     }

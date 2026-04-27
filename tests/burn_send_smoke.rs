@@ -182,8 +182,7 @@ fn pin_plus_burn_compose_outer_record_carries_pin_required() {
             assert!(pt_len > 0);
         }
         Err(other) => panic!(
-            "unexpected error from pin+burn compose: {:?}; expected Ok(uri) or WireBudgetExceeded",
-            other
+            "unexpected error from pin+burn compose: {other:?}; expected Ok(uri) or WireBudgetExceeded"
         ),
     }
 

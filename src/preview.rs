@@ -109,7 +109,7 @@ pub fn render_x509_preview(bytes: &[u8]) -> Result<String, Error> {
         let digest = Sha256::digest(bytes);
         let mut s = String::with_capacity(64);
         for b in digest.iter() {
-            write!(s, "{:02x}", b).expect("writing to String cannot fail");
+            write!(s, "{b:02x}").expect("writing to String cannot fail");
         }
         s
     };
@@ -119,14 +119,14 @@ pub fn render_x509_preview(bytes: &[u8]) -> Result<String, Error> {
     let mut out = String::new();
     out.push_str(&separator);
     out.push('\n');
-    writeln!(out, "Subject:     {}", subject).expect("String write");
-    writeln!(out, "Issuer:      {}", issuer).expect("String write");
-    writeln!(out, "Serial:      {}", serial_hex).expect("String write");
-    writeln!(out, "NotBefore:   {}", not_before_iso).expect("String write");
-    writeln!(out, "NotAfter:    {}  {}", not_after_iso, not_after_tag).expect("String write");
-    writeln!(out, "Key:         {}", key_alg).expect("String write");
+    writeln!(out, "Subject:     {subject}").expect("String write");
+    writeln!(out, "Issuer:      {issuer}").expect("String write");
+    writeln!(out, "Serial:      {serial_hex}").expect("String write");
+    writeln!(out, "NotBefore:   {not_before_iso}").expect("String write");
+    writeln!(out, "NotAfter:    {not_after_iso}  {not_after_tag}").expect("String write");
+    writeln!(out, "Key:         {key_alg}").expect("String write");
     // SHA-256 is the final line — no trailing newline per D-P6-17.
-    write!(out, "SHA-256:     {}", fingerprint_hex).expect("String write");
+    write!(out, "SHA-256:     {fingerprint_hex}").expect("String write");
     Ok(out)
 }
 
@@ -139,7 +139,7 @@ fn truncate_display(s: &str, limit: usize) -> String {
     } else {
         // Reserve 1 char for the `…` marker.
         let prefix: String = s.chars().take(limit.saturating_sub(1)).collect();
-        format!("{}…", prefix)
+        format!("{prefix}…")
     }
 }
 
@@ -148,16 +148,16 @@ fn truncate_display(s: &str, limit: usize) -> String {
 fn render_serial_hex(raw: &[u8]) -> String {
     let mut hex = String::with_capacity(raw.len() * 2);
     for b in raw {
-        write!(hex, "{:02x}", b).expect("String write");
+        write!(hex, "{b:02x}").expect("String write");
     }
     // Strip leading zeros for readability, but keep at least one digit.
     let stripped = hex.trim_start_matches('0');
     let normalized = if stripped.is_empty() { "0" } else { stripped };
     if normalized.len() <= SERIAL_HEX_TRUNC {
-        format!("0x{}", normalized)
+        format!("0x{normalized}")
     } else {
         let head: String = normalized.chars().take(SERIAL_HEX_TRUNC).collect();
-        format!("0x{}… (truncated)", head)
+        format!("0x{head}… (truncated)")
     }
 }
 
@@ -312,12 +312,12 @@ pub fn render_pgp_preview(bytes: &[u8]) -> Result<String, Error> {
     }
     out.push_str(&separator);
     out.push('\n');
-    writeln!(out, "Fingerprint: {}", fingerprint_hex).expect("String write");
-    writeln!(out, "Primary UID: {}", uid_truncated).expect("String write");
-    writeln!(out, "Key:         {}", key_alg).expect("String write");
-    writeln!(out, "Subkeys:     {}", subkey_summary).expect("String write");
+    writeln!(out, "Fingerprint: {fingerprint_hex}").expect("String write");
+    writeln!(out, "Primary UID: {uid_truncated}").expect("String write");
+    writeln!(out, "Key:         {key_alg}").expect("String write");
+    writeln!(out, "Subkeys:     {subkey_summary}").expect("String write");
     // D-P6-17 mirror: Created is the LAST line — no trailing newline.
-    write!(out, "Created:     {}", created_iso).expect("String write");
+    write!(out, "Created:     {created_iso}").expect("String write");
     Ok(out)
 }
 
@@ -406,7 +406,7 @@ fn extract_secret_metadata(bytes: &[u8]) -> Result<(String, String, String, Stri
 fn format_fingerprint_upper(fp: &pgp::types::Fingerprint) -> String {
     // Fingerprint impls UpperHex (see pgp/src/types/fingerprint.rs):
     //   `format!("{:X}", fp)` produces hex::encode_upper(fp.as_bytes()).
-    format!("{:X}", fp)
+    format!("{fp:X}")
 }
 
 /// First user's UID string, or `(no user id)` placeholder if the key has no
@@ -466,7 +466,7 @@ fn render_rsa_with_size(params: &PublicParams) -> String {
         // bits of the modulus. RSA modulus bit-count is the conventional
         // "RSA key size" (2048, 3072, 4096, etc.).
         let bits = rsa_params.key.n().bits();
-        format!("RSA-{}", bits)
+        format!("RSA-{bits}")
     } else {
         "RSA".to_string()
     }
@@ -701,7 +701,7 @@ pub fn render_ssh_preview(bytes: &[u8]) -> Result<String, Error> {
     // "SHA256:<base64-unpadded>" (matches `ssh-keygen -lf`).
     // D-P7-15: MD5 and SHA-1 are explicitly NOT called.
     let fingerprint = public_key.fingerprint(HashAlg::Sha256);
-    let fingerprint_str = format!("{}", fingerprint);
+    let fingerprint_str = format!("{fingerprint}");
 
     // Comment is the sender-attested label; ssh-key's PrivateKey::comment()
     // returns &str (empty string for no comment, not Option).
@@ -715,19 +715,19 @@ pub fn render_ssh_preview(bytes: &[u8]) -> Result<String, Error> {
     // --- Step 3: format. --------------------------------------------
     let separator: String = format!("--- SSH {}", "-".repeat(SSH_SEPARATOR_DASH_COUNT));
     let key_line = match (bits, deprecated) {
-        (Some(b), true) => format!("{} {} [DEPRECATED]", algorithm_str, b),
-        (Some(b), false) => format!("{} {}", algorithm_str, b),
-        (None, true) => format!("{} [DEPRECATED]", algorithm_str),
+        (Some(b), true) => format!("{algorithm_str} {b} [DEPRECATED]"),
+        (Some(b), false) => format!("{algorithm_str} {b}"),
+        (None, true) => format!("{algorithm_str} [DEPRECATED]"),
         (None, false) => algorithm_str,
     };
 
     let mut out = String::new();
     out.push_str(&separator);
     out.push('\n');
-    writeln!(out, "Key:         {}", key_line).expect("String write");
-    writeln!(out, "Fingerprint: {}", fingerprint_str).expect("String write");
+    writeln!(out, "Key:         {key_line}").expect("String write");
+    writeln!(out, "Fingerprint: {fingerprint_str}").expect("String write");
     // Last line — no trailing newline (caller owns outer banner layout).
-    write!(out, "Comment:     [sender-attested] {}", comment_display).expect("String write");
+    write!(out, "Comment:     [sender-attested] {comment_display}").expect("String write");
     Ok(out)
 }
 
@@ -743,7 +743,7 @@ mod tests {
                 assert_eq!(variant, "x509_cert");
                 assert_eq!(reason, "malformed DER");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -821,7 +821,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "malformed PGP packet stream");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -833,7 +833,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "malformed PGP packet stream");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -872,7 +872,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "malformed PGP packet stream");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -884,7 +884,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "malformed PGP packet stream");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -911,7 +911,7 @@ mod tests {
                 assert_eq!(variant, "ssh_key");
                 assert_eq!(reason, "malformed OpenSSH v1 blob");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -923,7 +923,7 @@ mod tests {
                 assert_eq!(variant, "ssh_key");
                 assert_eq!(reason, "malformed OpenSSH v1 blob");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 

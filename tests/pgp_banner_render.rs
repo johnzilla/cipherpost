@@ -94,8 +94,7 @@ fn render_pgp_preview_fingerprint_matches_expected_v4_40_hex() {
     assert!(
         hex.chars()
             .all(|c| c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_uppercase())),
-        "fingerprint must be UPPER-case hex (rpgp Fingerprint UpperHex impl), got: {}",
-        hex
+        "fingerprint must be UPPER-case hex (rpgp Fingerprint UpperHex impl), got: {hex}"
     );
 }
 

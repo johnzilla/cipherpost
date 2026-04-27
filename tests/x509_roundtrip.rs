@@ -257,17 +257,14 @@ fn x509_send_realistic_cert_surfaces_wire_budget_exceeded_cleanly() {
             plaintext,
         } => (encoded, budget, plaintext),
         other => panic!(
-            "expected WireBudgetExceeded, got {:?}. This means either the wire budget \
-             protocol changed or ingest failed before the budget check (which is a regression).",
-            other
+            "expected WireBudgetExceeded, got {other:?}. This means either the wire budget \
+             protocol changed or ingest failed before the budget check (which is a regression)."
         ),
     };
     assert_eq!(budget, 1000, "PKARR BEP44 budget is 1000 bytes");
     assert!(
         encoded > budget,
-        "encoded must exceed budget ({} > {})",
-        encoded,
-        budget
+        "encoded must exceed budget ({encoded} > {budget})"
     );
     assert!(
         plaintext >= FIXTURE_DER.len(),
@@ -322,7 +319,7 @@ fn armor_on_generic_secret_rejected_with_config_error() {
         Error::Config(msg) => {
             assert_eq!(msg, "--armor requires --material x509-cert or pgp-key");
         }
-        other => panic!("expected Error::Config, got {:?}", other),
+        other => panic!("expected Error::Config, got {other:?}"),
     }
 }
 
@@ -353,6 +350,6 @@ fn x509_malformed_der_send_rejected_at_ingest() {
             assert_eq!(variant, "x509_cert");
             assert_eq!(reason, "malformed DER");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }

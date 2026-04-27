@@ -205,7 +205,7 @@ fn openssh_fingerprint(pk: &[u8; 32]) -> String {
 
     let digest = Sha256::digest(&encoded);
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, digest);
-    format!("ed25519:SHA256:{}", b64)
+    format!("ed25519:SHA256:{b64}")
 }
 
 // ---------------------------------------------------------------------------

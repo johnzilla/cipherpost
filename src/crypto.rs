@@ -214,7 +214,7 @@ pub fn derive_kek(
     let hk = Hkdf::<Sha256>::new(Some(salt), &argon_out[..]);
     let mut okm = Zeroizing::new([0u8; 32]);
     hk.expand(hkdf_infos::IDENTITY_KEK.as_bytes(), &mut okm[..])
-        .map_err(|e| str_err(format!("hkdf expand: {}", e)))?;
+        .map_err(|e| str_err(format!("hkdf expand: {e}")))?;
     Ok(okm)
 }
 

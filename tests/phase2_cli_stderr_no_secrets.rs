@@ -26,10 +26,7 @@ fn assert_no_source_chain(stderr: &str, context: &str) {
     for tag in &["age::", "pkarr::", "Os {"] {
         assert!(
             !stderr.contains(tag),
-            "[{}] source-chain leak: stderr contains {:?}\nstderr:\n{}",
-            context,
-            tag,
-            stderr
+            "[{context}] source-chain leak: stderr contains {tag:?}\nstderr:\n{stderr}"
         );
     }
 }
@@ -47,8 +44,7 @@ fn invalid_uri_input_no_secret_in_stderr() {
     );
     assert!(
         !stderr.contains("super-secret-passphrase-XYZ-123"),
-        "passphrase leaked: {}",
-        stderr
+        "passphrase leaked: {stderr}"
     );
     assert_no_source_chain(&stderr, "invalid_uri");
 }
@@ -78,13 +74,11 @@ fn wrong_passphrase_no_secret_in_stderr() {
     );
     assert!(
         !stderr.contains("correct-passphrase-ABCDEFGH"),
-        "correct passphrase leaked: {}",
-        stderr
+        "correct passphrase leaked: {stderr}"
     );
     assert!(
         !stderr.contains("wrong-passphrase-ZZZZ"),
-        "wrong passphrase leaked: {}",
-        stderr
+        "wrong passphrase leaked: {stderr}"
     );
     assert_no_source_chain(&stderr, "wrong_passphrase");
 }
@@ -107,8 +101,7 @@ fn bare_z32_as_uri_no_source_chain() {
     // Should be rejected (InvalidShareUri → exit 1) before any passphrase use
     assert!(
         stderr.contains("cipherpost://") || stderr.contains("bare pubkey"),
-        "expected URI-hint error, got: {}",
-        stderr
+        "expected URI-hint error, got: {stderr}"
     );
     assert_no_source_chain(&stderr, "bare_z32_as_uri");
 }

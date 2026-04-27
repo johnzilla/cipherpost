@@ -48,22 +48,18 @@ fn invalid_material_display_is_generic_for_every_source_reason() {
                 variant: variant.to_string(),
                 reason: reason.to_string(),
             };
-            let disp = format!("{}", err);
+            let disp = format!("{err}");
             for forbidden in FORBIDDEN_DISPLAY_TOKENS {
                 assert!(
                     !disp.contains(forbidden),
-                    "Error::InvalidMaterial{{variant={}, reason={}}} Display leaked '{}': full display = {:?}",
-                    variant,
-                    reason,
-                    forbidden,
-                    disp
+                    "Error::InvalidMaterial{{variant={variant}, reason={reason}}} Display leaked '{forbidden}': full display = {disp:?}"
                 );
             }
             // Positive assertion: Display IS the format from
             // `#[error("invalid material: variant={variant}, reason={reason}")]`
             assert_eq!(
                 disp,
-                format!("invalid material: variant={}, reason={}", variant, reason),
+                format!("invalid material: variant={variant}, reason={reason}"),
                 "Display format must match #[error] literal"
             );
         }
@@ -80,8 +76,7 @@ fn invalid_material_exit_code_is_always_1() {
         let code = exit_code(&err);
         assert_eq!(
             code, 1,
-            "Error::InvalidMaterial must map to exit 1 (X509-08: distinct from exit 3 sig failures), reason={}",
-            reason
+            "Error::InvalidMaterial must map to exit 1 (X509-08: distinct from exit 3 sig failures), reason={reason}"
         );
     }
 }

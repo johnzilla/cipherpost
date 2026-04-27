@@ -110,13 +110,13 @@ fn render_x509_preview_sha256_matches_independent_computation() {
         let mut hex = String::with_capacity(64);
         for b in digest.iter() {
             use std::fmt::Write;
-            let _ = write!(hex, "{:02x}", b);
+            let _ = write!(hex, "{b:02x}");
         }
         hex
     };
     // The SHA-256 line is the last line; its content after "SHA-256:     " must equal the digest.
     let last_line = s.lines().last().expect("preview has lines");
-    assert_eq!(last_line, format!("SHA-256:     {}", expected_hex));
+    assert_eq!(last_line, format!("SHA-256:     {expected_hex}"));
 }
 
 #[test]

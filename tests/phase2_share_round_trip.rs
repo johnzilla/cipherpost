@@ -114,7 +114,6 @@ fn share_round_trip_recipient_decrypts_third_party_fails() {
     .unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::DecryptFailed),
-        "third party must fail with DecryptFailed, got {:?}",
-        err
+        "third party must fail with DecryptFailed, got {err:?}"
     );
 }

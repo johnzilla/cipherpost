@@ -64,8 +64,7 @@ fn receive_declined_returns_error_declined_exit_7() {
     // The error must be Error::Declined (not some other sig/decrypt failure).
     assert!(
         matches!(err, cipherpost::Error::Declined),
-        "expected Error::Declined, got {:?}",
-        err
+        "expected Error::Declined, got {err:?}"
     );
     // Exit-code taxonomy: Declined → 7 (CLI-02 / ROADMAP SC3).
     assert_eq!(cipherpost::error::exit_code(&err), 7);

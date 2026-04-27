@@ -130,5 +130,5 @@ pub fn exit_code(err: &Error) -> i32 {
 /// print this to stderr instead of Display'ing source chains.
 pub fn user_message(err: &Error) -> String {
     // D-16 invariant: Signature* variants all produce the identical string.
-    format!("{}", err)
+    format!("{err}")
 }

@@ -120,16 +120,13 @@ fn pgp_send_realistic_key_surfaces_wire_budget_exceeded_cleanly() {
             assert_eq!(budget, 1000);
             assert!(
                 encoded > budget,
-                "encoded ({}) must exceed budget ({})",
-                encoded,
-                budget
+                "encoded ({encoded}) must exceed budget ({budget})"
             );
         }
         other => panic!(
-            "expected WireBudgetExceeded, got {:?} — either budget protocol \
+            "expected WireBudgetExceeded, got {other:?} — either budget protocol \
              changed, ingest rejected before budget check (regression), OR the \
-             realistic-fixture is not large enough",
-            other
+             realistic-fixture is not large enough"
         ),
     }
 }
@@ -224,11 +221,10 @@ fn pgp_malformed_packet_send_rejected_at_ingest() {
             assert!(
                 reason == "malformed PGP packet stream"
                     || reason == "trailing bytes after PGP packet stream",
-                "expected curated reason literal, got: {}",
-                reason
+                "expected curated reason literal, got: {reason}"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -262,6 +258,6 @@ fn pgp_multi_primary_send_rejected_at_ingest() {
             assert!(reason.starts_with("PgpKey must contain exactly one primary key"));
             assert!(reason.contains("found 2"));
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }

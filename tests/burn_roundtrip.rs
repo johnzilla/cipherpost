@@ -41,7 +41,7 @@ fn count_receipts_for_share_ref(
     recipient_z32: &str,
     share_ref_hex: &str,
 ) -> usize {
-    let label_prefix = format!("_cprcpt-{}", share_ref_hex);
+    let label_prefix = format!("_cprcpt-{share_ref_hex}");
     transport
         .resolve_all_txt(recipient_z32)
         .iter()
@@ -106,8 +106,7 @@ fn burn_share_first_receive_succeeds_second_returns_exit_7() {
         std::fs::read_to_string(&lp).expect("ledger file must exist after first burn receive");
     assert!(
         ledger.contains(r#""state":"burned""#),
-        "burn ledger row must carry state=burned; ledger contents: {}",
-        ledger
+        "burn ledger row must carry state=burned; ledger contents: {ledger}"
     );
 
     // Second receive: returns Err(Declined) (exit 7). The Plan 03 dormant
@@ -126,8 +125,7 @@ fn burn_share_first_receive_succeeds_second_returns_exit_7() {
     .expect_err("second receive of burn share must error");
     assert!(
         matches!(err, Error::Declined),
-        "second receive must yield Error::Declined (exit 7); got {:?}",
-        err
+        "second receive must yield Error::Declined (exit 7); got {err:?}"
     );
     assert_eq!(exit_code(&err), 7, "exit_code(Declined) must be 7");
 
@@ -154,7 +152,6 @@ fn burn_share_first_receive_succeeds_second_returns_exit_7() {
         count_receipts_for_share_ref(&transport, &recipient_z32, &uri.share_ref_hex);
     assert_eq!(
         receipt_count, 1,
-        "exactly one receipt published after burn round-trip (BURN-04 lock); got {}",
-        receipt_count
+        "exactly one receipt published after burn round-trip (BURN-04 lock); got {receipt_count}"
     );
 }

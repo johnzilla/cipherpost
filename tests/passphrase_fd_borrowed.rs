@@ -46,7 +46,6 @@ fn fd_zero_rejected() {
         .expect_err("fd 0 must be rejected");
     assert!(
         matches!(err, cipherpost::Error::Config(_)),
-        "fd 0 must be rejected as Error::Config; got {:?}",
-        err
+        "fd 0 must be rejected as Error::Config; got {err:?}"
     );
 }

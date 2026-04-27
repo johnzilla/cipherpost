@@ -119,21 +119,17 @@ fn pin_send_surfaces_wire_budget_exceeded_cleanly() {
             plaintext,
         } => (encoded, budget, plaintext),
         other => panic!(
-            "expected WireBudgetExceeded — got {:?}; the new Phase 8 nested-age path must surface this error class cleanly",
-            other
+            "expected WireBudgetExceeded — got {other:?}; the new Phase 8 nested-age path must surface this error class cleanly"
         ),
     };
     assert_eq!(budget, 1000, "BEP44 budget must be 1000 bytes");
     assert!(
         encoded > budget,
-        "encoded {} must exceed budget {}",
-        encoded,
-        budget
+        "encoded {encoded} must exceed budget {budget}"
     );
     assert!(
         plaintext_len > 0 && plaintext_len < 1024,
-        "plaintext_len {} must be the JCS envelope size (under a kilobyte for this test)",
-        plaintext_len
+        "plaintext_len {plaintext_len} must be the JCS envelope size (under a kilobyte for this test)"
     );
 }
 

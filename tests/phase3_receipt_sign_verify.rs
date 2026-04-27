@@ -64,7 +64,7 @@ fn self_receipt_round_trip() {
 fn assert_unified_d16_display(err: &Error) {
     // D-16: every sig-fail variant Display is "signature verification failed".
     assert_eq!(
-        format!("{}", err),
+        format!("{err}"),
         "signature verification failed",
         "D-16 unified Display invariant violated"
     );
@@ -80,7 +80,7 @@ fn assert_unified_d16_display(err: &Error) {
 #[allow(dead_code)]
 pub fn assert_unified_credential_failure_display(err: &cipherpost::Error) {
     assert_eq!(
-        format!("{}", err),
+        format!("{err}"),
         "wrong passphrase or identity decryption failed",
         "PIN-07 unified credential-failure Display invariant violated"
     );
@@ -106,8 +106,7 @@ fn tampered_nonce_fails_verify() {
     let err = verify_receipt(&r).expect_err("tampered nonce must reject");
     assert!(
         matches!(err, Error::SignatureInner),
-        "expected SignatureInner, got {:?}",
-        err
+        "expected SignatureInner, got {err:?}"
     );
     assert_unified_d16_display(&err);
 }
@@ -140,8 +139,7 @@ fn nonce_hex_shape() {
     assert!(
         n1.chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
-        "nonce_hex must be lowercase hex only; got {}",
-        n1
+        "nonce_hex must be lowercase hex only; got {n1}"
     );
     assert_ne!(n1, n2, "two OsRng draws must differ (entropy check)");
 }

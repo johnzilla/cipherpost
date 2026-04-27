@@ -18,20 +18,16 @@ fn version_prints_real_git_sha() {
     assert_eq!(
         sha.len(),
         12,
-        "git sha must be 12 chars, got {:?}: full line={:?}",
-        sha,
-        first_line
+        "git sha must be 12 chars, got {sha:?}: full line={first_line:?}"
     );
     assert!(
         sha.chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
-        "git sha must be lowercase hex, got {:?}",
-        sha
+        "git sha must be lowercase hex, got {sha:?}"
     );
     assert!(
         !first_line.contains("(unknown)"),
-        "build.rs fallback 'unknown' in version output: {:?}",
-        first_line
+        "build.rs fallback 'unknown' in version output: {first_line:?}"
     );
 
     // Second line: crypto primitives list (CLI-04 content).
@@ -39,9 +35,7 @@ fn version_prints_real_git_sha() {
     for needle in &["age", "Ed25519", "Argon2id", "HKDF-SHA256", "JCS"] {
         assert!(
             second_line.contains(needle),
-            "crypto primitives line missing {:?}: {:?}",
-            needle,
-            second_line
+            "crypto primitives line missing {needle:?}: {second_line:?}"
         );
     }
 }

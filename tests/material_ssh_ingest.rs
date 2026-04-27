@@ -29,7 +29,7 @@ fn ssh_key_happy_path_produces_ssh_variant_with_canonical_bytes() {
                 "canonical bytes must start with OpenSSH v1 BEGIN marker"
             );
         }
-        other => panic!("expected SshKey variant, got {:?}", other),
+        other => panic!("expected SshKey variant, got {other:?}"),
     }
 }
 
@@ -38,12 +38,12 @@ fn ssh_key_canonical_re_encode_round_trip() {
     let m1 = ingest::ssh_key(SSH_FIXTURE).expect("first parse");
     let bytes1 = match m1 {
         Material::SshKey { bytes } => bytes,
-        other => panic!("expected SshKey, got {:?}", other),
+        other => panic!("expected SshKey, got {other:?}"),
     };
     let m2 = ingest::ssh_key(&bytes1).expect("second parse on canonical bytes");
     let bytes2 = match m2 {
         Material::SshKey { bytes } => bytes,
-        other => panic!("expected SshKey, got {:?}", other),
+        other => panic!("expected SshKey, got {other:?}"),
     };
     assert_eq!(
         bytes1, bytes2,
@@ -59,8 +59,7 @@ fn ssh_key_legacy_pem_rsa_rejected() {
     .unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "legacy RSA-PEM must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "legacy RSA-PEM must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -71,8 +70,7 @@ fn ssh_key_legacy_pem_dsa_rejected() {
             .unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "legacy DSA-PEM must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "legacy DSA-PEM must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -83,8 +81,7 @@ fn ssh_key_legacy_pem_ec_rejected() {
             .unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "legacy EC-PEM must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "legacy EC-PEM must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -93,8 +90,7 @@ fn ssh_key_rfc4716_rejected() {
     let err = ingest::ssh_key(b"---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nstuff\n---- END SSH2 ENCRYPTED PRIVATE KEY ----\n").unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "RFC 4716 SSH2 must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "RFC 4716 SSH2 must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -103,8 +99,7 @@ fn ssh_key_fido_rejected() {
     let err = ingest::ssh_key(b"-----BEGIN OPENSSH-FIDO PRIVATE KEY-----\nstuff\n-----END OPENSSH-FIDO PRIVATE KEY-----\n").unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "OPENSSH-FIDO must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "OPENSSH-FIDO must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -113,8 +108,7 @@ fn ssh_key_garbage_rejected_as_format_not_supported() {
     let err = ingest::ssh_key(b"random bytes that are not any kind of key").unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "garbage must trigger SshKeyFormatNotSupported (format-sniff first), got: {:?}",
-        err
+        "garbage must trigger SshKeyFormatNotSupported (format-sniff first), got: {err:?}"
     );
 }
 
@@ -123,8 +117,7 @@ fn ssh_key_empty_input_rejected_as_format_not_supported() {
     let err = ingest::ssh_key(b"").unwrap_err();
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "empty input must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "empty input must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -142,7 +135,7 @@ fn ssh_key_malformed_openssh_v1_body_rejected_as_invalid_material() {
             assert_eq!(variant, "ssh_key");
             assert_eq!(reason, "malformed OpenSSH v1 blob");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -158,7 +151,7 @@ fn ssh_key_trailing_bytes_rejected() {
             assert_eq!(variant, "ssh_key");
             assert_eq!(reason, "trailing bytes after OpenSSH v1 blob");
         }
-        other => panic!("expected InvalidMaterial trailing-bytes, got {:?}", other),
+        other => panic!("expected InvalidMaterial trailing-bytes, got {other:?}"),
     }
 }
 
@@ -171,7 +164,7 @@ fn ssh_key_accessor_wrong_variant_returns_invalid_material() {
             assert_eq!(variant, "generic_secret");
             assert_eq!(reason, "accessor called on wrong variant");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -204,13 +197,11 @@ fn ssh_key_error_display_contains_no_parser_internals() {
     ];
 
     for err in errors {
-        let disp = format!("{}", err);
+        let disp = format!("{err}");
         for tok in forbidden {
             assert!(
                 !disp.contains(tok),
-                "SSH ingest Error::Display leaked forbidden token '{}': {:?}",
-                tok,
-                disp
+                "SSH ingest Error::Display leaked forbidden token '{tok}': {disp:?}"
             );
         }
     }

@@ -50,13 +50,11 @@ fn material_pgp_envelope_jcs_shape_contains_pgp_key_tag() {
     let as_str = std::str::from_utf8(&bytes).expect("JCS output is valid UTF-8");
     assert!(
         as_str.contains("\"type\":\"pgp_key\""),
-        "JCS must encode the snake_case tag `pgp_key`, got: {}",
-        as_str
+        "JCS must encode the snake_case tag `pgp_key`, got: {as_str}"
     );
     assert!(
         as_str.contains("\"bytes\":\""),
-        "JCS must encode the base64-STANDARD bytes field, got: {}",
-        as_str
+        "JCS must encode the base64-STANDARD bytes field, got: {as_str}"
     );
 }
 
@@ -66,5 +64,5 @@ fn regenerate_material_pgp_envelope_fixture() {
     let bytes = fixture_envelope().to_jcs_bytes().unwrap();
     std::fs::create_dir_all("tests/fixtures").unwrap();
     std::fs::write(FIXTURE_PATH, bytes).unwrap();
-    println!("Fixture written to {}", FIXTURE_PATH);
+    println!("Fixture written to {FIXTURE_PATH}");
 }

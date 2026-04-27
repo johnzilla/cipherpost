@@ -158,7 +158,7 @@ impl DhtTransport {
         // D-MRG-06: SignedPacketBuildError::PacketTooLarge → WireBudgetExceeded{plaintext:0}.
         eprintln!("Publishing receipt to DHT..."); // TRANS-05
 
-        let receipt_label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, share_ref_hex);
+        let receipt_label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
         let new_name: pkarr::dns::Name<'_> = match receipt_label.as_str().try_into() {
             Ok(n) => n,
             Err(e) => return PublishOutcome::Other(Error::Transport(map_dns_err(e))),
@@ -321,7 +321,7 @@ impl Transport for DhtTransport {
 /// the suffixed form may appear depending on pkarr's internal state.
 fn matches_receipt_label(rr_name: &str, receipt_label: &str, origin_z32: &str) -> bool {
     let trimmed = rr_name.trim_end_matches('.');
-    trimmed == format!("{}.{}", receipt_label, origin_z32) || trimmed == receipt_label
+    trimmed == format!("{receipt_label}.{origin_z32}") || trimmed == receipt_label
 }
 
 // ---- RData TXT extraction --------------------------------------------------
@@ -440,7 +440,7 @@ mod mock {
             receipt_json: &str,
         ) -> PublishOutcome {
             let z32 = kp.public_key().to_z32();
-            let label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, share_ref_hex);
+            let label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
 
             // 1. Lock; read current seq + clone records; release.
             let (seq_at_read, mut merged) = {

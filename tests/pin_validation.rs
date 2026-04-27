@@ -20,7 +20,7 @@ fn assert_rejected(pin: &str) {
             pin.len(),
             msg
         ),
-        other => panic!("PIN rejection wrong variant: {:?}", other),
+        other => panic!("PIN rejection wrong variant: {other:?}"),
     }
 }
 
@@ -71,7 +71,7 @@ fn accepts_strong_pins() {
         "ZxCvBnM!",
         "T3st-PIN!",
     ] {
-        validate_pin(s).unwrap_or_else(|e| panic!("strong PIN {:?} was rejected: {:?}", s, e));
+        validate_pin(s).unwrap_or_else(|e| panic!("strong PIN {s:?} was rejected: {e:?}"));
     }
 }
 
@@ -102,7 +102,7 @@ fn display_is_generic_across_all_rejection_classes() {
     let mut displays = Vec::new();
     for s in &samples {
         let e = validate_pin(s).unwrap_err();
-        displays.push(format!("{}", e));
+        displays.push(format!("{e}"));
     }
     let first = &displays[0];
     for d in &displays {
@@ -117,7 +117,6 @@ fn display_is_generic_across_all_rejection_classes() {
     // across rejection classes, (b) full Display is constant across classes.
     assert!(
         first.contains(REJECT_MSG),
-        "Display must embed generic reject literal, got {:?}",
-        first
+        "Display must embed generic reject literal, got {first:?}"
     );
 }

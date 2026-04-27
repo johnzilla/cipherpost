@@ -30,8 +30,7 @@ fn load_refuses_0644_identity_file() {
     let err = cipherpost::identity::load(&pw).unwrap_err();
     assert!(
         matches!(err, cipherpost::Error::IdentityPermissions),
-        "expected IdentityPermissions, got {:?}",
-        err
+        "expected IdentityPermissions, got {err:?}"
     );
 }
 

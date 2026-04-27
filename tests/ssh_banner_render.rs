@@ -17,6 +17,7 @@
 //!   - src/preview.rs::tests::is_deprecated_ssh_algorithm_dsa_always_deprecated
 //!     (Plan 06 unit test pinning the predicate logic — DSA at any size is
 //!     flagged deprecated).
+//!
 //! See SUMMARY.md for the rationale.
 
 use cipherpost::preview;
@@ -70,8 +71,7 @@ fn render_ssh_preview_ed25519_fingerprint_is_sha256_format() {
     let fp_value = fp_line.trim_start_matches("Fingerprint: ");
     assert!(
         fp_value.starts_with("SHA256:"),
-        "Fingerprint must start with `SHA256:`, got: {}",
-        fp_value
+        "Fingerprint must start with `SHA256:`, got: {fp_value}"
     );
     let b64 = fp_value.trim_start_matches("SHA256:");
     // SHA-256 = 32 bytes; base64-unpadded = 43 chars (matches `ssh-keygen -lf`).
@@ -85,8 +85,7 @@ fn render_ssh_preview_ed25519_fingerprint_is_sha256_format() {
     // No padding chars
     assert!(
         !b64.contains('='),
-        "SHA-256 fingerprint must not include `=` padding, got: {:?}",
-        b64
+        "SHA-256 fingerprint must not include `=` padding, got: {b64:?}"
     );
 }
 
@@ -97,8 +96,7 @@ fn render_ssh_preview_ed25519_key_line_includes_size() {
     let key_line = lines[1];
     assert_eq!(
         key_line, "Key:         ssh-ed25519 256",
-        "Ed25519 key line must be exact (algorithm wire-name + bits), got: {:?}",
-        key_line
+        "Ed25519 key line must be exact (algorithm wire-name + bits), got: {key_line:?}"
     );
 }
 
@@ -109,8 +107,7 @@ fn render_ssh_preview_ed25519_empty_comment_renders_as_none() {
     let comment_line = lines[3];
     assert_eq!(
         comment_line, "Comment:     [sender-attested] (none)",
-        "Empty-comment fixture must render as `[sender-attested] (none)`, got: {:?}",
-        comment_line
+        "Empty-comment fixture must render as `[sender-attested] (none)`, got: {comment_line:?}"
     );
 }
 
@@ -121,13 +118,11 @@ fn render_ssh_preview_rsa1024_carries_deprecated_tag() {
     let key_line = lines[1];
     assert!(
         key_line.ends_with("[DEPRECATED]"),
-        "RSA-1024 key line must end with `[DEPRECATED]`, got: {:?}",
-        key_line
+        "RSA-1024 key line must end with `[DEPRECATED]`, got: {key_line:?}"
     );
     assert!(
         key_line.contains("ssh-rsa 1024"),
-        "RSA-1024 key line must contain `ssh-rsa 1024`, got: {:?}",
-        key_line
+        "RSA-1024 key line must contain `ssh-rsa 1024`, got: {key_line:?}"
     );
 }
 
@@ -161,7 +156,6 @@ fn render_ssh_preview_separator_line_is_57_dashes_after_prefix() {
     );
     assert!(
         dashes.chars().all(|c| c == '-'),
-        "separator suffix must be all dashes, got: {:?}",
-        dashes
+        "separator suffix must be all dashes, got: {dashes:?}"
     );
 }

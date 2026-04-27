@@ -45,18 +45,17 @@ fn assert_no_floats_in_value(v: &serde_json::Value, path: &str) {
         serde_json::Value::Number(n) => {
             assert!(
                 !n.is_f64(),
-                "Float value found at path {}: {}. Floats are banned from signable structs (CRYPTO-04).",
-                path, n
+                "Float value found at path {path}: {n}. Floats are banned from signable structs (CRYPTO-04)."
             );
         }
         serde_json::Value::Object(m) => {
             for (k, val) in m {
-                assert_no_floats_in_value(val, &format!("{}.{}", path, k));
+                assert_no_floats_in_value(val, &format!("{path}.{k}"));
             }
         }
         serde_json::Value::Array(a) => {
             for (i, val) in a.iter().enumerate() {
-                assert_no_floats_in_value(val, &format!("{}[{}]", path, i));
+                assert_no_floats_in_value(val, &format!("{path}[{i}]"));
             }
         }
         _ => {}

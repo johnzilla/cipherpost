@@ -45,18 +45,14 @@ fn v1_0_ledger_row_without_state_field_deserializes_as_accepted() {
     let dir = TempDir::new().unwrap();
     let share_ref = "0123456789abcdef0123456789abcdef";
     let row = format!(
-        r#"{{"accepted_at":"2026-04-25T13:11:42Z","ciphertext_hash":"abc","cleartext_hash":"def","purpose":"k","sender":"pk","share_ref":"{}"}}"#,
-        share_ref
+        r#"{{"accepted_at":"2026-04-25T13:11:42Z","ciphertext_hash":"abc","cleartext_hash":"def","purpose":"k","sender":"pk","share_ref":"{share_ref}"}}"#
     );
-    write_ledger(&dir, &format!("{}\n", row));
+    write_ledger(&dir, &format!("{row}\n"));
     touch_sentinel(&dir, share_ref);
 
     match check_already_consumed(share_ref) {
         LedgerState::Accepted { .. } => {} // ok — v1.0 default-deserialize lands here
-        other => panic!(
-            "v1.0 row (no state field) must be Accepted; got {:?}",
-            other
-        ),
+        other => panic!("v1.0 row (no state field) must be Accepted; got {other:?}"),
     }
 }
 
@@ -66,15 +62,14 @@ fn explicit_state_accepted_deserializes_as_accepted() {
     let dir = TempDir::new().unwrap();
     let share_ref = "fedcba9876543210fedcba9876543210";
     let row = format!(
-        r#"{{"accepted_at":"2026-04-25T14:00:00Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"x","sender":"pk","share_ref":"{}","state":"accepted"}}"#,
-        share_ref
+        r#"{{"accepted_at":"2026-04-25T14:00:00Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"x","sender":"pk","share_ref":"{share_ref}","state":"accepted"}}"#
     );
-    write_ledger(&dir, &format!("{}\n", row));
+    write_ledger(&dir, &format!("{row}\n"));
     touch_sentinel(&dir, share_ref);
 
     match check_already_consumed(share_ref) {
         LedgerState::Accepted { .. } => {}
-        other => panic!("explicit state=accepted must be Accepted; got {:?}", other),
+        other => panic!("explicit state=accepted must be Accepted; got {other:?}"),
     }
 }
 
@@ -84,15 +79,14 @@ fn explicit_state_burned_deserializes_as_burned() {
     let dir = TempDir::new().unwrap();
     let share_ref = "deadbeefcafebabe00112233deadbeef";
     let row = format!(
-        r#"{{"accepted_at":"2026-04-25T15:00:00Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"x","sender":"pk","share_ref":"{}","state":"burned"}}"#,
-        share_ref
+        r#"{{"accepted_at":"2026-04-25T15:00:00Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"x","sender":"pk","share_ref":"{share_ref}","state":"burned"}}"#
     );
-    write_ledger(&dir, &format!("{}\n", row));
+    write_ledger(&dir, &format!("{row}\n"));
     touch_sentinel(&dir, share_ref);
 
     match check_already_consumed(share_ref) {
         LedgerState::Burned { .. } => {}
-        other => panic!("state=burned must be Burned; got {:?}", other),
+        other => panic!("state=burned must be Burned; got {other:?}"),
     }
 }
 
@@ -108,14 +102,10 @@ fn sentinel_without_matching_ledger_row_returns_accepted_unknown() {
         LedgerState::Accepted { accepted_at } => {
             assert!(
                 accepted_at.contains("unknown"),
-                "fallback must mark accepted_at as unknown; got: {}",
-                accepted_at
+                "fallback must mark accepted_at as unknown; got: {accepted_at}"
             );
         }
-        other => panic!(
-            "sentinel without ledger row must be Accepted; got {:?}",
-            other
-        ),
+        other => panic!("sentinel without ledger row must be Accepted; got {other:?}"),
     }
 }
 
@@ -126,6 +116,6 @@ fn no_sentinel_returns_none() {
     std::env::set_var("CIPHERPOST_HOME", dir.path());
     match check_already_consumed("0000000000000000aaaaaaaaaaaaaaaa") {
         LedgerState::None => {}
-        other => panic!("no sentinel must be None; got {:?}", other),
+        other => panic!("no sentinel must be None; got {other:?}"),
     }
 }

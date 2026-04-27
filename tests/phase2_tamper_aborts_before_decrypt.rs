@@ -78,8 +78,7 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
             err,
             cipherpost::Error::SignatureInner | cipherpost::Error::SignatureCanonicalMismatch
         ),
-        "expected SignatureInner / SignatureCanonicalMismatch, got {:?}",
-        err
+        "expected SignatureInner / SignatureCanonicalMismatch, got {err:?}"
     );
 
     // D-16: user-facing message is unified "signature verification failed"

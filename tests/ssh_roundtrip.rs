@@ -101,15 +101,12 @@ fn ssh_send_realistic_key_surfaces_wire_budget_exceeded_cleanly() {
             assert_eq!(budget, 1000);
             assert!(
                 encoded > budget,
-                "encoded ({}) must exceed budget ({})",
-                encoded,
-                budget
+                "encoded ({encoded}) must exceed budget ({budget})"
             );
         }
         other => panic!(
-            "expected WireBudgetExceeded, got {:?} — SSH ingest may have rejected before \
-             the budget check (regression), or the fixture is no longer over-budget",
-            other
+            "expected WireBudgetExceeded, got {other:?} — SSH ingest may have rejected before \
+             the budget check (regression), or the fixture is no longer over-budget"
         ),
     }
 }
@@ -157,8 +154,7 @@ fn ssh_legacy_pem_send_rejected_at_ingest() {
     .expect_err("legacy PEM must fail at ingest");
     assert!(
         matches!(err, Error::SshKeyFormatNotSupported),
-        "legacy PEM via --material ssh-key must trigger SshKeyFormatNotSupported, got: {:?}",
-        err
+        "legacy PEM via --material ssh-key must trigger SshKeyFormatNotSupported, got: {err:?}"
     );
 }
 
@@ -189,6 +185,6 @@ fn ssh_malformed_openssh_v1_send_rejected_at_ingest() {
             assert_eq!(variant, "ssh_key");
             assert_eq!(reason, "malformed OpenSSH v1 blob");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }

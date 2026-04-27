@@ -53,19 +53,16 @@ fn plaintext_above_64k_rejected_with_actual_and_cap_in_display() {
                 limit: 65536
             }
         ),
-        "expected PayloadTooLarge{{actual:65537,limit:65536}}, got {:?}",
-        err
+        "expected PayloadTooLarge{{actual:65537,limit:65536}}, got {err:?}"
     );
-    let disp = format!("{}", err);
+    let disp = format!("{err}");
     assert!(
         disp.contains("65537"),
-        "Display must contain actual size, got: {}",
-        disp
+        "Display must contain actual size, got: {disp}"
     );
     assert!(
         disp.contains("65536"),
-        "Display must contain cap, got: {}",
-        disp
+        "Display must contain cap, got: {disp}"
     );
 }
 
@@ -102,7 +99,7 @@ fn plaintext_under_64k_but_over_wire_budget_rejected_with_wire_budget_error() {
             budget,
             plaintext,
         } => (encoded, budget, plaintext),
-        other => panic!("expected WireBudgetExceeded, got {:?}", other),
+        other => panic!("expected WireBudgetExceeded, got {other:?}"),
     };
     assert!(encoded > 1000, "encoded should be > budget");
     assert_eq!(budget, 1000);
@@ -119,17 +116,14 @@ fn plaintext_under_64k_but_over_wire_budget_rejected_with_wire_budget_error() {
     );
     assert!(
         disp.contains(&encoded.to_string()),
-        "Display must contain encoded size, got: {}",
-        disp
+        "Display must contain encoded size, got: {disp}"
     );
     assert!(
         disp.contains("1000"),
-        "Display must contain budget, got: {}",
-        disp
+        "Display must contain budget, got: {disp}"
     );
     assert!(
         disp.contains(&plaintext.to_string()),
-        "Display must contain plaintext size, got: {}",
-        disp
+        "Display must contain plaintext size, got: {disp}"
     );
 }

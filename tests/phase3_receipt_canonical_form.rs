@@ -40,8 +40,7 @@ fn receipt_signable_bytes_match_committed_fixture() {
     let bytes = serde_json_jcs(&fixture_signable());
     let expected = fs::read(FIXTURE_PATH).unwrap_or_else(|_| {
         panic!(
-            "Fixture file missing at {}. Run:\n  cargo test --test phase3_receipt_canonical_form -- --ignored regenerate_fixture\nto create it, then commit the result.",
-            FIXTURE_PATH
+            "Fixture file missing at {FIXTURE_PATH}. Run:\n  cargo test --test phase3_receipt_canonical_form -- --ignored regenerate_fixture\nto create it, then commit the result."
         )
     });
     assert_eq!(

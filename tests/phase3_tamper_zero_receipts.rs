@@ -117,7 +117,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
     )
     .expect_err("tampered ciphertext must reject before step 13");
     // Accept any non-success error — the important invariant is ZERO-RECEIPTS below.
-    let _err_str = format!("{:?}", err);
+    let _err_str = format!("{err:?}");
 
     // 4. SC1 invariant: B's key has ZERO _cprcpt-* entries.
     let b_entries = transport.resolve_all_txt(&b_z32);
@@ -127,8 +127,7 @@ fn tampered_ciphertext_produces_zero_receipts() {
         .count();
     assert_eq!(
         receipt_count, 0,
-        "ROADMAP SC1 invariant violated: tampered ciphertext produced {} receipt(s); expected 0",
-        receipt_count
+        "ROADMAP SC1 invariant violated: tampered ciphertext produced {receipt_count} receipt(s); expected 0"
     );
 
     // 5. resolve_all_cprcpt under B's key must return NotFound (nothing to list).
@@ -137,7 +136,6 @@ fn tampered_ciphertext_produces_zero_receipts() {
         .expect_err("must be NotFound when no receipts");
     assert!(
         matches!(lookup_err, Error::NotFound),
-        "expected NotFound, got {:?}",
-        lookup_err
+        "expected NotFound, got {lookup_err:?}"
     );
 }

@@ -48,5 +48,5 @@ fn regenerate_envelope_fixture() {
     let bytes = fixture_envelope().to_jcs_bytes().unwrap();
     std::fs::create_dir_all("tests/fixtures").unwrap();
     std::fs::write(FIXTURE_PATH, bytes).unwrap();
-    println!("Fixture written to {}", FIXTURE_PATH);
+    println!("Fixture written to {FIXTURE_PATH}");
 }

@@ -107,6 +107,6 @@ impl ShareUri {
 
     /// Format a share URI from its components.
     pub fn format(sender_z32: &str, share_ref_hex: &str) -> String {
-        format!("{}{}/{}", SHARE_URI_SCHEME, sender_z32, share_ref_hex)
+        format!("{SHARE_URI_SCHEME}{sender_z32}/{share_ref_hex}")
     }
 }

@@ -26,7 +26,7 @@ fn decrypt_failed_display_is_unified_credential_lane() {
     // intrinsic to the variant — so this assertion captures the invariant
     // for ALL three failure modes simultaneously.
     let err = Error::DecryptFailed;
-    assert_eq!(format!("{}", err), UNIFIED_DISPLAY);
+    assert_eq!(format!("{err}"), UNIFIED_DISPLAY);
     assert_eq!(exit_code(&err), 4);
 }
 
@@ -40,7 +40,7 @@ fn wrong_pin_display_matches_wrong_passphrase_display() {
     let err_pin = Error::DecryptFailed;
     let err_pw = Error::DecryptFailed;
     assert_eq!(
-        format!("{}", err_pin),
+        format!("{err_pin}"),
         format!("{}", err_pw),
         "PIN-07 narrow reading: wrong-PIN ≡ wrong-passphrase Display equality"
     );
@@ -66,12 +66,12 @@ fn wrong_pin_display_does_not_match_signature_failure_display() {
     ] {
         assert_ne!(
             exit_code(&err_pin),
-            exit_code(*sig),
+            exit_code(sig),
             "PIN-07 narrow: exit codes 4 (DecryptFailed) and 3 (Signature*) MUST differ"
         );
-        assert_eq!(exit_code(*sig), 3, "Signature* variant must map to exit 3");
+        assert_eq!(exit_code(sig), 3, "Signature* variant must map to exit 3");
         assert_ne!(
-            format!("{}", err_pin),
+            format!("{err_pin}"),
             format!("{}", *sig),
             "exit-4 (DecryptFailed) and exit-3 (Signature*) Display literals must differ"
         );
@@ -110,7 +110,7 @@ fn pin_validation_failure_is_distinct_from_credential_failure() {
     );
     assert_eq!(exit_code(&err_credential), 4);
     assert_ne!(
-        format!("{}", err_validation),
+        format!("{err_validation}"),
         format!("{}", err_credential),
         "validation-failure Display must differ from credential-failure Display"
     );

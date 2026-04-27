@@ -36,20 +36,16 @@ fn ssh_invalid_material_display_is_generic_for_every_source_reason() {
                 variant: variant.to_string(),
                 reason: reason.to_string(),
             };
-            let disp = format!("{}", err);
+            let disp = format!("{err}");
             for forbidden in SSH_FORBIDDEN_DISPLAY_TOKENS {
                 assert!(
                     !disp.contains(forbidden),
-                    "Error::InvalidMaterial{{variant={}, reason={}}} Display leaked '{}': {:?}",
-                    variant,
-                    reason,
-                    forbidden,
-                    disp
+                    "Error::InvalidMaterial{{variant={variant}, reason={reason}}} Display leaked '{forbidden}': {disp:?}"
                 );
             }
             assert_eq!(
                 disp,
-                format!("invalid material: variant={}, reason={}", variant, reason),
+                format!("invalid material: variant={variant}, reason={reason}"),
                 "Display format must match #[error] literal"
             );
         }
@@ -66,8 +62,7 @@ fn ssh_invalid_material_exit_code_is_always_1() {
         assert_eq!(
             exit_code(&err),
             1,
-            "SSH InvalidMaterial must map to exit 1, reason={}",
-            reason
+            "SSH InvalidMaterial must map to exit 1, reason={reason}"
         );
     }
 }
@@ -78,26 +73,22 @@ fn ssh_invalid_material_exit_code_is_always_1() {
 #[test]
 fn ssh_key_format_not_supported_display_omits_internals() {
     let err = Error::SshKeyFormatNotSupported;
-    let disp = format!("{}", err);
+    let disp = format!("{err}");
     assert!(
         disp.contains("ssh-keygen -p -o"),
-        "Display must include the ssh-keygen conversion hint, got: {}",
-        disp
+        "Display must include the ssh-keygen conversion hint, got: {disp}"
     );
     for tok in SSH_FORBIDDEN_DISPLAY_TOKENS {
         assert!(
             !disp.contains(tok),
-            "SshKeyFormatNotSupported Display leaked forbidden token '{}': {}",
-            tok,
-            disp
+            "SshKeyFormatNotSupported Display leaked forbidden token '{tok}': {disp}"
         );
     }
     // Variant has zero fields — Display must NOT include `variant=` or `reason=`
     // (those would imply an info-disclosure oracle: "your input looked like RSA-PEM").
     assert!(
         !disp.contains("variant=") && !disp.contains("reason="),
-        "SshKeyFormatNotSupported has no fields; Display must not include `variant=` or `reason=`, got: {}",
-        disp
+        "SshKeyFormatNotSupported has no fields; Display must not include `variant=` or `reason=`, got: {disp}"
     );
 }
 

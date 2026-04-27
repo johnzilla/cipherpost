@@ -76,9 +76,7 @@ fn pin_burn_realistic_payload_surfaces_wire_budget_exceeded() {
             assert_eq!(budget, 1000);
             assert!(
                 encoded > budget,
-                "encoded ({}) must exceed budget ({})",
-                encoded,
-                budget
+                "encoded ({encoded}) must exceed budget ({budget})"
             );
             // Phase 9 Plan 01: surface the actual encoded byte count for
             // SPEC.md §Pitfall #22 update (Plan 09-03). Visible only with
@@ -91,11 +89,10 @@ fn pin_burn_realistic_payload_surfaces_wire_budget_exceeded() {
             );
         }
         other => panic!(
-            "expected WireBudgetExceeded, got {:?} — either budget protocol \
+            "expected WireBudgetExceeded, got {other:?} — either budget protocol \
              changed, ingest rejected before budget check (regression), OR \
              the 2KB synthesized payload no longer overflows (pin nesting + \
-             burn-flag + JCS overhead must always exceed 1000 B)",
-            other
+             burn-flag + JCS overhead must always exceed 1000 B)"
         ),
     }
 

@@ -46,20 +46,16 @@ fn pgp_invalid_material_display_is_generic_for_every_source_reason() {
                 variant: variant.to_string(),
                 reason: reason.to_string(),
             };
-            let disp = format!("{}", err);
+            let disp = format!("{err}");
             for forbidden in FORBIDDEN_DISPLAY_TOKENS {
                 assert!(
                     !disp.contains(forbidden),
-                    "Error::InvalidMaterial{{variant={}, reason={}}} Display leaked '{}': {:?}",
-                    variant,
-                    reason,
-                    forbidden,
-                    disp
+                    "Error::InvalidMaterial{{variant={variant}, reason={reason}}} Display leaked '{forbidden}': {disp:?}"
                 );
             }
             assert_eq!(
                 disp,
-                format!("invalid material: variant={}, reason={}", variant, reason),
+                format!("invalid material: variant={variant}, reason={reason}"),
                 "Display format must match #[error] literal"
             );
         }
@@ -76,8 +72,7 @@ fn pgp_invalid_material_exit_code_is_always_1() {
         assert_eq!(
             exit_code(&err),
             1,
-            "PGP InvalidMaterial must map to exit 1, reason={}",
-            reason
+            "PGP InvalidMaterial must map to exit 1, reason={reason}"
         );
     }
 }

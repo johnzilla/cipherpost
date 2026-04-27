@@ -62,16 +62,13 @@ fn representative_outer_record_fits_in_1000_bytes() {
 
     assert!(
         encoded_len < 1104, // SignedPacket::MAX_BYTES
-        "SignedPacket encoded size {} exceeds 1104-byte MAX_BYTES limit",
-        encoded_len
+        "SignedPacket encoded size {encoded_len} exceeds 1104-byte MAX_BYTES limit"
     );
 
     // Separately, the encoded DNS packet (the BEP44 value portion) must be <= 1000 bytes
     let dns_packet_len = packet.encoded_packet().len();
     assert!(
         dns_packet_len <= 1000,
-        "DNS packet portion {} exceeds 1000-byte PKARR/BEP44 budget (JSON was {} bytes)",
-        dns_packet_len,
-        json_len
+        "DNS packet portion {dns_packet_len} exceeds 1000-byte PKARR/BEP44 budget (JSON was {json_len} bytes)"
     );
 }

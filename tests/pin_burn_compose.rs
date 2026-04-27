@@ -73,7 +73,7 @@ fn count_receipts_for_share_ref(
     recipient_z32: &str,
     share_ref_hex: &str,
 ) -> usize {
-    let label = format!("_cprcpt-{}", share_ref_hex);
+    let label = format!("_cprcpt-{share_ref_hex}");
     transport
         .resolve_all_txt(recipient_z32)
         .iter()
@@ -505,8 +505,7 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
     // exit 4 as wrong-passphrase, distinct from sig-failures (exit 3).
     assert!(
         matches!(err, Error::DecryptFailed),
-        "wrong PIN must yield DecryptFailed; got {:?}",
-        err
+        "wrong PIN must yield DecryptFailed; got {err:?}"
     );
     assert_eq!(exit_code(&err), 4);
 
@@ -518,21 +517,18 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
         let ledger = fs::read_to_string(&lp).unwrap();
         assert!(
             !ledger.contains(r#""state":"burned""#),
-            "wrong-PIN must NOT write a burn row; ledger contents: {}",
-            ledger
+            "wrong-PIN must NOT write a burn row; ledger contents: {ledger}"
         );
         assert!(
             !ledger.contains(&share_ref),
-            "wrong-PIN must NOT write ANY ledger row for the share; ledger contents: {}",
-            ledger
+            "wrong-PIN must NOT write ANY ledger row for the share; ledger contents: {ledger}"
         );
     }
     // Sentinel must NOT exist — no successful receive happened.
     let sp = sentinel_path(&share_ref);
     assert!(
         !sp.exists(),
-        "wrong-PIN must NOT create a sentinel; path exists: {:?}",
-        sp
+        "wrong-PIN must NOT create a sentinel; path exists: {sp:?}"
     );
 
     // No receipt published — publish_outcome runs only on successful
@@ -541,8 +537,7 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
     let receipt_count = count_receipts_for_share_ref(&transport, &recipient_z32, &share_ref);
     assert_eq!(
         receipt_count, 0,
-        "wrong-PIN must NOT publish a receipt; got {} receipts",
-        receipt_count
+        "wrong-PIN must NOT publish a receipt; got {receipt_count} receipts"
     );
 
     // Cleanup PIN env so subsequent tests don't race on stale value.
@@ -600,8 +595,7 @@ fn typed_z32_declined_on_burn_share_does_not_mark_burned_and_share_remains_re_re
     .unwrap_err();
     assert!(
         matches!(err, Error::Declined),
-        "DeclinePrompter must yield Declined; got {:?}",
-        err
+        "DeclinePrompter must yield Declined; got {err:?}"
     );
     assert_eq!(exit_code(&err), 7);
 
@@ -622,20 +616,17 @@ fn typed_z32_declined_on_burn_share_does_not_mark_burned_and_share_remains_re_re
         let ledger = fs::read_to_string(&lp).unwrap();
         assert!(
             !ledger.contains(r#""state":"burned""#),
-            "declined-z32 must NOT write a burn row; ledger contents: {}",
-            ledger
+            "declined-z32 must NOT write a burn row; ledger contents: {ledger}"
         );
         assert!(
             !ledger.contains(&uri.share_ref_hex),
-            "declined-z32 must NOT write ANY ledger row; ledger contents: {}",
-            ledger
+            "declined-z32 must NOT write ANY ledger row; ledger contents: {ledger}"
         );
     }
     let sp = sentinel_path(&uri.share_ref_hex);
     assert!(
         !sp.exists(),
-        "declined-z32 must NOT create a sentinel; path exists: {:?}",
-        sp
+        "declined-z32 must NOT create a sentinel; path exists: {sp:?}"
     );
 
     // No receipt published — publish_outcome runs only after typed-z32
@@ -645,8 +636,7 @@ fn typed_z32_declined_on_burn_share_does_not_mark_burned_and_share_remains_re_re
         count_receipts_for_share_ref(&transport, &recipient_z32, &uri.share_ref_hex);
     assert_eq!(
         receipt_count, 0,
-        "declined-z32 must NOT publish a receipt; got {} receipts",
-        receipt_count
+        "declined-z32 must NOT publish a receipt; got {receipt_count} receipts"
     );
 
     // Second receive with AutoConfirm: succeeds (share is re-receivable
@@ -722,14 +712,12 @@ fn pin_plus_burn_plus_pgp_wire_budget_surfaces_cleanly_or_succeeds() {
         }) => {
             // Clean error — exactly what RESEARCH Open Risk #5 predicted.
             eprintln!(
-                "pin+burn+pgp exceeds budget cleanly: encoded={}, budget={}, plaintext={} (Phase 9 DHT-07 + v1.2 escape-hatch will resolve)",
-                encoded, budget, plaintext
+                "pin+burn+pgp exceeds budget cleanly: encoded={encoded}, budget={budget}, plaintext={plaintext} (Phase 9 DHT-07 + v1.2 escape-hatch will resolve)"
             );
             assert_eq!(budget, 1000, "BEP44 budget must be 1000 bytes");
         }
-        Err(other) => panic!(
-            "pin+burn+pgp must surface as Ok OR WireBudgetExceeded; got {:?}",
-            other
-        ),
+        Err(other) => {
+            panic!("pin+burn+pgp must surface as Ok OR WireBudgetExceeded; got {other:?}")
+        }
     }
 }

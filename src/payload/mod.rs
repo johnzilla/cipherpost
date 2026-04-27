@@ -270,13 +270,11 @@ mod tests {
         let s = serde_json::to_string(&m).unwrap();
         assert!(
             s.contains("\"type\":\"generic_secret\""),
-            "serde tag should be snake_case: {}",
-            s
+            "serde tag should be snake_case: {s}"
         );
         assert!(
             s.contains("\"bytes\":\""),
-            "GenericSecret.bytes should serialize as base64 string: {}",
-            s
+            "GenericSecret.bytes should serialize as base64 string: {s}"
         );
         let back: Material = serde_json::from_str(&s).unwrap();
         assert_eq!(m, back);
@@ -333,8 +331,7 @@ mod tests {
         let err = m.as_generic_secret_bytes().unwrap_err();
         assert!(
             matches!(err, Error::NotImplemented { phase: 2 }),
-            "expected NotImplemented{{phase:2}}, got {:?}",
-            err
+            "expected NotImplemented{{phase:2}}, got {err:?}"
         );
     }
 
@@ -346,8 +343,7 @@ mod tests {
         let err = m.as_generic_secret_bytes().unwrap_err();
         assert!(
             matches!(err, Error::NotImplemented { phase: 2 }),
-            "expected NotImplemented{{phase:2}} from as_generic_secret_bytes on X509Cert, got {:?}",
-            err
+            "expected NotImplemented{{phase:2}} from as_generic_secret_bytes on X509Cert, got {err:?}"
         );
     }
 
@@ -359,13 +355,11 @@ mod tests {
         let s = serde_json::to_string(&m).unwrap();
         assert!(
             s.contains("\"type\":\"x509_cert\""),
-            "serde tag must be snake_case: {}",
-            s
+            "serde tag must be snake_case: {s}"
         );
         assert!(
             s.contains("\"bytes\":\""),
-            "X509Cert.bytes must serialize as base64 string: {}",
-            s
+            "X509Cert.bytes must serialize as base64 string: {s}"
         );
         let back: Material = serde_json::from_str(&s).unwrap();
         assert_eq!(m, back);
@@ -376,9 +370,9 @@ mod tests {
         let m = Material::X509Cert {
             bytes: vec![0xAA; 42],
         };
-        let dbg = format!("{:?}", m);
+        let dbg = format!("{m:?}");
         assert_eq!(dbg, "X509Cert([REDACTED 42 bytes])");
-        assert!(!dbg.contains("aa"), "Debug leaked byte sequence: {}", dbg);
+        assert!(!dbg.contains("aa"), "Debug leaked byte sequence: {dbg}");
     }
 
     #[test]
@@ -410,7 +404,7 @@ mod tests {
                 assert_eq!(variant, "generic_secret");
                 assert_eq!(reason, "accessor called on wrong variant");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -431,13 +425,11 @@ mod tests {
         let s = serde_json::to_string(&m).unwrap();
         assert!(
             s.contains("\"type\":\"pgp_key\""),
-            "serde tag must be snake_case: {}",
-            s
+            "serde tag must be snake_case: {s}"
         );
         assert!(
             s.contains("\"bytes\":\""),
-            "PgpKey.bytes must serialize as base64 string: {}",
-            s
+            "PgpKey.bytes must serialize as base64 string: {s}"
         );
         let back: Material = serde_json::from_str(&s).unwrap();
         assert_eq!(m, back);
@@ -448,12 +440,11 @@ mod tests {
         let m = Material::PgpKey {
             bytes: vec![0xAA; 42],
         };
-        let dbg = format!("{:?}", m);
+        let dbg = format!("{m:?}");
         assert_eq!(dbg, "PgpKey([REDACTED 42 bytes])");
         assert!(
             !dbg.to_lowercase().contains("aa"),
-            "Debug leaked byte sequence: {}",
-            dbg
+            "Debug leaked byte sequence: {dbg}"
         );
     }
 
@@ -477,7 +468,7 @@ mod tests {
                 assert_eq!(variant, "generic_secret");
                 assert_eq!(reason, "accessor called on wrong variant");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -499,7 +490,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "accessor called on wrong variant");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -515,13 +506,11 @@ mod tests {
         let s = serde_json::to_string(&m).unwrap();
         assert!(
             s.contains("\"type\":\"ssh_key\""),
-            "serde tag must be snake_case: {}",
-            s
+            "serde tag must be snake_case: {s}"
         );
         assert!(
             s.contains("\"bytes\":\""),
-            "SshKey.bytes must serialize as base64 string: {}",
-            s
+            "SshKey.bytes must serialize as base64 string: {s}"
         );
         let back: Material = serde_json::from_str(&s).unwrap();
         assert_eq!(m, back);
@@ -532,12 +521,11 @@ mod tests {
         let m = Material::SshKey {
             bytes: vec![0xCD; 42],
         };
-        let dbg = format!("{:?}", m);
+        let dbg = format!("{m:?}");
         assert_eq!(dbg, "SshKey([REDACTED 42 bytes])");
         assert!(
             !dbg.to_lowercase().contains("cd"),
-            "Debug leaked byte sequence: {}",
-            dbg
+            "Debug leaked byte sequence: {dbg}"
         );
     }
 
@@ -561,7 +549,7 @@ mod tests {
                 assert_eq!(variant, "generic_secret");
                 assert_eq!(reason, "accessor called on wrong variant");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -583,7 +571,7 @@ mod tests {
                 assert_eq!(variant, "pgp_key");
                 assert_eq!(reason, "accessor called on wrong variant");
             }
-            other => panic!("expected InvalidMaterial, got {:?}", other),
+            other => panic!("expected InvalidMaterial, got {other:?}"),
         }
     }
 
@@ -609,34 +597,30 @@ mod tests {
                 limit: 65536
             }
         ));
-        let disp = format!("{}", err);
+        let disp = format!("{err}");
         assert!(
             disp.contains("65537"),
-            "error Display must contain actual size, got: {}",
-            disp
+            "error Display must contain actual size, got: {disp}"
         );
         assert!(
             disp.contains("65536"),
-            "error Display must contain 65536 cap, got: {}",
-            disp
+            "error Display must contain 65536 cap, got: {disp}"
         );
     }
 
     #[test]
     fn envelope_debug_redacts_material_bytes() {
         let e = sample_envelope();
-        let dbg = format!("{:?}", e);
+        let dbg = format!("{e:?}");
         assert!(
             dbg.contains("REDACTED"),
-            "Envelope Debug must redact Material bytes, got: {}",
-            dbg
+            "Envelope Debug must redact Material bytes, got: {dbg}"
         );
         // 4 bytes [0,1,2,3] are short but MATCH patterns like "00010203" would not appear;
         // strong check: no raw hex sequence of the material appears
         assert!(
             !dbg.contains("00010203"),
-            "Envelope Debug leaked material bytes: {}",
-            dbg
+            "Envelope Debug leaked material bytes: {dbg}"
         );
     }
 }

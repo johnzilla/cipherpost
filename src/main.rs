@@ -23,7 +23,7 @@ fn run() -> i32 {
                 eprintln!("{}", user_message(ce));
                 exit_code(ce)
             } else {
-                eprintln!("{}", e);
+                eprintln!("{e}");
                 1
             };
             code
@@ -52,8 +52,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 let id = cipherpost::identity::generate(pw.as_secret())?;
                 let (openssh, z32) = cipherpost::identity::show_fingerprints(&id);
                 eprintln!("Generated identity:");
-                eprintln!("  {}", openssh);
-                eprintln!("  {}", z32);
+                eprintln!("  {openssh}");
+                eprintln!("  {z32}");
                 Ok(())
             }
             IdentityCmd::Show {
@@ -72,8 +72,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 )?;
                 let id = cipherpost::identity::load(pw.as_secret())?;
                 let (openssh, z32) = cipherpost::identity::show_fingerprints(&id);
-                println!("{}", openssh);
-                println!("{}", z32);
+                println!("{openssh}");
+                println!("{z32}");
                 Ok(())
             }
         },
@@ -234,7 +234,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 burn,       // Phase 8 Plan 03: wired (was hardcoded `false` in Plan 02).
             )?;
 
-            println!("{}", uri);
+            println!("{uri}");
             Ok(())
         }
         Command::Receive {
@@ -267,11 +267,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             match cipherpost::flow::check_already_consumed(&uri.share_ref_hex) {
                 cipherpost::flow::LedgerState::None => { /* proceed */ }
                 cipherpost::flow::LedgerState::Accepted { accepted_at } => {
-                    eprintln!("already accepted at {}; not re-decrypting", accepted_at);
+                    eprintln!("already accepted at {accepted_at}; not re-decrypting");
                     return Ok(());
                 }
                 cipherpost::flow::LedgerState::Burned { burned_at } => {
-                    eprintln!("share already consumed (burned at {})", burned_at);
+                    eprintln!("share already consumed (burned at {burned_at})");
                     return Err(cipherpost::Error::Declined.into());
                 }
             }

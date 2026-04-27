@@ -46,7 +46,7 @@ fn x509_cert_happy_der_produces_x509_variant() {
                 "stored bytes must equal input DER (canonical-DER invariant)"
             );
         }
-        other => panic!("expected X509Cert variant, got {:?}", other),
+        other => panic!("expected X509Cert variant, got {other:?}"),
     }
 }
 
@@ -61,7 +61,7 @@ fn x509_cert_happy_pem_normalizes_to_der() {
                 "PEM ingest must normalize to ORIGINAL DER (not the PEM bytes)"
             );
         }
-        other => panic!("expected X509Cert variant, got {:?}", other),
+        other => panic!("expected X509Cert variant, got {other:?}"),
     }
 }
 
@@ -73,7 +73,7 @@ fn x509_cert_happy_pem_with_crlf_line_endings() {
         Material::X509Cert { bytes } => {
             assert_eq!(bytes, FIXTURE_DER);
         }
-        other => panic!("expected X509Cert, got {:?}", other),
+        other => panic!("expected X509Cert, got {other:?}"),
     }
 }
 
@@ -85,7 +85,7 @@ fn x509_cert_malformed_der_rejected_with_generic_reason() {
             assert_eq!(variant, "x509_cert");
             assert_eq!(reason, "malformed DER");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -99,7 +99,7 @@ fn x509_cert_trailing_bytes_rejected() {
             assert_eq!(variant, "x509_cert");
             assert_eq!(reason, "trailing bytes after certificate");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -123,7 +123,7 @@ fn x509_cert_pem_with_trailing_second_cert_rejected() {
             assert_eq!(variant, "x509_cert");
             assert_eq!(reason, "trailing bytes after certificate");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -140,7 +140,7 @@ fn x509_cert_pem_with_trailing_junk_rejected() {
             assert_eq!(variant, "x509_cert");
             assert_eq!(reason, "trailing bytes after certificate");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -156,7 +156,7 @@ fn x509_cert_pem_with_trailing_whitespace_accepted() {
     let m = ingest::x509_cert(&pem).expect("trailing whitespace must be tolerated");
     match m {
         Material::X509Cert { bytes } => assert_eq!(bytes, FIXTURE_DER),
-        other => panic!("expected X509Cert, got {:?}", other),
+        other => panic!("expected X509Cert, got {other:?}"),
     }
 }
 
@@ -172,11 +172,10 @@ fn x509_cert_pem_body_garbage_rejected() {
             // Plan 01's ingest returns "PEM body decode failed" for this case.
             assert!(
                 reason == "PEM body decode failed" || reason == "malformed DER",
-                "expected generic PEM/DER decode reason, got: {}",
-                reason
+                "expected generic PEM/DER decode reason, got: {reason}"
             );
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -195,7 +194,7 @@ fn x509_cert_accessor_wrong_variant_returns_invalid_material() {
             assert_eq!(variant, "generic_secret");
             assert_eq!(reason, "accessor called on wrong variant");
         }
-        other => panic!("expected InvalidMaterial, got {:?}", other),
+        other => panic!("expected InvalidMaterial, got {other:?}"),
     }
 }
 
@@ -212,7 +211,7 @@ fn x509_cert_error_display_contains_no_parser_internals() {
             .unwrap_err(),
     ];
     for err in errors {
-        let disp = format!("{}", err);
+        let disp = format!("{err}");
         for forbidden in &[
             "X509Error",
             "parse error at",
@@ -226,9 +225,7 @@ fn x509_cert_error_display_contains_no_parser_internals() {
         ] {
             assert!(
                 !disp.contains(forbidden),
-                "Error::InvalidMaterial Display leaked parser internal '{}': full display = {}",
-                forbidden,
-                disp
+                "Error::InvalidMaterial Display leaked parser internal '{forbidden}': full display = {disp}"
             );
         }
     }

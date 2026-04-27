@@ -15,8 +15,7 @@ fn no_direct_aead_imports() {
     walk(Path::new("src"), &mut violations);
     assert!(
         violations.is_empty(),
-        "direct AEAD imports found (must go through age API): {:?}",
-        violations
+        "direct AEAD imports found (must go through age API): {violations:?}"
     );
 }
 

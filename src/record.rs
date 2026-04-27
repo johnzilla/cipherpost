@@ -83,7 +83,7 @@ pub fn share_ref_from_bytes(ciphertext: &[u8], created_at: i64) -> String {
     let digest = hasher.finalize();
     let mut out = String::with_capacity(SHARE_REF_HEX_LEN);
     for b in &digest[..SHARE_REF_BYTES] {
-        out.push_str(&format!("{:02x}", b));
+        out.push_str(&format!("{b:02x}"));
     }
     debug_assert_eq!(out.len(), SHARE_REF_HEX_LEN);
     out
@@ -97,7 +97,7 @@ fn jcs(value: &impl Serialize) -> Result<Vec<u8>, Error> {
     let mut ser = serde_json::Serializer::with_formatter(&mut buf, CanonicalFormatter::new());
     value
         .serialize(&mut ser)
-        .map_err(|e| Error::Config(format!("jcs: {}", e)))?;
+        .map_err(|e| Error::Config(format!("jcs: {e}")))?;
     Ok(buf)
 }
 
@@ -236,6 +236,6 @@ mod tests {
         let err = verify_record(&record).unwrap_err();
         assert!(matches!(err, Error::SignatureInner));
         // D-16: Display is unified across all signature variants
-        assert_eq!(format!("{}", err), "signature verification failed");
+        assert_eq!(format!("{err}"), "signature verification failed");
     }
 }

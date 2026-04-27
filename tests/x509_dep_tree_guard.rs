@@ -32,8 +32,7 @@ fn dep_tree_contains_no_ring() {
         let stripped = line.trim_start_matches(['├', '└', '─', '│', ' ']);
         assert!(
             !stripped.starts_with("ring v"),
-            "FORBIDDEN: `ring` crate present in dep tree — X509-parser's `verify` feature or another dep leaked it.\nFull tree:\n{}",
-            tree
+            "FORBIDDEN: `ring` crate present in dep tree — X509-parser's `verify` feature or another dep leaked it.\nFull tree:\n{tree}"
         );
     }
 }
@@ -47,8 +46,7 @@ fn dep_tree_contains_no_aws_lc() {
             !stripped.starts_with("aws-lc v")
                 && !stripped.starts_with("aws-lc-sys v")
                 && !stripped.starts_with("aws-lc-rs v"),
-            "FORBIDDEN: `aws-lc` family crate present in dep tree.\nFull tree:\n{}",
-            tree
+            "FORBIDDEN: `aws-lc` family crate present in dep tree.\nFull tree:\n{tree}"
         );
     }
 }
@@ -71,8 +69,7 @@ fn dep_tree_contains_x509_parser_0_16_x() {
     let first_line = stdout.lines().next().expect("cargo tree output non-empty");
     assert!(
         first_line.starts_with("x509-parser v0.16."),
-        "Expected x509-parser v0.16.x (not 0.17, not 0.18), got: {:?}",
-        first_line
+        "Expected x509-parser v0.16.x (not 0.17, not 0.18), got: {first_line:?}"
     );
 }
 
@@ -96,8 +93,7 @@ fn dep_tree_contains_pgp_0_19_x() {
     let first_line = stdout.lines().next().expect("non-empty cargo tree output");
     assert!(
         first_line.starts_with("pgp v0.19."),
-        "Expected pgp v0.19.x (not 0.18, not 0.20), got: {:?}",
-        first_line
+        "Expected pgp v0.19.x (not 0.18, not 0.20), got: {first_line:?}"
     );
 }
 
@@ -125,9 +121,7 @@ fn dep_tree_ed25519_dalek_coexistence_shape() {
     for line in stdout.lines() {
         if let Some(start) = line.find("ed25519-dalek v") {
             let rest = &line[start + "ed25519-dalek v".len()..];
-            let end = rest
-                .find(|c: char| c == ' ' || c == '\n' || c == '(')
-                .unwrap_or(rest.len());
+            let end = rest.find([' ', '\n', '(']).unwrap_or(rest.len());
             versions.insert(rest[..end].to_string());
         }
     }
@@ -137,13 +131,11 @@ fn dep_tree_ed25519_dalek_coexistence_shape() {
 
     assert!(
         has_2x,
-        "ed25519-dalek 2.x (from pgp 0.19.0 transitive) must be present, got versions: {:?}",
-        versions
+        "ed25519-dalek 2.x (from pgp 0.19.0 transitive) must be present, got versions: {versions:?}"
     );
     assert!(
         has_3_0_0_pre5,
-        "ed25519-dalek =3.0.0-pre.5 (from pkarr) must be present, got versions: {:?}",
-        versions
+        "ed25519-dalek =3.0.0-pre.5 (from pkarr) must be present, got versions: {versions:?}"
     );
     assert!(
         versions.len() <= 2,
@@ -176,8 +168,7 @@ fn dep_tree_contains_ssh_key_0_6_x() {
     let first_line = stdout.lines().next().expect("non-empty cargo tree output");
     assert!(
         first_line.starts_with("ssh-key v0.6."),
-        "Expected ssh-key v0.6.x (not 0.7, not 0.5), got: {:?}",
-        first_line
+        "Expected ssh-key v0.6.x (not 0.7, not 0.5), got: {first_line:?}"
     );
 }
 
@@ -205,9 +196,7 @@ fn dep_tree_ssh_key_does_not_pull_ed25519_dalek_2_x_independently() {
     for line in tree.lines() {
         if let Some(start) = line.find("ed25519-dalek v") {
             let rest = &line[start + "ed25519-dalek v".len()..];
-            let end = rest
-                .find(|c: char| c == ' ' || c == '\n' || c == '(')
-                .unwrap_or(rest.len());
+            let end = rest.find([' ', '\n', '(']).unwrap_or(rest.len());
             versions.insert(rest[..end].to_string());
         }
     }

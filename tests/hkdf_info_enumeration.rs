@@ -29,8 +29,7 @@ fn all_hkdf_info_strings_are_versioned_and_distinct() {
         assert!(!info.is_empty(), "empty HKDF info string found");
         assert!(
             info.starts_with("cipherpost/v1/"),
-            "HKDF info {:?} does not start with cipherpost/v1/",
-            info
+            "HKDF info {info:?} does not start with cipherpost/v1/"
         );
     }
     let mut sorted = infos.clone();
@@ -39,8 +38,7 @@ fn all_hkdf_info_strings_are_versioned_and_distinct() {
     assert_eq!(
         sorted.len(),
         infos.len(),
-        "duplicate HKDF info strings found: {:?}",
-        infos
+        "duplicate HKDF info strings found: {infos:?}"
     );
 }
 

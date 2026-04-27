@@ -150,11 +150,10 @@ fn pin_required_share_with_wrong_pin_at_receive() {
     .unwrap_err();
     assert!(
         matches!(err, Error::DecryptFailed),
-        "wrong PIN must yield DecryptFailed; got {:?}",
-        err
+        "wrong PIN must yield DecryptFailed; got {err:?}"
     );
     assert_eq!(
-        format!("{}", err),
+        format!("{err}"),
         "wrong passphrase or identity decryption failed"
     );
     assert_eq!(cipherpost::error::exit_code(&err), 4);
@@ -260,8 +259,7 @@ fn pin_required_share_with_no_pin_at_receive() {
     // Assertion 1+2: prompt_pin non-TTY rejection -> Error::Config -> exit 1.
     assert!(
         matches!(err, Error::Config(_)),
-        "no-PIN-at-receive must yield Error::Config (non-TTY rejection); got {:?}",
-        err
+        "no-PIN-at-receive must yield Error::Config (non-TTY rejection); got {err:?}"
     );
     assert_eq!(
         cipherpost::error::exit_code(&err),
@@ -275,8 +273,7 @@ fn pin_required_share_with_no_pin_at_receive() {
         let ledger = std::fs::read_to_string(&ledger_path).unwrap();
         assert!(
             !ledger.contains(&share_ref),
-            "no-PIN-at-receive must NOT write a ledger row; ledger contains share_ref: {}",
-            ledger
+            "no-PIN-at-receive must NOT write a ledger row; ledger contains share_ref: {ledger}"
         );
     }
     let sentinel_path = dir.path().join("state").join("accepted").join(&share_ref);
@@ -295,7 +292,6 @@ fn pin_required_share_with_no_pin_at_receive() {
         .count();
     assert_eq!(
         receipt_count, 0,
-        "no-PIN-at-receive must NOT publish a receipt; got {} receipts for share_ref",
-        receipt_count
+        "no-PIN-at-receive must NOT publish a receipt; got {receipt_count} receipts for share_ref"
     );
 }

@@ -44,7 +44,7 @@ fn regenerate_fixture() {
     let bytes = serde_json_jcs(&fixture_signable());
     std::fs::create_dir_all("tests/fixtures").unwrap();
     std::fs::write(FIXTURE_PATH, bytes).unwrap();
-    println!("Fixture written to {}", FIXTURE_PATH);
+    println!("Fixture written to {FIXTURE_PATH}");
 }
 
 fn serde_json_jcs<T: serde::Serialize>(v: &T) -> Vec<u8> {

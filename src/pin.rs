@@ -36,10 +36,7 @@ fn pin_argon2_params() -> Params {
 
 /// Helper: map any error into Error::Crypto with a leak-safe wrapper.
 fn str_err(s: impl std::fmt::Display) -> Error {
-    Error::Crypto(Box::new(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        s.to_string(),
-    )))
+    Error::Crypto(Box::new(std::io::Error::other(s.to_string())))
 }
 
 /// Derive a 32-byte X25519 scalar from a PIN and a 32-byte salt.
@@ -69,7 +66,7 @@ pub fn pin_derive_key(
     let hk = Hkdf::<Sha256>::new(Some(salt), &argon_out[..]);
     let mut okm = Zeroizing::new([0u8; 32]);
     hk.expand(hkdf_infos::PIN.as_bytes(), &mut okm[..])
-        .map_err(|e| str_err(format!("hkdf expand: {}", e)))?;
+        .map_err(|e| str_err(format!("hkdf expand: {e}")))?;
     Ok(okm)
 }
 
@@ -127,7 +124,7 @@ pub fn validate_pin(pin: &str) -> Result<(), Error> {
     }
 
     let lower = pin.to_lowercase();
-    if PIN_BLOCKLIST.iter().any(|b| *b == lower.as_str()) {
+    if PIN_BLOCKLIST.contains(&lower.as_str()) {
         return Err(Error::Config(REJECT.to_string()));
     }
 
@@ -185,7 +182,7 @@ pub fn prompt_pin(confirm: bool) -> Result<SecretBox<String>, Error> {
     }
     let pin: String = builder
         .interact()
-        .map_err(|e| Error::Config(format!("PIN prompt failed: {}", e)))?;
+        .map_err(|e| Error::Config(format!("PIN prompt failed: {e}")))?;
 
     validate_pin(&pin)?;
     Ok(SecretBox::new(Box::new(pin)))

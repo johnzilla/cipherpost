@@ -6,7 +6,7 @@ const VALID_Z32: &str = "yhigci4xwmadibrmj8wzmf45f3i8xg8mht9abnprq3r5cfxihj8y"; 
 const VALID_HEX: &str = "0123456789abcdef0123456789abcdef"; // 32 chars lowercase
 
 fn valid_uri() -> String {
-    format!("{}{}/{}", SHARE_URI_SCHEME, VALID_Z32, VALID_HEX)
+    format!("{SHARE_URI_SCHEME}{VALID_Z32}/{VALID_HEX}")
 }
 
 #[test]
@@ -23,11 +23,10 @@ fn parse_rejects_bare_z32_with_hint_message() {
         cipherpost::Error::InvalidShareUri(reason) => {
             assert!(
                 reason.contains("cipherpost://") || reason.contains("bare pubkey"),
-                "bare-z32 rejection should include a hint, got: {}",
-                reason
+                "bare-z32 rejection should include a hint, got: {reason}"
             );
         }
-        other => panic!("expected InvalidShareUri, got {:?}", other),
+        other => panic!("expected InvalidShareUri, got {other:?}"),
     }
 }
 
@@ -42,7 +41,7 @@ fn parse_rejects_wrong_length_z32() {
 
 #[test]
 fn parse_rejects_wrong_length_hex() {
-    let too_short = format!("cipherpost://{}/deadbeef", VALID_Z32);
+    let too_short = format!("cipherpost://{VALID_Z32}/deadbeef");
     assert!(matches!(
         ShareUri::parse(&too_short).unwrap_err(),
         cipherpost::Error::InvalidShareUri(_)
@@ -63,7 +62,7 @@ fn parse_rejects_uppercase_hex() {
 
 #[test]
 fn parse_rejects_missing_slash_separator() {
-    let bad = format!("cipherpost://{}{}", VALID_Z32, VALID_HEX);
+    let bad = format!("cipherpost://{VALID_Z32}{VALID_HEX}");
     assert!(matches!(
         ShareUri::parse(&bad).unwrap_err(),
         cipherpost::Error::InvalidShareUri(_)
@@ -72,7 +71,7 @@ fn parse_rejects_missing_slash_separator() {
 
 #[test]
 fn parse_rejects_trailing_query() {
-    let bad = format!("cipherpost://{}/{}?foo=bar", VALID_Z32, VALID_HEX);
+    let bad = format!("cipherpost://{VALID_Z32}/{VALID_HEX}?foo=bar");
     assert!(matches!(
         ShareUri::parse(&bad).unwrap_err(),
         cipherpost::Error::InvalidShareUri(_)

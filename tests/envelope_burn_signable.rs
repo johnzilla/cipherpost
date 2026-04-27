@@ -71,8 +71,7 @@ fn envelope_burn_false_elides_field() {
     let s = std::str::from_utf8(&bytes).unwrap();
     assert!(
         !s.contains("burn_after_read"),
-        "burn_after_read=false MUST elide on the wire (is_false skip); got: {}",
-        s
+        "burn_after_read=false MUST elide on the wire (is_false skip); got: {s}"
     );
 }
 

@@ -17,13 +17,12 @@ fn identity_debug_does_not_leak_bytes() {
     let pw = SecretBox::new(Box::new("passphrase123".to_string()));
     let id = cipherpost::identity::generate(&pw).unwrap();
 
-    let debug_str = format!("{:?}", id);
+    let debug_str = format!("{id:?}");
 
     // Must contain the REDACTED marker.
     assert!(
         debug_str.contains("REDACTED"),
-        "Debug impl must show [REDACTED], got: {:?}",
-        debug_str
+        "Debug impl must show [REDACTED], got: {debug_str:?}"
     );
 
     // Must not contain any 8-byte window of the secret key in hex.
@@ -31,14 +30,12 @@ fn identity_debug_does_not_leak_bytes() {
     for win in secret_bytes.windows(8) {
         let hex: String = win.iter().fold(String::new(), |mut s, b| {
             use std::fmt::Write;
-            let _ = write!(s, "{:02x}", b);
+            let _ = write!(s, "{b:02x}");
             s
         });
         assert!(
             !debug_str.contains(&hex),
-            "Debug leak: seed bytes {:?} found in format!({{:?}}, identity). Full debug: {:?}",
-            hex,
-            debug_str
+            "Debug leak: seed bytes {hex:?} found in format!({{:?}}, identity). Full debug: {debug_str:?}"
         );
     }
 }
@@ -47,16 +44,14 @@ fn identity_debug_does_not_leak_bytes() {
 fn passphrase_debug_does_not_leak() {
     let pass =
         cipherpost::identity::Passphrase::from_string("my-correct-horse-battery".to_string());
-    let debug_str = format!("{:?}", pass);
+    let debug_str = format!("{pass:?}");
     assert!(
         !debug_str.contains("my-correct-horse-battery"),
-        "Passphrase leaked in Debug: {:?}",
-        debug_str
+        "Passphrase leaked in Debug: {debug_str:?}"
     );
     assert!(
         debug_str.contains("REDACTED") || debug_str.contains("Secret"),
-        "Debug impl should show [REDACTED] or Secret, got: {:?}",
-        debug_str
+        "Debug impl should show [REDACTED] or Secret, got: {debug_str:?}"
     );
 }
 
@@ -71,17 +66,15 @@ fn passphrase_debug_does_not_leak() {
 fn material_generic_secret_debug_redacts_bytes() {
     use cipherpost::payload::Material;
     let m = Material::generic_secret(vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE]);
-    let dbg = format!("{:?}", m);
+    let dbg = format!("{m:?}");
     assert!(
         dbg.contains("REDACTED"),
-        "GenericSecret Debug must show REDACTED, got: {:?}",
-        dbg
+        "GenericSecret Debug must show REDACTED, got: {dbg:?}"
     );
     // No 8-byte window of the input in hex (the input is exactly 8 bytes).
     assert!(
         !dbg.contains("deadbeefcafebabe"),
-        "GenericSecret Debug leaked bytes: {:?}",
-        dbg
+        "GenericSecret Debug leaked bytes: {dbg:?}"
     );
 }
 
@@ -91,16 +84,14 @@ fn material_x509_cert_debug_redacts_bytes() {
     let m = Material::X509Cert {
         bytes: vec![0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A],
     };
-    let dbg = format!("{:?}", m);
+    let dbg = format!("{m:?}");
     assert!(
         dbg.contains("REDACTED"),
-        "X509Cert Debug must show REDACTED, got: {:?}",
-        dbg
+        "X509Cert Debug must show REDACTED, got: {dbg:?}"
     );
     assert!(
         !dbg.contains("abcdef123456789a"),
-        "X509Cert Debug leaked bytes: {:?}",
-        dbg
+        "X509Cert Debug leaked bytes: {dbg:?}"
     );
 }
 
@@ -114,16 +105,14 @@ fn material_ssh_key_debug_redacts_bytes() {
     let m = Material::SshKey {
         bytes: vec![0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB],
     };
-    let dbg = format!("{:?}", m);
+    let dbg = format!("{m:?}");
     assert!(
         dbg.contains("REDACTED"),
-        "SshKey Debug must show REDACTED, got: {:?}",
-        dbg
+        "SshKey Debug must show REDACTED, got: {dbg:?}"
     );
     assert!(
         !dbg.contains("cdef0123456789ab"),
-        "SshKey Debug leaked bytes: {:?}",
-        dbg
+        "SshKey Debug leaked bytes: {dbg:?}"
     );
 }
 
@@ -137,16 +126,14 @@ fn material_pgp_key_debug_redacts_bytes() {
     let m = Material::PgpKey {
         bytes: vec![0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A],
     };
-    let dbg = format!("{:?}", m);
+    let dbg = format!("{m:?}");
     assert!(
         dbg.contains("REDACTED"),
-        "PgpKey Debug must show REDACTED, got: {:?}",
-        dbg
+        "PgpKey Debug must show REDACTED, got: {dbg:?}"
     );
     assert!(
         !dbg.contains("abcdef123456789a"),
-        "PgpKey Debug leaked bytes: {:?}",
-        dbg
+        "PgpKey Debug leaked bytes: {dbg:?}"
     );
 }
 
@@ -164,11 +151,10 @@ fn pin_secret_box_debug_redacts() {
     // default on Debug — assert no PIN bytes leak.
     use secrecy::SecretBox;
     let pin: SecretBox<String> = SecretBox::new(Box::new("validpin1".to_string()));
-    let dbg = format!("{:?}", pin);
+    let dbg = format!("{pin:?}");
     assert!(
         !dbg.contains("validpin1"),
-        "SecretBox<String> Debug leaked PIN bytes: {}",
-        dbg
+        "SecretBox<String> Debug leaked PIN bytes: {dbg}"
     );
 }
 
@@ -183,7 +169,7 @@ fn pin_zeroizing_key_buffer_debug_does_not_panic() {
     // documents the invariant and asserts the wrapper itself does not
     // crash on Debug-format.
     let z: zeroize::Zeroizing<[u8; 32]> = zeroize::Zeroizing::new([0xAA_u8; 32]);
-    let _ = format!("{:?}", z);
+    let _ = format!("{z:?}");
     // No crash; src/pin.rs has no #[derive(Debug)] on any struct (verified
     // by the absence of `derive(Debug)` in src/pin.rs — pin_derive_key is
     // a free function returning Zeroizing<[u8; 32]> directly).
