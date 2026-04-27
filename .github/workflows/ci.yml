@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@1.88
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@1.88
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -54,7 +54,11 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
-      - run: cargo audit --deny warnings
+      # RUSTSEC-2023-0071 (Marvin Attack on rsa 0.9) is ignored project-wide —
+      # cipherpost uses pgp 0.19 for parse/render only, not for RSA private-key
+      # ops. Rationale + parsing-only invariant documented in deny.toml.
+      # cargo-audit doesn't read deny.toml, so we mirror the ignore inline.
+      - run: cargo audit --deny warnings --ignore RUSTSEC-2023-0071
 
   deny:
     name: cargo deny check

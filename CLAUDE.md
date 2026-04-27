@@ -20,6 +20,10 @@ cargo deny check                       # CI-enforced supply-chain policy
 
 CI runs all of the above plus `lychee` link-check across `SPEC.md`, `THREAT-MODEL.md`, `SECURITY.md`, and `README.md`. The binary is a plain `fn main()` — there is no `tokio` dependency at the cipherpost layer (uses `pkarr::ClientBlocking`).
 
+**MSRV: rust 1.88** (matched by `rust-toolchain.toml` and `.github/workflows/ci.yml`). Bumped from 1.85 at v1.1 close to resolve RUSTSEC-2026-0009 (`time 0.3.41` → `0.3.47` DoS-via-stack-exhaustion fix), which required rustc 1.88. Cipherpost is a binary CLI — MSRV constraints from downstream library consumers do not apply.
+
+**Pre-push hook.** Every clone runs the full CI gauntlet locally before a push reaches GitHub via `bash scripts/setup-hooks.sh` (one-time per clone). The hook lives at `.githooks/pre-push` and mirrors `.github/workflows/ci.yml` job-for-job. GitHub Actions minutes are not free; this hook keeps them spent only on green builds. Escape hatches: `git push --no-verify` for the whole hook, or `CIPHERPOST_SKIP_NEXTEST=1 git push` for individual gates.
+
 ## What Cipherpost is
 
 A self-sovereign, serverless, accountless CLI for handing off cryptographic material (private keys, certs, credentials, API tokens, passphrases) between parties. Positioned in the whitespace between generic secret-sharing apps (Bitwarden Send, 1Password Sharing, SendSafely) and enterprise KMS platforms. The defensible combination is: **no server + accountless + attestation primitives + purpose-built for cryptographic material**.
