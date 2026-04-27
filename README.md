@@ -1,6 +1,6 @@
 # cipherpost
 
-**Status: v1.0 Walking Skeleton shipped (2026-04-22).** 4 phases · 15 plans · 86 tests green · 49/49 requirements validated.
+**Status: v1.1 Real v1 shipped (2026-04-26).** Cumulative: 9 phases · 39 plans · 311 tests green under `cargo test --features mock` · 116/116 requirements validated. Previously: v1.0 Walking Skeleton (2026-04-22).
 
 Cipherpost is a self-sovereign, serverless, accountless CLI for cryptographic-material handoff over Mainline DHT via PKARR. Hand off a key, certificate, or secret to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
 
@@ -8,7 +8,7 @@ Cipherpost is a self-sovereign, serverless, accountless CLI for cryptographic-ma
 - **Key is identity.** Ed25519/PKARR keypair, passphrase-wrapped on disk (Argon2id + HKDF-SHA256 + `cipherpost/v1/<context>` domain separation).
 - **Ciphertext only on the wire.** Payload and metadata both encrypted; the DHT sees only opaque blobs.
 - **Signed receipts.** Recipient publishes a signed receipt to the DHT on pickup; the sender can independently verify delivery without a central log.
-- **Walking skeleton scope:** generic-secret payloads over `--self` and `--share <pubkey>`. Typed payload types (X.509 / PGP / SSH), `--pin` / `--burn` modes, and the TUI are deferred to a later milestone.
+- **Full PRD v1 scope shipped (v1.1):** typed payloads (`Material::GenericSecret`, `Material::X509Cert`, `Material::PgpKey`, `Material::SshKey`); `--pin` second-factor encryption (Argon2id+HKDF→X25519→age, no direct chacha20poly1305 calls); `--burn` single-consumption mode with emit-before-mark state ledger; non-interactive automation via `--passphrase-file` / `--passphrase-fd`; CAS-protected concurrent receipt publication with retry-and-merge contract. TUI wizard, non-interactive PIN input, and destruction attestation deferred to v1.2+.
 
 ## Quick start
 
@@ -100,19 +100,20 @@ Full taxonomy in [SPEC.md § Exit Codes](./SPEC.md#6-exit-codes).
 - [`SECURITY.md`](./SECURITY.md) — Vulnerability disclosure policy (GitHub Security Advisory, 90-day embargo)
 - [`cipherpost-prd.md`](./cipherpost-prd.md) — Original product requirements document
 
-All three protocol documents ship as **drafts** from the walking-skeleton milestone — wire-format decisions are stable, editorial polish is scheduled for a later milestone.
+All three protocol documents are kept current through v1.1 — wire-format decisions are stable (v1.0 fixtures byte-identical; v1.1 added pin/burn fields preserving v1.0 byte-shape via `is_false` skip-serializing-if). Editorial polish across the full v1.x scope continues.
 
 ## Architecture lineage
 
 Cipherpost is a fork-and-diverge from mothballed [`cclink`](https://github.com/johnzilla/cclink) focused on keyshare workflows. Crypto and transport primitives (Ed25519/PKARR, age, Mainline DHT, Argon2id KDF, dual signatures) were vendored unchanged; the delta is at the payload and flow layer: typed payload schema, explicit acceptance step, signed receipt.
 
-## Known limitations in v1.0
+## Known limitations in v1.1
 
-- Real-DHT cross-identity round trip is documented tech debt — MockTransport exercises the full code path but the two-identity A→B→receipt flow across separate processes over Mainline DHT is pending a future release-acceptance test.
-- `serde_canonical_json` transitively resolved to 1.0.0 (planned 0.2; API matches). `pkarr` resolved to 5.0.4 (pinned 5.0.3). PKARR wire-budget measured at 550 bytes (planned 600).
-- Only `Material::GenericSecret` is implemented. `X509Cert`, `PgpKey`, `SshKey` variants are schema-reserved and return `unimplemented` — targeted for the next milestone.
-- `--pin` and `--burn` encryption modes are not implemented — targeted for the next milestone.
-- No TUI. CLI-only in this milestone.
+- **Wire-budget ceiling for typed Material.** Realistic X.509 / PGP / SSH keys exceed the 1000-byte PKARR BEP44 ceiling; `Material::GenericSecret` payloads above ~550 bytes also exceed it. Round-trip tests for realistic typed inputs are `#[ignore]`'d behind positive `Error::WireBudgetExceeded` clean-error pins. Two-tier storage / chunking / out-of-band escape hatch is targeted for v1.2+ (see [`SPEC.md` §Pitfall #22](./SPEC.md)).
+- **Real-DHT cross-identity round trip is manual-only.** The cross-identity Mainline-DHT round trip exists at `tests/real_dht_e2e.rs` behind a triple-gate (`#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` + `#[serial]`). CI never enables the feature. Per-release execution via [`RELEASE-CHECKLIST.md`](./RELEASE-CHECKLIST.md) is the only gate.
+- **No TUI.** CLI + non-interactive automation cover v1.x use cases.
+- **Non-interactive PIN input deferred.** PIN is intentionally human-in-the-loop second factor in v1.x. `--pin-file` / `--pin-fd` deferred to v1.2+ pending concrete automation use case.
+- **Destruction attestation not implemented.** Originally PRD v1.1; shifted to v1.2+ because v1.1 filled with PRD-closure scope. `--burn` is local-state-only (DHT ciphertext survives until TTL).
+- **No identity import.** `cipherpost identity generate` is the only path; importing existing Ed25519 / SSH / age keys (`cipherpost identity import`) is planned for a future release.
 
 ## License
 

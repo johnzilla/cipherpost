@@ -42,7 +42,7 @@ The file contains your Ed25519 seed encrypted with an Argon2id-derived key from 
   
 <summary>Can I use an existing Ed25519 / SSH / age keypair with Cipherpost?</summary>
 
-**Not yet** (v1.0).
+**Not yet** (as of v1.1).
 
 Cipherpost currently only works with identities it generates itself (`cipherpost identity generate`). This guarantees correct passphrase wrapping, domain separation, and security parameters.
 
@@ -54,15 +54,14 @@ Support for importing existing keys (`cipherpost identity import`) is planned fo
   
 <summary>What is the maximum payload size?</summary>
 
-In v1.0 the practical limit is roughly 500–600 bytes of ciphertext because everything must fit inside a single PKARR/Mainline DHT record.
+As of v1.1, the practical limit is the **1000-byte PKARR BEP44 ceiling** for the full outer record (envelope + signatures + metadata). Realistic typed Material (X.509 certs ~234+ bytes DER, PGP keys, SSH keys) and PIN-protected shares routinely exceed this and surface a clean `Error::WireBudgetExceeded` at send time. v1.0-style `GenericSecret` payloads up to roughly **550 bytes** of plaintext fit cleanly.
 
-We plan to raise this significantly in upcoming versions using:
-- Optional Pubky homeserver pointers (recommended path)
-- Direct P2P transfer after rendezvous
-- Compression (quick win)
-- Or pure DHT chunking
+We plan to raise this significantly in v1.2+ using a wire-budget escape hatch:
+- Two-tier storage: PKARR carries a reference, ciphertext lives on a content-addressable store
+- Chunking: split outer record across multiple DNS labels with reassembly
+- Out-of-band payload + inline hash commit (closest to the "no servers" principle if the OOB channel is file/URI-based)
 
-See the roadmap in the README.
+See [`SPEC.md` §Pitfall #22](./SPEC.md) and the roadmap in the README.
 
 </details>
 
@@ -101,8 +100,9 @@ No. DHT records have natural expiration (typically hours to days). You can repub
   
 <summary>Do both parties need to be online at the same time?</summary>
 
-In v1.0: Yes (for the full send → receive → receipt flow).  
-Future versions with homeservers or chunking will support fully asynchronous operation.
+Through v1.1: Yes (for the full send → receive → receipt flow), though the parties don't need to be online *simultaneously* — the DHT holds the share for up to its TTL (24h default). The sender publishes, then can go offline; the recipient must come online to receive within the TTL window. The signed-receipt loop closes when either the sender comes back online to fetch it, or the recipient publishes it (whichever order; both work).
+
+Future versions with homeservers or chunking will support fully asynchronous operation with longer-lived shares.
 
 </details>
 
@@ -118,9 +118,9 @@ Simply copy `~/.cipherpost/secret_key` to a secure location (encrypted USB, pass
   
 <summary>Is Cipherpost production-ready?</summary>
 
-v1.0 is a walking skeleton — the core protocol, encryption, signatures, and acceptance flow are complete and well-tested (86 tests), but some features (larger payloads, key import, multiple identities, etc.) are still under development.
+As of v1.1 (shipped 2026-04-26), the full PRD v1 scope ships: the core protocol, all four typed payload variants (`GenericSecret`, `X509Cert`, `PgpKey`, `SshKey`), `--pin` and `--burn` encryption modes, non-interactive automation, and CAS-protected receipt publication. 311 tests pass under `cargo test --features mock`; 116/116 v1 requirements are validated across v1.0 + v1.1.
 
-It is suitable for careful use with the understanding that it is early software.
+Some features (larger payloads via wire-budget escape hatch, key import, multiple identities, destruction attestation) are deferred to v1.2+. It is suitable for careful use with the understanding that real-DHT cross-identity round-trip is a manual per-release gate (see [`RELEASE-CHECKLIST.md`](./RELEASE-CHECKLIST.md)).
 
 </details>
 

@@ -1,11 +1,12 @@
 # Cipherpost Threat Model
 
-> **Status: DRAFT — skeleton milestone**
+> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26)**
 >
-> This document describes the walking-skeleton implementation shipped in Phases 1–3 of the
-> first development milestone (2026-04).
+> This document describes the threat model as shipped through v1.0 Walking Skeleton
+> (Phases 1–4) and v1.1 Real v1 (Phases 5–9), including §6.5 (PIN mode) and §6.6 (Burn mode)
+> introduced in v1.1 Phase 8.
 > Wire-format decisions documented here are **stable** — changes require a protocol version bump.
-> Editorial polish, completeness review, and v1.0-final sign-off are scheduled for a later phase.
+> Editorial polish across the full v1.x scope continues.
 
 **Protocol version covered:** `cipherpost/v1`
 **Companion documents:** [`SPEC.md`](./SPEC.md) (protocol specification), [`SECURITY.md`](./SECURITY.md) (vulnerability disclosure policy).

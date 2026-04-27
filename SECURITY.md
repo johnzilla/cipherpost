@@ -1,11 +1,11 @@
 # Security Policy
 
-> **Status: DRAFT — skeleton milestone**
+> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26)**
 >
-> This document describes the walking-skeleton implementation shipped in Phases 1–3 of the
-> first development milestone (2026-04).
-> Wire-format decisions documented here are **stable** — changes require a protocol version bump.
-> Editorial polish, completeness review, and v1.0-final sign-off are scheduled for a later phase.
+> This document describes the security policy as shipped through v1.0 Walking Skeleton
+> (Phases 1–4) and v1.1 Real v1 (Phases 5–9). The disclosure channel below was live-tested
+> during v1.0 close and remains the canonical reporting path.
+> Editorial polish across the full v1.x scope continues.
 
 Cipherpost is a self-sovereign, serverless tool for handing off cryptographic material over
 Mainline DHT (see [`SPEC.md`](./SPEC.md) for the protocol, [`THREAT-MODEL.md`](./THREAT-MODEL.md)
@@ -84,8 +84,9 @@ out-of-scope list):
   surfing)
 - Quantum cryptanalysis — cipherpost/v1 is pre-quantum; post-quantum migration is a v2+
   consideration
-- Third-party key stores (OS keychains, HSMs) — not integrated in v1.0
-- Destruction attestation — deferred to v1.1 per [`PROJECT.md`](./cipherpost-prd.md);
+- Third-party key stores (OS keychains, HSMs) — not integrated through v1.1
+- Destruction attestation — deferred to v1.2+ per [`PROJECT.md`](./.planning/PROJECT.md)
+  (originally PRD v1.1, shifted because v1.1 filled with PRD-closure scope);
   cipherpost/v1 has no such mechanism, so there is nothing to attack yet
 
 ## Safe Harbor
@@ -129,6 +130,6 @@ repos do not produce separate notification events)._
 
 ---
 
-*This policy applies to `cipherpost` version 0.1.0 (walking-skeleton milestone) and later
-until superseded. For the exact version of this file that applies to a given release,
-consult the git tag.*
+*This policy applies to `cipherpost` v1.0 (walking-skeleton, 2026-04-22) and v1.1
+(Real v1, 2026-04-26) and later releases until superseded. For the exact version of
+this file that applies to a given release, consult the git tag.*

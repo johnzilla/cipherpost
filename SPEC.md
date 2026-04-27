@@ -1,11 +1,14 @@
 # Cipherpost Protocol Specification
 
-> **Status: DRAFT — skeleton milestone**
+> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26)**
 >
-> This document describes the walking-skeleton implementation shipped in Phases 1–3 of the
-> first development milestone (2026-04).
+> This document describes the protocol as shipped through v1.0 Walking Skeleton (Phases 1–4)
+> and v1.1 Real v1 (Phases 5–9), covering all four `Material` variants, `--pin` / `--burn`
+> encryption modes, non-interactive automation, and CAS-protected receipt publication.
 > Wire-format decisions documented here are **stable** — changes require a protocol version bump.
-> Editorial polish, completeness review, and v1.0-final sign-off are scheduled for a later phase.
+> v1.0 fixtures remain byte-identical; v1.1 additive fields preserve v1.0 byte-shape via
+> `#[serde(skip_serializing_if = "is_false")]`. Editorial polish across the full v1.x scope
+> continues.
 
 **Protocol version:** `cipherpost/v1`
 **License:** MIT (see `LICENSE`)
