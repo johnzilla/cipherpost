@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Real v1
 status: archived
 stopped_at: v1.1 milestone closed 2026-04-26
-last_updated: "2026-04-27T11:55:00Z"
-last_activity: 2026-04-27 -- Completed quick task 260427-axn: per-share_ref receive lock closes TOCTOU window
+last_updated: "2026-04-27T12:40:00Z"
+last_activity: 2026-04-27 -- Completed quick task 260427-bz3: README shields.io badges
 progress:
   total_phases: 5
   completed_phases: 5
@@ -29,7 +29,7 @@ Milestone: v1.1 — closed
 Phase: — (none active)
 Plan: — (none active)
 Status: milestone archived
-Last activity: 2026-04-27 — Completed quick task 260427-axn: per-share_ref receive lock closes TOCTOU window
+Last activity: 2026-04-27 — Completed quick task 260427-bz3: README shields.io badges
 
 Progress: [██████████] 100% — v1.1 closed; next milestone pending scope-lock.
 
@@ -91,6 +91,7 @@ None. v1.1 closed cleanly. Next milestone scope-lock is the natural next step.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260427-axn | Per-share_ref receive lock closes TOCTOU window between idempotency check and sentinel write in `run_receive` | 2026-04-27 | 3f3c821 | [260427-axn-introduce-a-process-level-lock-or-move-c](./quick/260427-axn-introduce-a-process-level-lock-or-move-c/) |
+| 260427-bz3 | README badge polish — remove Status block, add CI/license/MSRV/release badges | 2026-04-27 | fafc53d | [260427-bz3-update-the-readme-remove-the-text-block-](./quick/260427-bz3-update-the-readme-remove-the-text-block-/) |
 
 ## Deferred Items
 
