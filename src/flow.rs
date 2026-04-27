@@ -129,7 +129,6 @@ pub(crate) fn ledger_path() -> PathBuf {
 ///
 /// Layout: `{state_dir}/locks/`. The directory is created (mode 0o700)
 /// inside `acquire_share_lock`; `locks_dir()` is a pure path helper.
-#[allow(dead_code)] // RED phase: helper added before acquire_share_lock; GREEN consumes it.
 pub(crate) fn locks_dir() -> PathBuf {
     state_dir().join("locks")
 }
@@ -138,9 +137,66 @@ pub(crate) fn locks_dir() -> PathBuf {
 ///
 /// File: `{state_dir}/locks/<share_ref_hex>.lock`. Created (mode 0o600)
 /// inside `acquire_share_lock`; `lock_path()` is a pure path helper.
-#[allow(dead_code)] // RED phase: helper added before acquire_share_lock; GREEN consumes it.
 pub(crate) fn lock_path(share_ref_hex: &str) -> PathBuf {
     locks_dir().join(format!("{share_ref_hex}.lock"))
+}
+
+// ---- Per-share_ref receive lock --------------------------------------------
+
+/// Quick 260427-axn: acquire the per-share_ref advisory exclusive file lock.
+///
+/// The lock window covers the resolve→sentinel→ledger sequence inside
+/// `run_receive` to close the v1.0/v1.1 TOCTOU race where two concurrent
+/// receives of the same `share_ref` could both pass `check_already_consumed`,
+/// both decrypt + emit plaintext, and both append ledger rows.
+///
+/// **Contract:** lock is per-`share_ref_hex` so distinct shares don't
+/// serialize against each other. Lock files live forever (cheap; ~0 bytes
+/// each); the helper never removes them. Acquisition/release I/O failures
+/// collapse into `Error::Io` — no new public `Error` variant is introduced
+/// (Pitfall #16 oracle hygiene).
+///
+/// **Burn-flow ordering UNCHANGED.** D-P8-12's emit-before-mark contract
+/// (PITFALLS.md #26 supersession) lives INSIDE the lock; the lock simply
+/// serializes the entire window so the ordering invariant is observed
+/// atomically by exactly one receive at a time per share_ref.
+///
+/// **Async-runtime constraint preserved.** Uses the blocking
+/// `fs2::FileExt::lock_exclusive`; no `tokio` import at the cipherpost layer.
+///
+/// The returned `File` is the lock guard — drop releases the lock; the OS
+/// also releases on process exit (no orphaned-lock recovery needed).
+///
+/// Lock file is created mode 0o600 inside a 0o700 directory, mirroring
+/// `ensure_state_dirs`. On any I/O failure (mkdir, open, lock_exclusive)
+/// returns `Error::Io` — never a `Signature*` / `Transport` / `Crypto`
+/// variant (D-16 oracle hygiene + Pitfall #16).
+fn acquire_share_lock(share_ref_hex: &str) -> Result<fs::File, Error> {
+    use fs2::FileExt;
+    // Ensure state_dir + locks_dir both exist with 0o700.
+    let sd = state_dir();
+    fs::create_dir_all(&sd).map_err(Error::Io)?;
+    fs::set_permissions(&sd, fs::Permissions::from_mode(0o700)).map_err(Error::Io)?;
+    let ld = locks_dir();
+    fs::create_dir_all(&ld).map_err(Error::Io)?;
+    fs::set_permissions(&ld, fs::Permissions::from_mode(0o700)).map_err(Error::Io)?;
+    // Open-or-create the per-share_ref lock file at mode 0o600.
+    let path = lock_path(share_ref_hex);
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(&path)
+        .map_err(Error::Io)?;
+    // Defensive: re-apply 0o600 (vs umask on first creation; mirrors
+    // append_ledger_entry's set_permissions call after open).
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(Error::Io)?;
+    // Blocking exclusive advisory lock. Released when `f` drops or the
+    // process exits.
+    f.lock_exclusive().map_err(Error::Io)?;
+    Ok(f)
 }
 
 /// Phase 8 Plan 03 (W5): cfg-gated re-export of path helpers for integration
@@ -565,6 +621,14 @@ fn check_wire_budget(
 /// Invariant: no payload field is surfaced between step 2 and step 8. The in-body
 /// `STEP N` comments document the exact order; any change there must preserve the
 /// no-surface-before-accept guarantee.
+///
+/// **Concurrency (Quick 260427-axn).** The resolve→sentinel→ledger sequence
+/// (STEPS 1–12) is serialized per `share_ref_hex` via an advisory file lock
+/// at `{state_dir}/locks/<share_ref>.lock` (`acquire_share_lock`). STEP 13
+/// (`publish_receipt`) runs OUTSIDE the lock and uses its own CAS retry
+/// contract (`tests/cas_racer.rs`). Burn-flow emit-before-mark ordering
+/// (D-P8-12) is unchanged — the lock serializes the window; the ordering
+/// invariant inside it is identical to v1.1.
 #[allow(clippy::too_many_arguments)]
 pub fn run_receive(
     identity: &Identity,
@@ -575,6 +639,17 @@ pub fn run_receive(
     prompter: &dyn Prompter,
     armor: bool,
 ) -> Result<(), Error> {
+    // Per-share_ref receive lock (Quick 260427-axn): closes the v1.0/v1.1
+    // TOCTOU window between STEP 1's idempotency check and STEP 12's
+    // sentinel write. Held until the end of STEP 12; STEP 13
+    // (publish_receipt) runs OUTSIDE the lock — receipt publication is
+    // best-effort and has its own CAS-retry contract (tests/cas_racer.rs).
+    //
+    // Bound the guard's lifetime explicitly so it drops at the close of
+    // the STEP-12 block; the explicit `drop(_share_lock)` after the burn /
+    // non-burn ledger branch makes the release point unambiguous.
+    let _share_lock = acquire_share_lock(&uri.share_ref_hex)?;
+
     // STEP 1: sentinel-check (no network, no passphrase). Phase 8 Plan 03
     // (D-P8-10): pattern-match on the typed `LedgerState` return; the
     // `Burned` arm is the structural hook that Plan 04 lights up at the
@@ -841,6 +916,12 @@ pub fn run_receive(
             &jcs_plain,
         )?;
     }
+
+    // Lock window ends here (Quick 260427-axn): idempotency state is now
+    // durable (sentinel + ledger row both fsynced via OpenOptions::append
+    // + write_all). STEP 13 publish_receipt runs without the lock — see
+    // acquire_share_lock's docstring for the CAS-orthogonality rationale.
+    drop(_share_lock);
 
     // STEP 13: publish_receipt — best-effort, warn+degrade on failure (D-SEQ-01, D-SEQ-02).
     //
