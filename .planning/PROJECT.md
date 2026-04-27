@@ -4,29 +4,46 @@
 
 A self-sovereign, serverless, accountless CLI tool for handing off cryptographic material (private keys, certs, credentials, API tokens, passphrases) between parties. Uses Mainline DHT via PKARR for rendezvous, age for encryption, and Ed25519/PKARR keypairs as identity — so there is no operator, no account, and no subpoena target. Built for security engineers, OSS maintainers, researchers, and small teams who need to hand off keys with a receipt and without standing up a service.
 
-**As of v1.0 (walking skeleton):** the end-to-end round trip works. `cipherpost send --self | --share <pubkey>` encrypts a generic-secret payload, publishes via PKARR; `cipherpost receive` dual-verifies signatures, enforces TTL, shows a full-fingerprint acceptance screen, decrypts on typed-z32 confirmation, and publishes a signed receipt the sender can independently verify via `cipherpost receipts --from <z32>`.
+**As of v1.1 (Real v1, shipped 2026-04-26):** the full PRD v1 scope is implemented. `cipherpost send --self | --share <pubkey>` encrypts and publishes via PKARR; `cipherpost receive` dual-verifies signatures, enforces TTL, prompts for PIN if `pin_required`, shows a typed-Material acceptance preview (X.509 / PGP / SSH variants render full metadata), decrypts on typed-z32 confirmation, marks the share as `burned` if `burn_after_read`, and publishes a signed receipt. Scripted automation works without a TTY via `--passphrase-file` / `--passphrase-fd`. CAS-protected concurrent receipt publication is contract-tested in CI; cross-identity Mainline-DHT round trip is exercised behind a manual release-acceptance gate.
 
 ## Core Value
 
 **Hand off a key to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.** If nothing else works, that round trip must.
 
-**Status after v1.0:** Core value shipped end-to-end and exercised by 86 tests, including a two-identity Phase 3 E2E under MockTransport (SC1–SC4 all pass). Real-DHT cross-identity round trip is documented tech debt (see Context).
+**Status after v1.1:** Core value shipped end-to-end with all four typed payload variants (`GenericSecret`, `X509Cert`, `PgpKey`, `SshKey`), both encryption modes (`--pin`, `--burn`), non-interactive automation (`--passphrase-file`, `--passphrase-fd`), and proven CAS-safe concurrent receipt publication. 311 tests pass under `cargo test --features mock` (vs. 86 at v1.0 close). Real-DHT cross-identity round trip exists, compiles, and is properly triple-gated; per-release execution via `RELEASE-CHECKLIST.md`.
 
-## Current Milestone: v1.1 Real v1
+## Current State
 
-**Goal:** Close the PRD's full v1 scope (all payload types + pin/burn modes) and de-risk the protocol over real Mainline DHT — so cipherpost is no longer just a walking skeleton under MockTransport.
+**Two milestones shipped:**
 
-**Target features** (phases continue from v1.0's Phase 4 → Phases 5–9):
+- **v1.0 Walking Skeleton** — 4 phases, 15 plans, 86 tests, 49/49 reqs. Shipped 2026-04-22. Archive: `milestones/v1.0-*`.
+- **v1.1 Real v1** — 5 phases, 24 plans, 311 tests, 67/67 reqs. Shipped 2026-04-26. Archive: `milestones/v1.1-*`.
 
-- **Phase 5 — Non-interactive automation E2E**: `--passphrase-file` / `--passphrase-fd` on `send` + `receive` (aligns with identity subcommands); bless shipped pin versions in SPEC/REQUIREMENTS; DHT label audit; collapse traceability-table to single source of truth so "Pending" drift can't recur. User-visible deliverable: scripted send/receive works without a TTY, proved by CI recipe + integration test.
-- **Phase 6 — Typed Material: `X509Cert`**: pattern-establish one variant end-to-end (parse / validate / render / test).
-- **Phase 7 — Typed Material: `PgpKey` + `SshKey`**: apply the X509 pattern. 64 KB plaintext cap held; `PgpKey` = single key, not keyring.
-- **Phase 8 — `--pin` and `--burn` encryption modes**: on top of now-typed payloads. Research must first survey `/home/john/vault/projects/github.com/cclink` for existing pin/burn logic — fork-and-diverge, don't re-derive.
-- **Phase 9 — Real-DHT E2E + merge-update race**: cross-identity Mainline-DHT round trip as release-acceptance gate; explicit concurrent-racer test for PKARR `cas` merge-republish.
+**Cumulative:** 9 phases, 39 plans, 14 src files / 6,627 LOC, 68 tests files / 8,798 LOC, 116/116 v1 requirements validated. CI: `fmt`, `clippy -D warnings` (1.85), `nextest`, `audit`, `deny check`, `lychee` all green. v1.1 commits are local-only at close (180 commits, awaiting push to `origin/main`).
 
-**Design rules held over from v1.0:** coarse granularity (every phase ends at a user-visible capability), 64 KB plaintext cap, error-oracle hygiene, tamper-zero invariants, JCS wire-format lock-in, no async runtime at cipherpost layer.
+## Next Milestone Goals
 
-**Solo-builder hygiene:** zero "Pending" rows in traceability — checkboxes and table stay in sync, or one of them goes away.
+**Pending scope-lock via `/gsd-new-milestone`.** Candidate themes carried forward from v1.1 deferrals:
+
+- **Wire-budget escape hatch** — typed Material payloads (X.509 / PGP / SSH / pin+burn-composed) exceed the 1000-byte PKARR BEP44 ceiling. Candidate fixes: two-tier storage (PKARR carries reference; payload on content-addressable store) / chunking (split OuterRecord across multiple labels) / out-of-band payload + inline hash commit. Architecturally orthogonal to v1.1's PRD-closure scope; requires its own milestone.
+- **Destruction attestation workflow** — originally PRD v1.1; shifted to v1.2+ because v1.1 filled up with PRD-closure scope. Generalizes the tamper-zero pattern from receipts to destruction proofs.
+- **Non-interactive PIN input** — `--pin-file` / `--pin-fd` on `send` and `receive` (DEFER-PIN-01/02). Currently human-in-the-loop second factor by design; revisit when concrete automation use case surfaces.
+- **Three-real-user launch criterion + independent public review** — v1.1 was scope completion, not launch. The next pass through the PRD's "launch criteria" section is its own milestone gate.
+- **Toolchain reconciliation** — align `rust-toolchain.toml` (1.88) with CI clippy pin (1.85), or accept divergence formally with a CI workflow that validates the pin gap.
+
+**Locked out of v1.x core (per PRD non-goals):** TUI-only is acceptable; web UI is not. Server / relay / operator (even optional) is not.
+
+<details>
+<summary>Pre-v1.1-close summary (2026-04-23 → 2026-04-26)</summary>
+
+**v1.1 closing tasks (post-Phase 9):**
+
+- Tick `RELEASE-CHECKLIST-v1.1.md` and tag `v1.1.0`; complete the milestone via `/gsd-complete-milestone`
+- Pre-tag follow-ups (non-blocking, advisory from 09-REVIEW.md): WR-01 — `tests/real_dht_e2e.rs:153` propagation wait should resolve via `bob_transport`, not `alice_transport`, so the local pkarr cache doesn't short-circuit the DHT round trip; WR-02 — `MockTransport::publish` doesn't bump `seq`, leaving a latent concurrent-write data-loss window (dormant in v1.1; matters if a future code path races `publish ↔ publish_receipt` on the same keypair); pre-existing `clippy::uninlined-format-args` lint at `build.rs:17` (logged in `09/deferred-items.md`; one-line `{sha}` inline-format fix) blocks `cargo clippy --all-targets --all-features -- -D warnings` so the RELEASE-CHECKLIST checkbox depends on it
+
+**Outcome:** All closing tasks resolved at /gsd-complete-milestone. `build.rs:17` lint fixed in commit `e45347b`; remaining 65+ uninlined-format-args instances accepted as toolchain-divergence noise (CI on 1.85 doesn't catch them) and deferred to v1.2 maintenance pass. WR-01/WR-02 advisories carried forward as non-blocking tech debt.
+
+</details>
 
 ## Requirements
 
@@ -103,12 +120,9 @@ A self-sovereign, serverless, accountless CLI tool for handing off cryptographic
 
 ### Active
 
-<!-- v1.1 "Real v1" milestone shipped 2026-04-26 — all PRD-closure scope landed (typed payloads + pin/burn modes + real-DHT release-acceptance gate + CAS race-safe receipt publication). Pending: v1.1 release tag (RELEASE-CHECKLIST-v1.1.md ticked) and milestone close. -->
+<!-- v1.1 milestone closed 2026-04-26. The next milestone scope is authored fresh via `/gsd-new-milestone` — see "Next Milestone Goals" above for carry-forward candidates. This section is empty until the next milestone is locked. -->
 
-**v1.1 closing tasks (post-Phase 9):**
-
-- Tick `RELEASE-CHECKLIST-v1.1.md` and tag `v1.1.0`; complete the milestone via `/gsd-complete-milestone`
-- Pre-tag follow-ups (non-blocking, advisory from 09-REVIEW.md): WR-01 — `tests/real_dht_e2e.rs:153` propagation wait should resolve via `bob_transport`, not `alice_transport`, so the local pkarr cache doesn't short-circuit the DHT round trip; WR-02 — `MockTransport::publish` doesn't bump `seq`, leaving a latent concurrent-write data-loss window (dormant in v1.1; matters if a future code path races `publish ↔ publish_receipt` on the same keypair); pre-existing `clippy::uninlined-format-args` lint at `build.rs:17` (logged in `09/deferred-items.md`; one-line `{sha}` inline-format fix) blocks `cargo clippy --all-targets --all-features -- -D warnings` so the RELEASE-CHECKLIST checkbox depends on it
+(empty — pending next milestone scope-lock)
 
 ### Out of Scope
 
@@ -206,4 +220,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-26 after Phase 9 (Real-DHT E2E + CAS merge-update race gate) — v1.1 milestone scope COMPLETE. Single-retry-then-fail CAS contract on `Transport::publish_receipt` (retry inside trait; both DhtTransport + MockTransport mirror identical structure); MockTransport per-key seq:u64 models pkarr CAS; Barrier-synced two-thread racer test (DHT-01/02) deterministic in CI; real-DHT cross-identity round trip behind `#[cfg + #[ignore + #[serial` triple-gate (DHT-03/04/05) — manual-only via `RELEASE-CHECKLIST.md` (91 lines, 29 checkboxes) at repo root; `RELEASE-CHECKLIST-v1.1.md` versioned snapshot committed; DHT-07 wire-budget composite asserts clean `Error::WireBudgetExceeded { encoded: 5123, budget: 1000 }` for pin+burn+2KB-GenericSecret; `.config/nextest.toml` slow-timeout outer guard pairs in-test 120s deadline; CLAUDE.md +3 load-bearing lock-ins (CAS retry contract; pkarr defaults only; real-DHT cfg-flag discipline); SPEC.md cites measured composite + bootstrap-defaults policy. 311 tests pass under `cargo test --features mock`; 238 under no-features; zero new deps; no tokio at cipherpost layer. Next: tick RELEASE-CHECKLIST-v1.1.md, tag v1.1.0, run `/gsd-complete-milestone`.*
+*Last updated: 2026-04-26 after v1.1 "Real v1" milestone close. Two milestones shipped (v1.0 walking skeleton 2026-04-22; v1.1 PRD-closure scope 2026-04-26). v1.1 ROADMAP, REQUIREMENTS, and audit archived under `milestones/v1.1-*`. Active section reset; Validated section carries the full Phase 1–9 shipping record. Next: `/gsd-new-milestone` to lock scope for the next milestone.*
