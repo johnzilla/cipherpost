@@ -125,6 +125,24 @@ pub(crate) fn ledger_path() -> PathBuf {
     state_dir().join("accepted.jsonl")
 }
 
+/// Quick 260427-axn: per-share_ref lock-file directory.
+///
+/// Layout: `{state_dir}/locks/`. The directory is created (mode 0o700)
+/// inside `acquire_share_lock`; `locks_dir()` is a pure path helper.
+#[allow(dead_code)] // RED phase: helper added before acquire_share_lock; GREEN consumes it.
+pub(crate) fn locks_dir() -> PathBuf {
+    state_dir().join("locks")
+}
+
+/// Quick 260427-axn: per-share_ref lock-file path.
+///
+/// File: `{state_dir}/locks/<share_ref_hex>.lock`. Created (mode 0o600)
+/// inside `acquire_share_lock`; `lock_path()` is a pure path helper.
+#[allow(dead_code)] // RED phase: helper added before acquire_share_lock; GREEN consumes it.
+pub(crate) fn lock_path(share_ref_hex: &str) -> PathBuf {
+    locks_dir().join(format!("{share_ref_hex}.lock"))
+}
+
 /// Phase 8 Plan 03 (W5): cfg-gated re-export of path helpers for integration
 /// tests. Visible ONLY under `cfg(any(test, feature = "mock"))` so production
 /// builds do not expose internal layout in the public API surface. Plans 04
@@ -152,6 +170,13 @@ pub mod test_paths {
 
     pub fn ledger_path() -> PathBuf {
         super::ledger_path()
+    }
+
+    /// Quick 260427-axn: per-share_ref lock-file path. Exposed for
+    /// `tests/state_ledger_concurrency.rs` so the test asserts the lock-file
+    /// layout via the same helper that `acquire_share_lock` uses.
+    pub fn lock_path(share_ref_hex: &str) -> PathBuf {
+        super::lock_path(share_ref_hex)
     }
 }
 
