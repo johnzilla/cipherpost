@@ -754,6 +754,24 @@ cipherpost send --pin --burn --self -p 'pin+burn compose' --material-file ./secr
 Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
 
 1. Parse URI; extract `sender_z32` and `url_share_ref`. Malformed → `Error::InvalidShareUri` (D-URI-03).
+
+   **cipherpost/v1.1.x: Per-`share_ref` advisory lock (Quick 260427-axn).** Immediately
+   after URI parse and BEFORE step 2's idempotency check, `run_receive` acquires an
+   exclusive `flock` on `~/.cipherpost/state/locks/<url_share_ref>.lock` (file mode
+   `0600`, directory mode `0700`). The lock spans steps 2–12 (idempotency check →
+   resolve → verify → decrypt → accept → emit → sentinel + ledger row) and is
+   released BEFORE step 13's `publish_receipt` so the receipt path's existing CAS
+   contract handles concurrent receipt writes (D-P9-A1; `tests/cas_racer.rs`). The
+   lock closes the same-host TOCTOU window where two concurrent `cipherpost receive`
+   invocations on the same `share_ref` could both pass step 2's `check_already_consumed`,
+   both decrypt + emit, and both append ledger rows. Lock granularity is per-`share_ref`,
+   so distinct shares don't serialize. Lock-acquisition I/O failures collapse into
+   `Error::Io` — no new public `Error` variant is introduced (Pitfall #16 oracle
+   hygiene). Burn-flow emit-before-mark ordering (D-P8-12) is unchanged inside the
+   lock; serialization is the only behavioral change. Cross-host coordination is still
+   out of scope (D-STATE-01) — the lock is local-filesystem only. Regression coverage:
+   `tests/state_ledger_concurrency.rs` (Barrier-synced accepted, burn, and
+   distinct-share_ref cases).
 2. Check sentinel file at `~/.cipherpost/state/accepted/<url_share_ref>`; if present, print
    prior acceptance timestamp and exit 0 (RECV-06, D-RECV-02, D-STATE-01). No network call.
 

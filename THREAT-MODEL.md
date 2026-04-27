@@ -184,6 +184,16 @@ monitoring script runs `cipherpost receive <old_uri>`.
   sentinel file at `~/.cipherpost/state/accepted/<share_ref>` short-circuits to "already
   accepted at `<timestamp>`; not re-decrypting" and exits 0 without decrypt or receipt
   publish. [D-RECV-02, D-STATE-01, RECV-06]
+- **Per-`share_ref` advisory lock (Quick 260427-axn) closes the same-host TOCTOU window**
+  between idempotency check and sentinel write. Two concurrent `cipherpost receive`
+  invocations on the same `share_ref` previously could both pass the idempotency check
+  (both saw `LedgerState::None`), both decrypt + emit plaintext, and both append ledger
+  rows. `run_receive` now acquires `flock` on `~/.cipherpost/state/locks/<share_ref>.lock`
+  immediately after URI parse and holds it through the sentinel + ledger row write
+  (released before receipt publish — that path's CAS contract handles concurrent receipts
+  on its own). The lock is per-`share_ref` so distinct shares don't serialize, and is
+  local-filesystem only (cross-host coordination remains out of scope per §8 and
+  D-STATE-01). Regression coverage: `tests/state_ledger_concurrency.rs`.
 - TTL check is enforced against the inner-signed `created_at + ttl_seconds`. An old record
   replayed past its TTL exits with code `2` (Expired), distinct from signature failures and
   distinct from "never accepted before". [RECV-02, SPEC.md#5-flows step 5]
