@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# cipherpost pre-push CI gauntlet — runs the same gates as .github/workflows/ci.yml
+# before letting `git push` reach GitHub. GitHub Actions minutes are not free; this
+# hook keeps them spent only on green builds.
+#
+# Setup:  bash scripts/setup-hooks.sh   (one-time per clone)
+# Skip:   git push --no-verify          (escape hatch; use sparingly)
+# Force-skip a single gate:  CIPHERPOST_SKIP_NEXTEST=1 git push  (etc.)
+
+set -euo pipefail
+
+# --- Configuration -----------------------------------------------------------
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Toggles — flip via env var to skip a slow gate during iteration
+SKIP_FMT="${CIPHERPOST_SKIP_FMT:-0}"
+SKIP_CLIPPY="${CIPHERPOST_SKIP_CLIPPY:-0}"
+SKIP_NEXTEST="${CIPHERPOST_SKIP_NEXTEST:-0}"
+SKIP_DOCTEST="${CIPHERPOST_SKIP_DOCTEST:-0}"
+SKIP_AUDIT="${CIPHERPOST_SKIP_AUDIT:-0}"
+SKIP_DENY="${CIPHERPOST_SKIP_DENY:-0}"
+SKIP_LYCHEE="${CIPHERPOST_SKIP_LYCHEE:-0}"
+
+# --- Output helpers ----------------------------------------------------------
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+DIM='\033[2m'
+NC='\033[0m'
+
+step() { printf "${YELLOW}▶${NC} %s\n" "$1"; }
+ok()   { printf "${GREEN}✓${NC} %s\n" "$1"; }
+fail() { printf "${RED}✗${NC} %s\n" "$1"; }
+skip() { printf "${DIM}…${NC} %s ${DIM}(skipped)${NC}\n" "$1"; }
+hr()   { printf "${DIM}────────────────────────────────────────────────────${NC}\n"; }
+
+# --- Gate runner -------------------------------------------------------------
+
+run_gate() {
+    local name="$1"
+    local skip_var="$2"
+    shift 2
+    if [ "$skip_var" = "1" ]; then
+        skip "$name"
+        return 0
+    fi
+    step "$name"
+    if "$@"; then
+        ok "$name"
+    else
+        fail "$name"
+        return 1
+    fi
+}
+
+START=$(date +%s)
+hr
+printf "${YELLOW}cipherpost pre-push CI gauntlet${NC} — running the same gates as CI\n"
+hr
+
+# --- Gate 1: cargo fmt --check ----------------------------------------------
+run_gate "fmt"     "$SKIP_FMT"     cargo fmt --all -- --check
+
+# --- Gate 2: cargo clippy ----------------------------------------------------
+run_gate "clippy"  "$SKIP_CLIPPY"  cargo clippy --all-targets --all-features -- -D warnings
+
+# --- Gate 3: cargo nextest ---------------------------------------------------
+# CI runs --no-fail-fast; we keep that to surface every failure on first try.
+if command -v cargo-nextest >/dev/null 2>&1; then
+    run_gate "nextest (--all-features)" "$SKIP_NEXTEST" \
+        cargo nextest run --all-features --no-fail-fast
+else
+    if [ "$SKIP_NEXTEST" = "1" ]; then
+        skip "nextest (--all-features)"
+    else
+        step "cargo-nextest not installed — falling back to cargo test"
+        run_gate "test (--all-features)" "0" \
+            cargo test --all-features --no-fail-fast
+    fi
+fi
+
+# --- Gate 4: cargo test --doc ------------------------------------------------
+run_gate "doc tests" "$SKIP_DOCTEST" cargo test --doc --all-features
+
+# --- Gate 5: cargo audit -----------------------------------------------------
+if command -v cargo-audit >/dev/null 2>&1; then
+    # Keep the --ignore list in sync with .github/workflows/ci.yml and deny.toml.
+    run_gate "audit" "$SKIP_AUDIT" \
+        cargo audit --deny warnings --ignore RUSTSEC-2023-0071
+else
+    skip "audit (cargo-audit not installed — install via \`cargo install cargo-audit\`)"
+fi
+
+# --- Gate 6: cargo deny ------------------------------------------------------
+if command -v cargo-deny >/dev/null 2>&1; then
+    run_gate "deny" "$SKIP_DENY" cargo deny check
+else
+    skip "deny (cargo-deny not installed — install via \`cargo install cargo-deny\`)"
+fi
+
+# --- Gate 7: lychee link check ----------------------------------------------
+if command -v lychee >/dev/null 2>&1; then
+    run_gate "lychee link check" "$SKIP_LYCHEE" \
+        lychee --offline --include-fragments --no-progress \
+            SPEC.md THREAT-MODEL.md SECURITY.md README.md
+else
+    skip "lychee (not installed — \`cargo install lychee\` to enable)"
+fi
+
+# --- Summary -----------------------------------------------------------------
+
+END=$(date +%s)
+DUR=$((END - START))
+hr
+printf "${GREEN}✓ all gates passed${NC} in ${DUR}s — push allowed\n"
+hr
