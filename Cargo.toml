@@ -42,6 +42,8 @@ thiserror = "2"
 base64 = "0.22"
 bech32 = "0.9"
 dirs = "5"
+# Per-share_ref advisory file lock for the receive-side concurrency window (see src/flow.rs::acquire_share_lock + .planning/research/PITFALLS.md Pitfall #26 amendment). MIT/Apache-2.0 — within deny.toml [licenses] allowlist; transitive deps = libc only (already in [dev-dependencies]).
+fs2 = "0.4"
 dialoguer = "0.12"
 serde = { version = "1", features = ["derive"] }
 # NOTE: no extra serde_json features — key-ordering features break canonical-JSON invariants.
@@ -369,6 +371,14 @@ path = "tests/envelope_burn_signable.rs"
 [[test]]
 name = "state_ledger"
 path = "tests/state_ledger.rs"
+required-features = ["mock"]
+
+# Quick 260427-axn: per-share_ref receive lock regression. Two Barrier-synced
+# threads both invoke run_receive on the same share_ref; only one observes the
+# fresh path. Mirrors tests/cas_racer.rs structure verbatim.
+[[test]]
+name = "state_ledger_concurrency"
+path = "tests/state_ledger_concurrency.rs"
 required-features = ["mock"]
 
 # Phase 8 Plan 04 (BURN-09): two consecutive receives of the same burn
