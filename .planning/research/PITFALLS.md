@@ -420,6 +420,44 @@ pkarr client will still find the old signed packet on other nodes if seq numbers
 > SPEC.md §3.7 Burn Semantics; Plan 04 ship-gate
 > `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7`.
 
+> **AMENDED 2026-04-27 by Quick 260427-axn (per-share_ref receive lock).** Both
+> the v1.0 mark-then-emit accepted-flow and Phase 8's emit-then-mark burn-flow
+> rely on `check_already_consumed` to gate re-receives. Sequential-receive
+> correctness was load-bearing through v1.1; CONCURRENT receives of the same
+> `share_ref` opened a TOCTOU window between STEP 1's `check_already_consumed`
+> (src/flow.rs:560) and STEP 12's `create_sentinel` (src/flow.rs:799) where
+> two processes could both pass the check, both decrypt + emit, and both
+> append ledger rows.
+>
+> Quick 260427-axn closes the window with a per-`share_ref_hex` advisory file
+> lock at `{state_dir}/locks/<share_ref>.lock`, acquired before STEP 1 and
+> released after STEP 12 (`run_receive`'s `_share_lock` guard). STEP 13
+> `publish_receipt` runs OUTSIDE the lock — receipt publication is best-effort
+> and has its own CAS-retry contract (Pitfall #28, tests/cas_racer.rs).
+>
+> **Burn emit-before-mark ordering (D-P8-12) is UNCHANGED.** The lock serializes
+> the resolve→sentinel→ledger window; the ordering invariant (emit then mark for
+> burn, mark then emit for accepted) is observed identically inside the lock by
+> exactly one receive at a time per `share_ref`.
+>
+> **Error-oracle hygiene (Pitfall #16) is preserved.** Lock-acquisition or
+> -release I/O failures collapse into the existing `Error::Io` variant — no
+> `Error::LockFailed` or similar new variant. Exit code 1 (default arm).
+>
+> **Async runtime constraint preserved.** The lock uses blocking
+> `fs2::FileExt::lock_exclusive`. No tokio import at the cipherpost layer.
+>
+> Choice rationale (option (A) vs option (B)): moving `create_sentinel` to
+> immediately after `transport.resolve()` (option B) would invert burn's
+> emit-before-mark contract for that variant specifically, requiring two
+> per-flow concurrency stories instead of one. Option (A) — the lock — closes
+> the window uniformly across both flows without disturbing the load-bearing
+> ordering invariant. Cost: one direct dep (`fs2` ~5 KB; MIT/Apache-2.0,
+> within deny.toml allowlist; libc-only transitives).
+>
+> See: `src/flow.rs::acquire_share_lock`, `src/flow.rs::locks_dir`,
+> `tests/state_ledger_concurrency.rs`, `Cargo.toml [dependencies] fs2`.
+
 **Category:** `state`
 
 **What goes wrong:** v1.0's `run_receive` marks the ledger sentinel BEFORE emitting the
@@ -950,6 +988,7 @@ any PIN flag implementation.
 | 8 | PIN offline brute force | 24 | crypto | Minimum 8-char PIN; document in THREAT-MODEL; reject short PINs |
 | 8 | burn is local-state-only | 25 | state | THREAT-MODEL section; acceptance screen warning |
 | 8 | burn atomic ordering (mark-then-emit) | 26 | state | Keep v1.0 ordering; sentinel is never deleted; test emit-failure |
+| Quick (260427-axn) | per-share_ref receive lock (TOCTOU close) | 26 (amended) | state | Per-share_ref advisory file lock; emit-before-mark ordering unchanged; lock failures → Error::Io (no new variant) |
 | 8 | burn + receipt semantics | 27 | state | Decide Option A or B in plan 01; record in PROJECT.md |
 | 8 | `--pin` argv surface | 37 | cli | Must go through `resolve_passphrase` equivalent; test argv rejection |
 | 9 | Concurrent-racer test correctness | 28 | test | Use `Barrier`; true concurrent threads; MockTransport `cas` semantics |
