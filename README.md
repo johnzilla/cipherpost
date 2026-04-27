@@ -1,6 +1,9 @@
 # cipherpost
 
-**Status: v1.1 Real v1 shipped (2026-04-26).** Cumulative: 9 phases · 39 plans · 311 tests green under `cargo test --features mock` · 116/116 requirements validated. Previously: v1.0 Walking Skeleton (2026-04-22).
+[![CI](https://img.shields.io/github/actions/workflow/status/johnzilla/cipherpost/ci.yml?branch=main&label=CI&logo=github)](https://github.com/johnzilla/cipherpost/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg?logo=rust)](./rust-toolchain.toml)
+[![Latest release](https://img.shields.io/github/v/tag/johnzilla/cipherpost?label=release&sort=semver)](https://github.com/johnzilla/cipherpost/tags)
 
 Cipherpost is a self-sovereign, serverless, accountless CLI for cryptographic-material handoff over Mainline DHT via PKARR. Hand off a key, certificate, or secret to someone, end-to-end encrypted, with a signed receipt, without standing up or depending on any server.
 
