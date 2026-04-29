@@ -1,0 +1,72 @@
+# Release-acceptance: real-Mainline-DHT cross-identity round trip.
+#
+# Triggers ONLY on `git push --tags` matching `v*`. Per Pitfall #29 +
+# D-P9-D2, real-DHT testing is excluded from PR + push CI to keep
+# day-to-day signal clean (UDP/NAT variance + 60-90s DHT long-tail makes
+# per-commit real-DHT testing structurally unworkable). Tag push is the
+# narrow exception: each release publishes its own real-DHT evidence as
+# a workflow run + uploaded artifact.
+#
+# Pairs with `RELEASE-EVIDENCE-v*.md` files produced by the manual gate.
+# CI evidence is the automated equivalent — same test, same network,
+# same output format.
+#
+# Failure semantics:
+# - UDP unreachable: test skips with canonical message, workflow passes.
+#   Environmental issues never block a release.
+# - Test fails: workflow fails, tag shows red X. Honest signal — the tag
+#   carries no real-DHT validation.
+# - Test passes: workflow uploads `nextest-output.log` as artifact.
+
+name: release-acceptance
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual trigger for dry-runs against arbitrary refs (no tag required).
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  real-dht-round-trip:
+    name: real-DHT cross-identity round trip
+    runs-on: ubuntu-latest
+    # 16 minutes: in-test deadline = 900s, nextest outer guard = 960s,
+    # plus build + checkout overhead. Hard ceiling so a hung DHT can't
+    # consume CI minutes indefinitely.
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Print environment
+        run: |
+          echo "tag: ${GITHUB_REF_NAME}"
+          echo "sha: ${GITHUB_SHA}"
+          rustc --version
+          cargo nextest --version
+      - name: Run real-DHT round trip
+        id: gate
+        run: |
+          set -o pipefail
+          cargo nextest run \
+            --features real-dht-e2e \
+            --run-ignored only \
+            --filter-expr 'binary(real_dht_e2e)' \
+            --no-fail-fast \
+            2>&1 | tee nextest-output.log
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-dht-evidence-${{ github.ref_name }}
+          path: nextest-output.log
+          retention-days: 90

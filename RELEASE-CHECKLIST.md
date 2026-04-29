@@ -46,20 +46,29 @@ event. Run `wc -c tests/fixtures/<name>.bin` for each:
 ## Manual real-DHT gate (DHT-03/04/05)
 
 This is the cipherpost-specific release-acceptance step that does NOT run in
-CI (D-P9-D2 + Pitfall #29). Allow ~10s between consecutive runs for socket
-teardown (09-RESEARCH.md Pitfall C).
+day-to-day CI (D-P9-D2 + Pitfall #29). A separate tag-push workflow
+(`.github/workflows/release-acceptance.yml`) runs the same gate on every
+`v*` tag push, so manual + CI evidence agree per release. Allow ~10s
+between consecutive local runs for socket teardown (09-RESEARCH.md
+Pitfall C).
 
 - [ ] Confirm running on a network with normal outbound UDP egress (corporate
       / restrictive firewalls block Mainline DHT bootstrap; the test will
       skip with `real-dht-e2e: UDP unreachable; test skipped (not counted as pass)`
       — re-run from a permissive network if observed)
-- [ ] Run: `cargo nextest run --features real-dht-e2e --run-ignored only --filter-expr 'test(real_dht_e2e)' --no-fail-fast`
-      (the `slow-timeout = { period = "60s", terminate-after = 2 }` profile
-      override in `.config/nextest.toml` enforces a 120s wall-clock cap)
-- [ ] Test passes within 120s OR skips with the canonical UDP-unreachable
+- [ ] Run: `cargo nextest run --features real-dht-e2e --run-ignored only --filter-expr 'binary(real_dht_e2e)' --no-fail-fast`
+      (the `slow-timeout = { period = "60s", terminate-after = 16 }` profile
+      override in `.config/nextest.toml` enforces a 960s wall-clock cap;
+      paired with the in-test 900s deadline. Filter is `binary()` not
+      `test()` because the function name doesn't contain `real_dht_e2e`,
+      so `test()` would silently match zero tests — corrected 2026-04-28
+      after the v1.1.0 evidence run, see RELEASE-EVIDENCE-v1.1.0.md.)
+- [ ] Test passes within 900s OR skips with the canonical UDP-unreachable
       message (skip is not a release blocker; rerun on a permissive network)
 - [ ] Output observation: round trip completes; receipt count == 1 under
       bob's z32 (BURN-04 invariant)
+- [ ] Capture the run output as `RELEASE-EVIDENCE-v<X.Y.Z>.md` next to
+      `RELEASE-EVIDENCE-v1.1.0.md` for audience-facing release records
 
 ## Security review
 

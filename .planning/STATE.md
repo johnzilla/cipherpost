@@ -4,8 +4,8 @@ milestone: v1.1
 milestone_name: Real v1
 status: archived
 stopped_at: v1.1 milestone closed 2026-04-26
-last_updated: "2026-04-27T12:40:00Z"
-last_activity: 2026-04-27 -- Completed quick task 260427-bz3: README shields.io badges
+last_updated: "2026-04-28T14:30:00Z"
+last_activity: 2026-04-28 -- Real-DHT release-acceptance evidence captured for v1.1.0; tag-push workflow added
 progress:
   total_phases: 5
   completed_phases: 5
@@ -29,7 +29,7 @@ Milestone: v1.1 — closed
 Phase: — (none active)
 Plan: — (none active)
 Status: milestone archived
-Last activity: 2026-04-27 — Completed quick task 260427-bz3: README shields.io badges
+Last activity: 2026-04-28 — Real-DHT release-acceptance evidence captured for v1.1.0; tag-push workflow added
 
 Progress: [██████████] 100% — v1.1 closed; next milestone pending scope-lock.
 
@@ -80,7 +80,7 @@ None blocking. Carry-forward items for next milestone:
 - Reconcile `rust-toolchain.toml` (1.88) vs CI clippy pin (1.85). Either bump CI or revert local; either way, add a CI workflow that validates the pin gap.
 - Auto-fix the 65+ remaining `uninlined_format_args` instances across `src/` + `tests/` (clippy 1.88 default lint; CI 1.85 silent). Mechanical `cargo clippy --fix --all-targets --all-features --allow-dirty` pass.
 - Push 180 v1.1 commits to `origin/main` (or feature branch) so CI validates Phase 5–9 work — currently CI hasn't run on any v1.1 code.
-- Tick `RELEASE-CHECKLIST-v1.1.md` and run the manual real-DHT gate before publishing the v1.1.0 git tag externally (the local tag is created at milestone close; pushing is the user's call).
+- ~~Tick `RELEASE-CHECKLIST-v1.1.md` and run the manual real-DHT gate before publishing the v1.1.0 git tag externally~~ — **DONE 2026-04-28.** Manual demo + automated regression test both PASS against real Mainline DHT; evidence captured in `RELEASE-EVIDENCE-v1.1.0.md`. Tag-push CI (`.github/workflows/release-acceptance.yml`) will auto-run the same gate on every future `v*` tag.
 
 ### Blockers/Concerns
 
@@ -101,7 +101,7 @@ Items acknowledged and carried forward to the next milestone:
 |----------|------|--------|-------------|
 | Tooling | Pre-existing Phase 1 `cargo fmt --check` deviations (see archived `.planning/milestones/v1.0-phases/02-send-receive-and-explicit-acceptance/deferred-items.md`) | Deferred to chore(fmt) pass | 2026-04-21 Plan 02-01 |
 | Wire-budget | Two-tier storage / chunking / out-of-band escape hatch for typed Material exceeding 1000-byte BEP44 ceiling | Scheduled for v1.2+ (architecturally orthogonal to PRD-closure) | 2026-04-26 v1.1 close |
-| Release-acceptance | Real-DHT cross-identity round trip is manual-only via RELEASE-CHECKLIST.md (per-release gate, not CI) | First execution at v1.1.0 release tag time | 2026-04-26 v1.1 close |
+| Release-acceptance | ~~Real-DHT cross-identity round trip is manual-only via RELEASE-CHECKLIST.md~~ — superseded 2026-04-28: tag-push workflow `.github/workflows/release-acceptance.yml` runs the gate per release; manual gate first-executed for v1.1.0 with evidence at `RELEASE-EVIDENCE-v1.1.0.md` | First execution complete | 2026-04-26 → resolved 2026-04-28 |
 | Toolchain | rust-toolchain.toml=1.88 vs CI clippy=1.85 divergence; 65+ `uninlined_format_args` instances locally | Defer reconciliation to v1.2 maintenance pass | 2026-04-26 v1.1 close |
 | Code review | WR-01 `tests/real_dht_e2e.rs:153` propagation wait via wrong transport (non-blocking advisory) | Carry-forward to v1.2+ | 2026-04-26 v1.1 close |
 | Code review | WR-02 `MockTransport::publish` doesn't bump seq (dormant in v1.1; matters at future composition) | Carry-forward to v1.2+ | 2026-04-26 v1.1 close |

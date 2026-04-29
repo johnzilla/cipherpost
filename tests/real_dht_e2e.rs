@@ -27,7 +27,11 @@
 //!
 //! D-P9-D3 belt-and-suspenders: in-test `Instant::now() >= deadline`
 //! check (primary) + `.config/nextest.toml` `slow-timeout = { period =
-//! "60s", terminate-after = 2 }` (secondary; total budget = 120s).
+//! "60s", terminate-after = 16 }` (secondary; total budget = 960s,
+//! paired with the in-test 900s deadline). The 120s/2-period values
+//! used through v1.1 close were tuned empirically on 2026-04-28 after
+//! the manual real-DHT demo (`RELEASE-EVIDENCE-v1.1.0.md`) measured
+//! ~190s for the equivalent work; 900s gives ~5x headroom.
 //! Stable cargo has no `--test-timeout` flag (RESEARCH.md OQ-5).
 //!
 //! ## No async runtime
@@ -139,16 +143,23 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
 
     // 4. Bob resolves Alice's published share with 7-step exp-backoff
     //    (D-P9-D3 + 09-RESEARCH.md OQ-2 — curve 1s,2s,4s,8s,16s,32s,64s
-    //    clipped to remaining-budget; total sum 127s, deadline-clipped
-    //    at 120s). Re-set CIPHERPOST_HOME to bob's dir for run_receive.
+    //    clipped to remaining-budget). Re-set CIPHERPOST_HOME to bob's
+    //    dir for run_receive.
+    //
+    //    Budget = 900s (raised from 120s on 2026-04-28 after the manual
+    //    real-DHT demo measured Alice's publish-confirm + Bob's full
+    //    run_receive + Alice's receipt fetch at ~190s total wall clock
+    //    against Mainline. The 120s budget chosen at Phase 9 plan time
+    //    was structurally too tight: each DHT round trip can take
+    //    60-90s on the long tail. 900s gives ~5x headroom.).
     std::env::set_var("CIPHERPOST_HOME", bob_dir.path());
 
-    let deadline = Instant::now() + Duration::from_secs(120);
+    let deadline = Instant::now() + Duration::from_secs(900);
     let backoff_curve = [1u64, 2, 4, 8, 16, 32, 64];
     let mut resolved = None;
     for delay_secs in backoff_curve {
         if Instant::now() >= deadline {
-            panic!("real-dht-e2e: 120s deadline reached without successful resolve");
+            panic!("real-dht-e2e: 900s deadline reached without successful resolve");
         }
         match alice_transport.resolve(&alice_z32) {
             Ok(record) => {
@@ -236,7 +247,7 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
         }
     }
     let receipts =
-        receipts.expect("real-dht-e2e: alice never observed a receipt under bob's z32 within 120s");
+        receipts.expect("real-dht-e2e: alice never observed a receipt under bob's z32 within 900s");
     assert_eq!(
         receipts.len(),
         1,

@@ -2,16 +2,33 @@
 #
 # Phase 9 Plan 02 (D-P9-D3): outer guard for the real-DHT round-trip test.
 # Pairs with the in-test `Instant`-deadline check inside
-# `tests/real_dht_e2e.rs`; nextest force-terminates the test after 2 × 60s
-# slow periods = 120s wall clock. Stable cargo has no equivalent flag
-# (RESEARCH.md OQ-5: `cargo --test-timeout` does not exist on stable cargo
-# or libtest).
+# `tests/real_dht_e2e.rs`; nextest force-terminates the test after
+# 16 × 60s slow periods = 960s wall clock (in-test deadline = 900s,
+# nextest gives 60s extra to flush + report).
+#
+# Budget tuned empirically on 2026-04-28 from the manual real-DHT demo
+# (RELEASE-EVIDENCE-v1.1.0.md): Alice publish + Bob full receive +
+# Alice receipt fetch ≈ 190s wall clock against real Mainline. Per-phase
+# exp-backoff plus DHT long-tail can push individual phases to 60-90s;
+# 900s gives ~5x headroom while still bounding pathological hangs. The
+# earlier 120s/2-period budget (Phase 9 plan time, never validated against
+# real DHT in CI per Pitfall #29) was structurally too tight and produced
+# consistent timeout failures during the v1.1.0 manual gate runs.
+#
+# Filter: `binary(real_dht_e2e)` matches the actual binary name. The
+# earlier `test(real_dht_e2e)` filter (in the v1.1 RELEASE-CHECKLIST and
+# this config) never matched the function name
+# `real_dht_cross_identity_round_trip_with_receipt` and silently skipped.
+# RELEASE-CHECKLIST.md is also updated to use binary().
+#
+# Stable cargo has no equivalent flag (RESEARCH.md OQ-5: `cargo
+# --test-timeout` does not exist on stable cargo or libtest).
 #
 # This override only applies when a developer explicitly invokes the
 # real-DHT test with `--features real-dht-e2e`; CI never does that
 # (D-P9-D2 + Pitfall #29). The override is a safety net for the manual
-# RELEASE-CHECKLIST run.
+# RELEASE-CHECKLIST run and the tag-push workflow.
 
 [[profile.default.overrides]]
-filter = 'test(real_dht_e2e)'
-slow-timeout = { period = "60s", terminate-after = 2 }
+filter = 'binary(real_dht_e2e)'
+slow-timeout = { period = "60s", terminate-after = 16 }
