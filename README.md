@@ -11,12 +11,13 @@ Cipherpost is a self-sovereign, serverless, accountless CLI for cryptographic-ma
 - **Key is identity.** Ed25519/PKARR keypair, passphrase-wrapped on disk (Argon2id + HKDF-SHA256 + `cipherpost/v1/<context>` domain separation).
 - **Ciphertext only on the wire.** Payload and metadata both encrypted; the DHT sees only opaque blobs.
 - **Signed receipts.** Recipient publishes a signed receipt to the DHT on pickup; the sender can independently verify delivery without a central log.
-- **Full PRD v1 scope shipped (v1.1):
+- Full PRD v1 scope shipped (v1.1):
     - typed payloads (`Material::GenericSecret`, `Material::X509Cert`, `Material::PgpKey`, `Material::SshKey`);
     - `--pin` second-factor encryption (Argon2id+HKDF→X25519→age, no direct chacha20poly1305 calls);
     - `--burn` single-consumption mode with emit-before-mark state ledger;
     - non-interactive automation via `--passphrase-file` / `--passphrase-fd`;
-    - CAS-protected concurrent receipt publication with retry-and-merge contract. TUI wizard, non-interactive PIN input, and destruction attestation deferred to v1.2+.
+    - CAS-protected concurrent receipt publication with retry-and-merge contract.
+    - TUI wizard, non-interactive PIN input, and destruction attestation deferred to v1.2+.
 
 ## Quick start
 
