@@ -10,8 +10,15 @@ version = 2
 # timing attack requires a network-observable decryption/signing oracle; no such
 # surface exists in cipherpost's parse-only code path. Impact: low. Remove this
 # ignore when upstream `rsa` ships a constant-time patched version.
+#
+# RUSTSEC-2026-0173 (proc-macro-error2 unmaintained): a BUILD-TIME proc-macro
+# pulled transitively by `age 0.11.2` -> `i18n-embed-fl` (localized error
+# messages). It is "unmaintained", NOT a vulnerability — it runs only at compile
+# time and ships no code into the cipherpost binary. Pre-existing upstream drift,
+# unrelated to any cipherpost code path. Remove when `age`/`i18n-embed` drop it.
 ignore = [
     "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0173",
 ]
 # yanked = "deny" is default in v2
 # Note: pkarr 5.0.3 transitively pulls ed25519-dalek 3.0.0-pre.5 (pre-release).
