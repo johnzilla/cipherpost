@@ -1163,10 +1163,83 @@ fn write_output(sink: &mut OutputSink, bytes: &[u8]) -> Result<(), Error> {
             use std::io::Write as IoWrite;
             std::io::stdout().write_all(bytes).map_err(Error::Io)
         }
-        OutputSink::File(p) => fs::write(p, bytes).map_err(Error::Io),
+        OutputSink::File(p) => write_file_atomic(p, bytes),
         OutputSink::InMemory(buf) => {
             buf.extend_from_slice(bytes);
             Ok(())
+        }
+    }
+}
+
+/// Durably write decrypted payload `bytes` to a user-specified `-o <path>`.
+///
+/// Mirrors the crash-safety intent of the state-ledger writes: write to a temp
+/// sibling on the SAME filesystem, `fsync` it, then atomically `rename` over the
+/// target — so the output is either the complete decrypted payload or absent,
+/// never a truncated partial write (a bare `fs::write` truncates-then-writes and
+/// leaves a corrupt file if the process dies mid-write). Also:
+///   - refuses an existing-directory target with a clear error (vs. a confusing
+///     raw "Is a directory" IO error from `fs::write`);
+///   - warns on stderr before clobbering an existing file (never silent).
+///
+/// File permissions are left at the umask default, matching the prior `fs::write`
+/// behavior (tightening decrypted-output perms is a separate, deliberate choice).
+fn write_file_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), Error> {
+    use std::io::Write as _;
+
+    // Directory-vs-file guard.
+    if path.is_dir() {
+        return Err(Error::Config(format!(
+            "output path is a directory, not a file: {}",
+            path.display()
+        )));
+    }
+    // Non-fatal clobber warning — never silently overwrite.
+    if path.exists() {
+        eprintln!("warning: overwriting existing file at {}", path.display());
+    }
+
+    // Temp sibling in the target's own directory so `rename` is a same-filesystem
+    // atomic swap (a temp in /tmp could land on a different fs → rename would fail
+    // or fall back to a non-atomic copy).
+    let parent: &std::path::Path = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => std::path::Path::new("."),
+    };
+    let base = path
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "out".to_string());
+    let nonce = {
+        use rand::RngCore;
+        rand::thread_rng().next_u64()
+    };
+    let tmp = parent.join(format!(".{base}.cipherpost-{nonce:016x}.tmp"));
+
+    let write_then_rename = || -> Result<(), Error> {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true) // refuse to reuse a stray temp
+            .open(&tmp)
+            .map_err(Error::Io)?;
+        f.write_all(bytes).map_err(Error::Io)?;
+        f.sync_all().map_err(Error::Io)?; // fsync data before the rename
+        drop(f);
+        fs::rename(&tmp, path).map_err(Error::Io)
+    };
+
+    match write_then_rename() {
+        Ok(()) => {
+            // Best-effort: fsync the directory so the rename itself is durable.
+            // Not portable everywhere (e.g. dir fsync semantics vary) — ignore failures.
+            if let Ok(dir) = fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&tmp); // don't leave a stray temp on failure
+            Err(e)
         }
     }
 }
@@ -1902,6 +1975,44 @@ use std::io::IsTerminal;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_file_atomic_writes_and_reads_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("out.key");
+        write_file_atomic(&target, b"decrypted-material").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"decrypted-material");
+        // no stray temp sibling left behind
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("cipherpost-"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp file not cleaned up: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn write_file_atomic_overwrites_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("out.key");
+        write_file_atomic(&target, b"first").unwrap();
+        // Overwrite (warns on stderr, succeeds) — content fully replaced, not appended.
+        write_file_atomic(&target, b"second-longer").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"second-longer");
+    }
+
+    #[test]
+    fn write_file_atomic_rejects_directory_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = write_file_atomic(dir.path(), b"x").unwrap_err();
+        assert!(
+            matches!(err, Error::Config(ref m) if m.contains("is a directory")),
+            "expected directory guard, got {err:?}"
+        );
+    }
 
     #[test]
     fn state_dir_respects_cipherpost_home() {
