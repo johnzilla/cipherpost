@@ -1059,9 +1059,19 @@ then drop the `=` exact-pin requirement).
 Realistic typed-material payloads exceed the 1000-byte PKARR BEP44 ceiling.
 The current cipherpost protocol surfaces this as a clean `Error::WireBudgetExceeded
 { encoded, budget: 1000, plaintext }` at send time — NOT as an `InvalidMaterial`
-or PKARR-internal panic. The architectural fix (two-tier storage: small DHT
-envelope pointing to encrypted blob in external store) belongs to the v1.2
-milestone.
+or PKARR-internal panic.
+
+The architectural fix (two-tier storage: a small DHT manifest pointing to an
+encrypted blob in an external store) has shipped **experimentally** in v2-alpha
+behind the off-by-default `large-payload` feature. A new `Material::LargePayload
+{ hash, size }` variant carries only the `sha256` of the off-DHT age-ciphertext
+blob and its byte length; the blob's storage path on a Pubky homeserver is
+*derived* from `hash` (content-addressed), so the manifest stays well under the
+1000-byte ceiling regardless of payload size. The `send-large` / `receive-large`
+commands drive this path; the small-share `send` / `receive` flow and the
+wire-budget matrix below are unchanged. See the README "Large payloads (v2)"
+section and `THREAT-MODEL.md` §10. (Chunking-over-DHT and an out-of-band escape
+hatch remain possible later additions for the no-homeserver case.)
 
 This consolidated matrix (Phase 7 Plan 08, replacing the per-variant scattered
 notes from Phase 6 + Plan 04) tells users honestly which variants work today

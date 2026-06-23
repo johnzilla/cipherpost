@@ -77,7 +77,9 @@ impl HomeserverBlobStore {
     /// rustls, which we do not compile (no ring/aws-lc), so the default would
     /// fail at runtime.
     pub fn new(base_url: impl Into<String>, keypair: pkarr::Keypair) -> Self {
-        let tls = TlsConfig::builder().provider(TlsProvider::NativeTls).build();
+        let tls = TlsConfig::builder()
+            .provider(TlsProvider::NativeTls)
+            .build();
         let config = Agent::config_builder()
             .tls_config(tls)
             .http_status_as_error(false) // inspect 4xx/5xx ourselves
@@ -103,7 +105,11 @@ impl HomeserverBlobStore {
             pubky_auth::now_micros()?,
         );
         let url = format!("{}/{}", self.base_url, endpoint);
-        let resp = self.agent.post(&url).send(&token[..]).map_err(transport_box)?;
+        let resp = self
+            .agent
+            .post(&url)
+            .send(&token[..])
+            .map_err(transport_box)?;
         let status = resp.status().as_u16();
         if (200..300).contains(&status) {
             // Cookie is `<z32>=<session_secret>; Path=/; …` — keep the name=value pair.
@@ -244,7 +250,10 @@ mod mock {
             // Key by the normalized relative path so a `get` of the same
             // content-addressed path round-trips (mirrors HomeserverBlobStore).
             let key = path.trim_start_matches('/').to_string();
-            self.store.lock().unwrap().insert(key.clone(), bytes.to_vec());
+            self.store
+                .lock()
+                .unwrap()
+                .insert(key.clone(), bytes.to_vec());
             Ok(key)
         }
 
@@ -273,7 +282,10 @@ mod tests {
     #[test]
     fn mock_get_missing_is_not_found() {
         let s = MockBlobStore::new();
-        assert!(matches!(s.get("mock:///nope").unwrap_err(), Error::NotFound));
+        assert!(matches!(
+            s.get("mock:///nope").unwrap_err(),
+            Error::NotFound
+        ));
     }
 
     #[test]

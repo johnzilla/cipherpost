@@ -96,10 +96,7 @@ pub enum Material {
     /// manifest); no redundant location is stored, keeping the manifest under
     /// the 1000-byte wire budget. Carries NO in-envelope bytes.
     /// Wire shape: `{"type":"large_payload","hash":"…","size":N}`.
-    LargePayload {
-        hash: String,
-        size: u64,
-    },
+    LargePayload { hash: String, size: u64 },
 }
 
 // Manual Debug — redacts data-carrying variants (Pitfall #7). Phase 6: X509Cert

@@ -8,8 +8,6 @@
 #[cfg(feature = "large-payload")]
 pub mod blobstore;
 pub mod cli;
-#[cfg(feature = "large-payload")]
-pub mod pubky_auth;
 pub mod crypto;
 pub mod error;
 pub mod flow;
@@ -17,6 +15,8 @@ pub mod identity;
 pub mod payload;
 pub mod pin;
 pub mod preview;
+#[cfg(feature = "large-payload")]
+pub mod pubky_auth;
 pub mod receipt;
 pub mod record;
 pub mod transport;

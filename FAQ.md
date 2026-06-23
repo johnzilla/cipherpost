@@ -56,10 +56,7 @@ Support for importing existing keys (`cipherpost identity import`) is planned fo
 
 As of v1.1, the practical limit is the **1000-byte PKARR BEP44 ceiling** for the full outer record (envelope + signatures + metadata). Realistic typed Material (X.509 certs ~234+ bytes DER, PGP keys, SSH keys) and PIN-protected shares routinely exceed this and surface a clean `Error::WireBudgetExceeded` at send time. v1.0-style `GenericSecret` payloads up to roughly **550 bytes** of plaintext fit cleanly.
 
-We plan to raise this significantly in v1.2+ using a wire-budget escape hatch:
-- Two-tier storage: PKARR carries a reference, ciphertext lives on a content-addressable store
-- Chunking: split outer record across multiple DNS labels with reassembly
-- Out-of-band payload + inline hash commit (closest to the "no servers" principle if the OOB channel is file/URI-based)
+For **small shares** this ceiling stands. For **large payloads**, v2-alpha ships the two-tier escape hatch behind the `large-payload` feature: the ciphertext lives on a Pubky homeserver and PKARR carries only a tiny signed `sha256`+size manifest (see the homeserver-integration question above and the README "Large payloads (v2)" section). Chunking-over-DHT and an out-of-band/file escape hatch remain possible future additions.
 
 See [`SPEC.md` §Pitfall #22](./SPEC.md) and the roadmap in the README.
 
@@ -69,12 +66,13 @@ See [`SPEC.md` §Pitfall #22](./SPEC.md) and the roadmap in the README.
   
 <summary>How does the Pubky homeserver integration work?</summary>
 
-When you use the `--homeserver` flag (planned):
-- The encrypted payload is uploaded to a homeserver **you choose** (self-hosted or public).
-- Only a tiny pointer (URL + path + hash) is published to the DHT.
-- The recipient still performs the exact same acceptance flow, then fetches the blob from the homeserver URL.
+Shipped **experimentally** in v2-alpha behind the off-by-default `large-payload` cargo feature (`cargo build --features large-payload`), as the `send-large` / `receive-large` commands:
 
-You remain responsible for the homeserver you point to. The recipient sees the URL before accepting and can decide whether to trust it. Full fallback to the current small-payload-in-DHT mode is planned.
+- The payload is tar'd and `age`-encrypted (to your own identity in this `--self`-only alpha), then uploaded as **opaque ciphertext** to a [Pubky homeserver](https://github.com/pubky/pubky-core) **you choose** (set `CIPHERPOST_HS=https://your-homeserver`). The blob lives at a content-addressed path `/pub/cipherpost/<sha256>`.
+- Only a tiny **signed manifest** — the ciphertext's `sha256` and size, nothing else — is published to the DHT via the normal dual-signed flow. The blob's path is *derived* from that hash, so the manifest stays well under the 1000-byte wire budget.
+- The recipient performs the same acceptance flow (now showing the payload size + hash), then downloads the blob, **verifies its hash against the signed manifest** (mismatch aborts with exit 3), decrypts, and unpacks.
+
+The homeserver only ever sees ciphertext — it's a dumb mirror, not a trusted operator. It talks plain HTTPS via a blocking client with OS-native TLS, so the default build pulls no `tokio`/`ring`. See the README "Large payloads (v2)" section and [`THREAT-MODEL.md` §10](./THREAT-MODEL.md) for the trust model and the `/pub/` enumeration caveat.
 
 </details>
 

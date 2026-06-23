@@ -380,7 +380,8 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             if !self_ {
                 return Err(cipherpost::Error::Config(
-                    "send-large requires --self (cross-identity --share is not yet supported)".into(),
+                    "send-large requires --self (cross-identity --share is not yet supported)"
+                        .into(),
                 )
                 .into());
             }
@@ -444,12 +445,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let prompter = cipherpost::flow::TtyPrompter::new();
 
             cipherpost::flow::run_receive_large(
-                &id,
-                &transport,
-                &blobstore,
-                &uri,
-                &output,
-                &prompter,
+                &id, &transport, &blobstore, &uri, &output, &prompter,
             )?;
             Ok(())
         }
@@ -462,5 +458,8 @@ fn dispatch(cli: Cli) -> Result<()> {
 fn build_homeserver_blobstore(seed_bytes: &[u8; 32]) -> cipherpost::blobstore::HomeserverBlobStore {
     let url = std::env::var("CIPHERPOST_HS")
         .unwrap_or_else(|_| "https://hs.trustedgelabs.com".to_string());
-    cipherpost::blobstore::HomeserverBlobStore::new(url, pkarr::Keypair::from_secret_key(seed_bytes))
+    cipherpost::blobstore::HomeserverBlobStore::new(
+        url,
+        pkarr::Keypair::from_secret_key(seed_bytes),
+    )
 }
