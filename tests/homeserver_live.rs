@@ -18,7 +18,7 @@ fn homeserver_url() -> String {
 #[ignore = "live homeserver round-trip; run manually with --ignored"]
 fn live_signup_put_get_round_trip() {
     let keypair = pkarr::Keypair::random();
-    let store = HomeserverBlobStore::new(homeserver_url(), keypair);
+    let store = HomeserverBlobStore::new(homeserver_url(), keypair).expect("https URL");
 
     let payload = b"cipherpost large-payload live test ciphertext";
     // v0.9.1 only permits writes under /pub/ (see authz.rs); /priv/ writes 403.

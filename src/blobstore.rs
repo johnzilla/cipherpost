@@ -34,6 +34,7 @@ use crate::pubky_auth;
 use std::cell::RefCell;
 use ureq::tls::{TlsConfig, TlsProvider};
 use ureq::Agent;
+use zeroize::Zeroizing;
 
 /// Defensive cap on a single blob download. The homeserver enforces a 100 MB
 /// per-request ceiling on writes; this guards the read side independently.
@@ -62,13 +63,14 @@ fn transport_box(e: impl std::error::Error + Send + Sync + 'static) -> Error {
 /// (`ureq` + OS-native TLS). Holds the cipherpost identity keypair to mint pubky
 /// `AuthToken`s, and caches the resulting session cookie for its lifetime.
 ///
-/// No `#[derive(Debug)]` — this struct owns a secret keypair.
+/// No `#[derive(Debug)]` — this struct owns a secret keypair AND the session
+/// cookie (a bearer credential, held in a `Zeroizing` buffer so it is wiped on drop).
 pub struct HomeserverBlobStore {
     agent: Agent,
     base_url: String,
     keypair: pkarr::Keypair,
     z32: String,
-    session_cookie: RefCell<Option<String>>,
+    session_cookie: RefCell<Option<Zeroizing<String>>>,
 }
 
 impl HomeserverBlobStore {
@@ -76,7 +78,22 @@ impl HomeserverBlobStore {
     /// `keypair`. The native-TLS provider is selected EXPLICITLY: ureq defaults to
     /// rustls, which we do not compile (no ring/aws-lc), so the default would
     /// fail at runtime.
-    pub fn new(base_url: impl Into<String>, keypair: pkarr::Keypair) -> Self {
+    ///
+    /// Rejects a non-`https` `base_url` (the AuthToken and session cookie are
+    /// bearer credentials — they must never traverse cleartext HTTP). `http://`
+    /// is allowed only for loopback hosts, for a local `pubky-testnet`.
+    pub fn new(base_url: impl Into<String>, keypair: pkarr::Keypair) -> Result<Self, Error> {
+        let base_url = base_url.into().trim_end_matches('/').to_string();
+        let is_https = base_url.starts_with("https://");
+        let is_loopback_http = base_url.starts_with("http://127.0.0.1")
+            || base_url.starts_with("http://localhost")
+            || base_url.starts_with("http://[::1]");
+        if !is_https && !is_loopback_http {
+            return Err(Error::Config(format!(
+                "CIPHERPOST_HS must be an https:// URL (http:// is allowed only for \
+                 localhost); refusing to send credentials in cleartext to: {base_url}"
+            )));
+        }
         let tls = TlsConfig::builder()
             .provider(TlsProvider::NativeTls)
             .build();
@@ -85,23 +102,23 @@ impl HomeserverBlobStore {
             .http_status_as_error(false) // inspect 4xx/5xx ourselves
             .build();
         let z32 = keypair.public_key().to_z32();
-        Self {
+        Ok(Self {
             agent: config.into(),
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+            base_url,
             keypair,
             z32,
             session_cookie: RefCell::new(None),
-        }
+        })
     }
 
     /// POST a fresh `AuthToken` to `/signup` or `/signin`. Returns `Some(cookie)`
     /// on 2xx, `None` on 409 (user already exists → caller retries the other
     /// endpoint), `Err` otherwise. A fresh token (new timestamp) is minted each
     /// call so the homeserver's replay guard never rejects the fallback.
-    fn auth_request(&self, endpoint: &str) -> Result<Option<String>, Error> {
+    fn auth_request(&self, endpoint: &str) -> Result<Option<Zeroizing<String>>, Error> {
         let token = pubky_auth::build_auth_token(
             &self.keypair,
-            pubky_auth::CAP_ROOT_RW,
+            pubky_auth::CAP_BLOB,
             pubky_auth::now_micros()?,
         );
         let url = format!("{}/{}", self.base_url, endpoint);
@@ -112,16 +129,26 @@ impl HomeserverBlobStore {
             .map_err(transport_box)?;
         let status = resp.status().as_u16();
         if (200..300).contains(&status) {
-            // Cookie is `<z32>=<session_secret>; Path=/; …` — keep the name=value pair.
+            // The homeserver names our session cookie after our own z32 pubkey:
+            // `<z32>=<session_secret>; Path=/; …`. We SELECT that pair (not
+            // authenticate it — the cookie is an opaque bearer credential we only
+            // ever send back to this same homeserver), bounding its size and
+            // rejecting control chars defensively.
             for hv in resp.headers().get_all("set-cookie") {
                 if let Ok(s) = hv.to_str() {
                     let pair = s.split(';').next().unwrap_or("").trim();
-                    if pair.starts_with(&self.z32) && pair.contains('=') {
-                        return Ok(Some(pair.to_string()));
+                    if pair.starts_with(&self.z32)
+                        && pair.contains('=')
+                        && pair.len() <= 4096
+                        && !pair.chars().any(|c| c.is_control())
+                    {
+                        return Ok(Some(Zeroizing::new(pair.to_string())));
                     }
                 }
             }
-            Err(transport(format!("{endpoint}: 2xx but no session cookie")))
+            Err(transport(format!(
+                "{endpoint}: 2xx but no usable session cookie"
+            )))
         } else if status == 409 {
             Ok(None)
         } else {
@@ -130,7 +157,9 @@ impl HomeserverBlobStore {
     }
 
     /// Establish (once) a session cookie: try `signup`, fall back to `signin` if
-    /// the account already exists.
+    /// the account already exists. NOTE: signup/signin outcome is entirely
+    /// server-attested — a 409 (→ fall back to /session) carries no client-side
+    /// guarantee about account state; see THREAT-MODEL §10.
     fn ensure_session(&self) -> Result<(), Error> {
         if self.session_cookie.borrow().is_some() {
             return Ok(());
@@ -147,7 +176,7 @@ impl HomeserverBlobStore {
         Ok(())
     }
 
-    fn cookie(&self) -> Result<String, Error> {
+    fn cookie(&self) -> Result<Zeroizing<String>, Error> {
         self.session_cookie
             .borrow()
             .clone()
@@ -160,11 +189,12 @@ impl BlobStore for HomeserverBlobStore {
         self.ensure_session()?;
         let rel = path.trim_start_matches('/').to_string();
         let url = format!("{}/{}", self.base_url, rel);
+        let cookie = self.cookie()?;
         let resp = self
             .agent
             .put(&url)
             .header("pubky-host", &self.z32)
-            .header("Cookie", &self.cookie()?)
+            .header("Cookie", cookie.as_str())
             .send(bytes)
             .map_err(transport_box)?;
         let status = resp.status().as_u16();
@@ -271,6 +301,19 @@ mod mock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_rejects_cleartext_http_allows_https_and_loopback() {
+        let kp = || pkarr::Keypair::from_secret_key(&[3u8; 32]);
+        assert!(
+            HomeserverBlobStore::new("http://evil.example.com", kp()).is_err(),
+            "non-loopback http:// must be refused (cleartext credentials)"
+        );
+        assert!(HomeserverBlobStore::new("https://hs.example.com", kp()).is_ok());
+        // loopback http allowed for a local pubky-testnet
+        assert!(HomeserverBlobStore::new("http://127.0.0.1:6286", kp()).is_ok());
+        assert!(HomeserverBlobStore::new("http://localhost:6286", kp()).is_ok());
+    }
 
     #[test]
     fn mock_put_get_round_trip() {

@@ -1580,12 +1580,47 @@ mod large {
         builder.into_inner().map_err(Error::Io)
     }
 
-    /// Unpack a tar archive into `dest` (created if missing). The `tar` crate's
-    /// `unpack` rejects absolute paths and `..` traversal by default.
+    /// True iff `h` is exactly 64 lowercase-hex chars — a well-formed blob hash /
+    /// content-addressed path component. Gate before `h` reaches a URL path.
+    fn is_blob_hash(h: &str) -> bool {
+        h.len() == 64
+            && h.bytes()
+                .all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
+    }
+
+    /// Caps for a received archive — bound inode/disk exhaustion from a malicious
+    /// (future `--share`) sender. The 128 MB ciphertext download cap already
+    /// bounds raw bytes; the entry-count cap is the meaningful guard against a
+    /// many-tiny-files inode-exhaustion bomb.
+    const MAX_ARCHIVE_ENTRIES: usize = 100_000;
+    const MAX_ARCHIVE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
+
+    /// Unpack a tar archive into `dest` (created if missing). Hardening:
+    ///   - `set_overwrite(false)`: a colliding entry errors instead of silently
+    ///     clobbering an existing file in `dest`;
+    ///   - per-entry containment is enforced by `unpack_in` (canonicalizes each
+    ///     destination, rejecting `..`/absolute/symlink escape outside `dest` —
+    ///     verified against tar 0.4.x `validate_inside_dst`);
+    ///   - entry-count + cumulative-size caps bound a tar bomb.
     fn untar_to(bytes: &[u8], dest: &Path) -> Result<(), Error> {
         std::fs::create_dir_all(dest).map_err(Error::Io)?;
         let mut archive = tar::Archive::new(bytes);
-        archive.unpack(dest).map_err(Error::Io)
+        archive.set_overwrite(false); // must precede entries(); copied per-entry
+        let mut count = 0usize;
+        let mut total = 0u64;
+        for entry in archive.entries().map_err(Error::Io)? {
+            let mut entry = entry.map_err(Error::Io)?;
+            count += 1;
+            if count > MAX_ARCHIVE_ENTRIES {
+                return Err(Error::Config("archive exceeds entry-count limit".into()));
+            }
+            total = total.saturating_add(entry.size());
+            if total > MAX_ARCHIVE_TOTAL_BYTES {
+                return Err(Error::Config("archive exceeds extracted-size limit".into()));
+            }
+            entry.unpack_in(dest).map_err(Error::Io)?;
+        }
+        Ok(())
     }
 
     /// v2 `send-large` (MVP: `--self` only). Returns the share URI.
@@ -1728,6 +1763,16 @@ mod large {
             }
         };
 
+        // The manifest is inner-signed, but `hash` is interpolated into the blob
+        // GET URL — validate it is exactly 64 lowercase-hex BEFORE building any
+        // path, so a malicious (validly-signed, e.g. future `--share`) manifest
+        // cannot inject `../`, query/fragment, or other path bytes into the
+        // request. A non-hex hash in a signed manifest is a tampered manifest →
+        // unified signature-failure Display (exit 3).
+        if !is_blob_hash(hash) {
+            return Err(Error::SignatureTampered);
+        }
+
         // acceptance screen (size + hash) BEFORE any download or output
         let (sender_fp, _) = sender_openssh_fingerprint_and_z32(&record.pubkey)?;
         let ttl_remaining = (expires_at - now).max(0) as u64;
@@ -1746,15 +1791,62 @@ mod large {
         )?;
 
         // download (content-addressed path derived from the signed hash) +
-        // integrity-verify against that inner-signed hash
+        // integrity-verify against the inner-signed hash AND size. A homeserver
+        // serving wrong bytes, or a mismatch between the consented size and the
+        // actual blob, funnels through the unified signature-failure Display
+        // (exit 3) — so the size shown on the acceptance screen is a verified
+        // commitment, not a decorative attacker-controlled number.
         let ciphertext = blobstore.get(&format!("{BLOB_PREFIX}/{hash}"))?;
-        if sha256_hex(&ciphertext).as_str() != hash {
-            // Homeserver served bytes that don't match the signed manifest hash.
-            // Funnel through the unified signature-failure Display (exit 3).
+        if ciphertext.len() as u64 != size || sha256_hex(&ciphertext).as_str() != hash {
             return Err(Error::SignatureTampered);
         }
         let archive = crypto::age_decrypt(&ciphertext, &age_id)?;
         untar_to(&archive, dest)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn is_blob_hash_accepts_64_lowercase_hex_only() {
+            assert!(is_blob_hash(&"a".repeat(64)));
+            assert!(is_blob_hash(&"0123456789abcdef".repeat(4)));
+            assert!(!is_blob_hash(&"a".repeat(63))); // too short
+            assert!(!is_blob_hash(&"a".repeat(65))); // too long
+            assert!(!is_blob_hash(&"A".repeat(64))); // uppercase
+            assert!(!is_blob_hash(&"g".repeat(64))); // non-hex letter
+            assert!(!is_blob_hash("../../../../etc/passwd")); // path injection
+            assert!(!is_blob_hash(&format!("{}?x=1", "a".repeat(60)))); // query injection
+        }
+
+        #[test]
+        fn untar_to_refuses_to_clobber_existing_file() {
+            let dir = tempfile::tempdir().unwrap();
+            let dest = dir.path().join("out");
+            std::fs::create_dir_all(&dest).unwrap();
+            std::fs::write(dest.join("a.txt"), b"original").unwrap();
+
+            // a tar carrying a colliding `a.txt`
+            let mut builder = tar::Builder::new(Vec::new());
+            let data = b"malicious";
+            let mut hdr = tar::Header::new_gnu();
+            hdr.set_size(data.len() as u64);
+            hdr.set_mode(0o644);
+            hdr.set_cksum();
+            builder.append_data(&mut hdr, "a.txt", &data[..]).unwrap();
+            let archive = builder.into_inner().unwrap();
+
+            assert!(
+                untar_to(&archive, &dest).is_err(),
+                "must refuse to overwrite an existing file"
+            );
+            assert_eq!(
+                std::fs::read(dest.join("a.txt")).unwrap(),
+                b"original",
+                "existing file must be left untouched"
+            );
+        }
     }
 }
 

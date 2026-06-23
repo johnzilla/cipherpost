@@ -399,7 +399,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let purpose_str = purpose.as_deref().unwrap_or("");
 
             let transport = cipherpost::transport::DhtTransport::with_default_timeout()?;
-            let blobstore = build_homeserver_blobstore(&seed_bytes);
+            let blobstore = build_homeserver_blobstore(&seed_bytes)?;
 
             let uri = cipherpost::flow::run_send_large(
                 &id,
@@ -441,7 +441,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let seed_bytes: [u8; 32] = *id.signing_seed();
 
             let transport = cipherpost::transport::DhtTransport::with_default_timeout()?;
-            let blobstore = build_homeserver_blobstore(&seed_bytes);
+            let blobstore = build_homeserver_blobstore(&seed_bytes)?;
             let prompter = cipherpost::flow::TtyPrompter::new();
 
             cipherpost::flow::run_receive_large(
@@ -455,7 +455,9 @@ fn dispatch(cli: Cli) -> Result<()> {
 /// Build the production `HomeserverBlobStore` for the large-payload commands.
 /// Homeserver URL comes from `CIPHERPOST_HS` (defaults to the project test box).
 #[cfg(feature = "large-payload")]
-fn build_homeserver_blobstore(seed_bytes: &[u8; 32]) -> cipherpost::blobstore::HomeserverBlobStore {
+fn build_homeserver_blobstore(
+    seed_bytes: &[u8; 32],
+) -> Result<cipherpost::blobstore::HomeserverBlobStore, cipherpost::Error> {
     let url = std::env::var("CIPHERPOST_HS")
         .unwrap_or_else(|_| "https://hs.trustedgelabs.com".to_string());
     cipherpost::blobstore::HomeserverBlobStore::new(

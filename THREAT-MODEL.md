@@ -658,6 +658,50 @@ self-hostable component, not a trusted third party in the rendezvous path.
   self-to-self backup, where sender and recipient are the same identity and a receipt would
   be self-attesting anyway.
 
+### 10.1 Client-side auth & HTTP surface (post-review hardening)
+
+A dedicated adversarial pass (2026-06) audited the new client↔untrusted-homeserver auth/HTTP
+layer (`pubky_auth`, `HomeserverBlobStore`). Outcome:
+
+- **Transport confidentiality — cleartext refused.** The AuthToken and the session cookie are
+  bearer credentials. `HomeserverBlobStore::new` rejects any `CIPHERPOST_HS` that is not
+  `https://` (loopback `http://` is allowed only for a local `pubky-testnet`), so credentials
+  never traverse cleartext HTTP. TLS uses OS-native cert validation (no skip-verify).
+- **AuthToken cross-homeserver replay (residual, protocol-level).** The pubky v0 AuthToken
+  binds namespace + version + timestamp + pubkey + capabilities, but **not an audience/
+  homeserver**. A malicious homeserver the client authenticates to could therefore replay the
+  client's token to a *different* homeserver within the ±3-minute freshness window to obtain a
+  session as the client there. This is inherent to the pubky wire format (cipherpost
+  reproduces it byte-for-byte) and cannot be fixed client-side. Mitigations in place:
+  (a) HTTPS-only transport removes the network-MITM capture vector; (b) the requested
+  capability is scoped to **`/pub/cipherpost/:rw`** (not `/:rw`), so a replayed token is
+  bounded to the cipherpost blob prefix rather than the holder's whole space; (c) same-server
+  replay is blocked by the homeserver's own replay guard, and a fresh token is minted per
+  request.
+- **Path/URL injection — manifest `hash` validated before use.** The blob GET path is derived
+  from the manifest's `hash`; cipherpost validates it is exactly 64 lowercase-hex **before**
+  building any URL, and additionally cross-checks the downloaded length against the signed
+  `size` and the bytes against the signed `hash` (mismatch → unified exit-3). A malicious
+  (validly-signed, future `--share`) manifest therefore cannot inject `../`/query/fragment
+  bytes into the request, nor lie about the payload size shown on the acceptance screen.
+- **Archive extraction.** `untar_to` runs with `set_overwrite(false)` (a colliding entry
+  errors rather than silently clobbering a receiver file) and entry-count + cumulative-size
+  caps (tar-bomb / inode-exhaustion bound). Path containment (`..`/absolute/symlink escape
+  outside the destination) is enforced by the `tar` crate's canonicalizing `validate_inside_dst`
+  (verified in 0.4.x). The session cookie and AuthToken are held in `Zeroizing` buffers.
+- **signup→409→/session fallback.** Auth outcome is entirely server-attested: a 409 only
+  routes the client to `/session`, and carries no client-side guarantee about account state.
+  Not a privilege escalation (the cookie grants access only to the client's own space on a
+  server it already trusts to host its ciphertext), but noted so callers do not infer
+  account-creation semantics from it.
+- **Idempotency / concurrency divergence (pre-`--share` gate).** Unlike the small-share
+  `receive` path (§3.3 sentinel check + per-`share_ref` advisory flock), `receive-large` has
+  **no idempotency ledger and no lock**: re-running re-downloads and re-unpacks, and two
+  concurrent `receive-large` invocations on the same URI race in the output directory.
+  Acceptable for the `--self` backup MVP; porting the flock + ledger is a required gate before
+  cross-identity `--share` ships, alongside delivery-attestation (§10) and the
+  malicious-sender archive review.
+
 **Fork point:** cclink v1.3.0 (the last release before cclink was mothballed). Any cclink
 CVE that surfaces post-fork is evaluated on a case-by-case basis for cipherpost applicability
 — cipherpost inherits cclink's *code patterns* but is an independently maintained codebase

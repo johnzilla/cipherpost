@@ -22,13 +22,22 @@
 use crate::error::Error;
 use pkarr::Keypair;
 use std::time::{SystemTime, UNIX_EPOCH};
+use zeroize::Zeroizing;
 
 const PUBKY_AUTH_NAMESPACE: &[u8; 10] = b"PUBKY:AUTH";
 const AUTH_TOKEN_VERSION: u8 = 0;
 
-/// Capability string: read+write to the whole of the caller's own space.
-/// Sufficient for cipherpost to PUT/GET under `/priv/cipherpost/…`.
+/// Root read+write capability (`/:rw`). Kept as the reference value pinned by the
+/// golden-vector test (it matches pubky-common's `Capability::root()`); the
+/// production path requests the narrower [`CAP_BLOB`] instead.
 pub const CAP_ROOT_RW: &str = "/:rw";
+
+/// The capability cipherpost actually requests: read+write scoped to its own blob
+/// prefix under the world-readable `/pub/` namespace (where pubky-homeserver
+/// v0.9.1 permits writes). Least-privilege — because the AuthToken has no
+/// audience binding (see THREAT-MODEL §10), a leaked or cross-server-replayed
+/// token is at least bounded to `/pub/cipherpost/`, not the holder's whole space.
+pub const CAP_BLOB: &str = "/pub/cipherpost/:rw";
 
 /// Encode an unsigned postcard varint (LEB128). Capability strings are short, but
 /// the loop is correct for any `u64`.
@@ -55,8 +64,13 @@ pub fn now_micros() -> Result<u64, Error> {
 }
 
 /// Build a signed pubky `AuthToken` (postcard wire bytes) ready to POST to the
-/// homeserver's `/signup` or `/signin` endpoint.
-pub fn build_auth_token(keypair: &Keypair, capabilities: &str, timestamp_micros: u64) -> Vec<u8> {
+/// homeserver's `/signup` or `/signin` endpoint. Returned in a `Zeroizing`
+/// buffer — the token is a bearer credential for its ±3-minute window.
+pub fn build_auth_token(
+    keypair: &Keypair,
+    capabilities: &str,
+    timestamp_micros: u64,
+) -> Zeroizing<Vec<u8>> {
     // tail = namespace ++ version ++ timestamp_be ++ pubkey ++ caps
     let mut tail = Vec::with_capacity(10 + 1 + 8 + 32 + 1 + capabilities.len());
     tail.extend_from_slice(PUBKY_AUTH_NAMESPACE);
@@ -73,7 +87,7 @@ pub fn build_auth_token(keypair: &Keypair, capabilities: &str, timestamp_micros:
     let mut token = Vec::with_capacity(64 + tail.len());
     token.extend_from_slice(&signature.to_bytes());
     token.extend_from_slice(&tail);
-    token
+    Zeroizing::new(token)
 }
 
 #[cfg(test)]
