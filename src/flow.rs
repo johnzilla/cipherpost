@@ -1182,8 +1182,11 @@ fn write_output(sink: &mut OutputSink, bytes: &[u8]) -> Result<(), Error> {
 ///     raw "Is a directory" IO error from `fs::write`);
 ///   - warns on stderr before clobbering an existing file (never silent).
 ///
-/// File permissions are left at the umask default, matching the prior `fs::write`
-/// behavior (tightening decrypted-output perms is a separate, deliberate choice).
+/// The output is created mode **0600** (owner read/write only) — the bytes are
+/// decrypted cryptographic material, so they get the same restrictive perms as
+/// the identity file rather than the umask default. The temp file is created 0600
+/// up front, so the secret is never briefly group/world-readable on disk, and the
+/// `rename` carries 0600 onto the final path (replacing any laxer prior perms).
 fn write_file_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), Error> {
     use std::io::Write as _;
 
@@ -1220,6 +1223,7 @@ fn write_file_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), Error> 
         let mut f = fs::OpenOptions::new()
             .write(true)
             .create_new(true) // refuse to reuse a stray temp
+            .mode(0o600) // decrypted material: owner-only from creation
             .open(&tmp)
             .map_err(Error::Io)?;
         f.write_all(bytes).map_err(Error::Io)?;
@@ -2002,6 +2006,15 @@ mod tests {
         // Overwrite (warns on stderr, succeeds) — content fully replaced, not appended.
         write_file_atomic(&target, b"second-longer").unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"second-longer");
+    }
+
+    #[test]
+    fn write_file_atomic_sets_owner_only_perms() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("out.key");
+        write_file_atomic(&target, b"decrypted-material").unwrap();
+        let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "decrypted output must be 0600, got {mode:o}");
     }
 
     #[test]
