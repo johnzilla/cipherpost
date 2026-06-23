@@ -5,7 +5,11 @@
 //! Architectural lineage: fork-and-diverge from https://github.com/johnzilla/cclink
 //! (mothballed). No live dependency relationship — cclink is reference-only.
 
+#[cfg(feature = "large-payload")]
+pub mod blobstore;
 pub mod cli;
+#[cfg(feature = "large-payload")]
+pub mod pubky_auth;
 pub mod crypto;
 pub mod error;
 pub mod flow;

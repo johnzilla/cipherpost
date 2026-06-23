@@ -89,6 +89,17 @@ pub enum Material {
         #[serde(with = "base64_std")]
         bytes: Vec<u8>,
     },
+    /// v2 large-payload: the actual ciphertext lives OFF the DHT (on a
+    /// pubky homeserver). Carries only an integrity check + size — the blob is
+    /// CONTENT-ADDRESSED, so its storage path is derived from `hash` (= the
+    /// lowercase-hex SHA-256 of the age-ciphertext blob, bound by the signed
+    /// manifest); no redundant location is stored, keeping the manifest under
+    /// the 1000-byte wire budget. Carries NO in-envelope bytes.
+    /// Wire shape: `{"type":"large_payload","hash":"…","size":N}`.
+    LargePayload {
+        hash: String,
+        size: u64,
+    },
 }
 
 // Manual Debug — redacts data-carrying variants (Pitfall #7). Phase 6: X509Cert
@@ -110,6 +121,12 @@ impl std::fmt::Debug for Material {
             }
             Material::SshKey { bytes } => {
                 write!(f, "SshKey([REDACTED {} bytes])", bytes.len())
+            }
+            // No secret bytes — location/hash/size are non-sensitive metadata,
+            // so they are shown plainly (the leak-scan invariant is about KEY
+            // bytes, which this variant does not carry).
+            Material::LargePayload { hash, size } => {
+                write!(f, "LargePayload {{ hash: {hash:?}, size: {size} }}")
             }
         }
     }
@@ -176,12 +193,34 @@ impl Material {
     /// Plaintext byte length of this variant's data field. Feeds `enforce_plaintext_cap`
     /// pre-encrypt (D-P6-16 / X509-06). Phase 7 Plan 05: all four variants now
     /// carry bytes — no unit-variant zero-placeholder remains.
+    /// `LargePayload` carries no in-envelope bytes (they live off-DHT), so its
+    /// plaintext size is 0 — the manifest is bounded by the wire budget, and the
+    /// off-DHT blob is bounded by the homeserver's request cap, not this check.
     pub fn plaintext_size(&self) -> usize {
         match self {
             Material::GenericSecret { bytes } => bytes.len(),
             Material::X509Cert { bytes } => bytes.len(),
             Material::PgpKey { bytes } => bytes.len(),
             Material::SshKey { bytes } => bytes.len(),
+            Material::LargePayload { .. } => 0,
+        }
+    }
+
+    /// Construct a `LargePayload` pointer material (v2 large-payload send path).
+    pub fn large_payload(hash: String, size: u64) -> Self {
+        Material::LargePayload { hash, size }
+    }
+
+    /// Return `(hash, size)` of a `LargePayload` variant. Other variants return
+    /// `Error::InvalidMaterial` (mirrors the `as_*_bytes` accessor pattern;
+    /// developer-facing — callers match the variant first).
+    pub fn as_large_payload(&self) -> Result<(&str, u64), Error> {
+        match self {
+            Material::LargePayload { hash, size } => Ok((hash, *size)),
+            other => Err(Error::InvalidMaterial {
+                variant: variant_tag(other).to_string(),
+                reason: "accessor called on wrong variant".to_string(),
+            }),
         }
     }
 }
@@ -194,6 +233,7 @@ fn variant_tag(m: &Material) -> &'static str {
         Material::X509Cert { .. } => "x509_cert",
         Material::PgpKey { .. } => "pgp_key",
         Material::SshKey { .. } => "ssh_key",
+        Material::LargePayload { .. } => "large_payload",
     }
 }
 
@@ -569,6 +609,53 @@ mod tests {
         match err {
             Error::InvalidMaterial { variant, reason } => {
                 assert_eq!(variant, "pgp_key");
+                assert_eq!(reason, "accessor called on wrong variant");
+            }
+            other => panic!("expected InvalidMaterial, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // v2 large-payload — Material::LargePayload pointer variant.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn material_large_payload_serde_round_trip() {
+        let m = Material::large_payload("abcdef0123456789".to_string(), 4096);
+        let s = serde_json::to_string(&m).unwrap();
+        assert!(
+            s.contains("\"type\":\"large_payload\""),
+            "serde tag must be snake_case: {s}"
+        );
+        assert!(s.contains("\"hash\":\"abcdef0123456789\""), "hash: {s}");
+        assert!(s.contains("\"size\":4096"), "size as integer: {s}");
+        let back: Material = serde_json::from_str(&s).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn material_large_payload_plaintext_size_is_zero() {
+        // Bytes live off-DHT; the manifest carries only the pointer.
+        let m = Material::large_payload("h".into(), 999_999);
+        assert_eq!(m.plaintext_size(), 0);
+    }
+
+    #[test]
+    fn material_large_payload_debug_shows_metadata_not_redacted() {
+        let m = Material::large_payload("abc123".into(), 10);
+        let dbg = format!("{m:?}");
+        assert!(dbg.contains("LargePayload"), "{dbg}");
+        assert!(dbg.contains("abc123"), "{dbg}");
+    }
+
+    #[test]
+    fn material_as_large_payload_happy_and_mismatch() {
+        let m = Material::large_payload("h".into(), 42);
+        assert_eq!(m.as_large_payload().unwrap(), ("h", 42));
+        let g = Material::generic_secret(vec![1, 2, 3]);
+        match g.as_large_payload().unwrap_err() {
+            Error::InvalidMaterial { variant, reason } => {
+                assert_eq!(variant, "generic_secret");
                 assert_eq!(reason, "accessor called on wrong variant");
             }
             other => panic!("expected InvalidMaterial, got {other:?}"),

@@ -17,6 +17,11 @@ path = "src/main.rs"
 
 [features]
 mock = []
+# v2 large-payload handoff (iroh-free; pubky-homeserver over blocking ureq).
+# Feature-gated so the DEFAULT build's dependency tree — and every supply-chain
+# guard test (no ring/aws-lc, no direct tokio) — is unchanged. Pulls a blocking
+# HTTP client (ureq + OS-native TLS, no ring/aws-lc) and tar only when enabled.
+large-payload = ["dep:ureq", "dep:tar"]
 # Phase 9 Plan 02 (D-P9-D2 + DHT-03): real-DHT cross-identity round trip is
 # behind this feature flag. CI NEVER enables it (PR + nightly stay mock-
 # only per Pitfall #29). The flag gates a single test in tests/real_dht_e2e.rs
@@ -89,6 +94,13 @@ rsa = { version = "0.9", default-features = false }
 # This keeps the dep tree clean: NO new ed25519-dalek version leak from ssh-key
 # (verified post-Plan-05 against Plan 01's evidence file).
 ssh-key = { version = "0.6.7", default-features = false, features = ["alloc"] }
+
+# v2 large-payload (feature-gated via `large-payload`; both optional). ureq is a
+# BLOCKING HTTP client — no tokio at the cipherpost layer (preserves SCAF-05).
+# default-features=false drops ureq's default rustls(+ring) backend; native-tls
+# uses OS TLS (Security.framework / schannel / system OpenSSL) → no ring, no aws-lc.
+ureq = { version = "3", default-features = false, features = ["native-tls"], optional = true }
+tar = { version = "0.4", optional = true }
 
 [[test]]
 name = "mock_transport_roundtrip"
@@ -430,6 +442,20 @@ required-features = ["mock"]
 name = "real_dht_e2e"
 path = "tests/real_dht_e2e.rs"
 required-features = ["real-dht-e2e"]
+
+# v2 large-payload: live HomeserverBlobStore round-trip. #[ignore]'d + manual-only
+# (like real_dht_e2e); needs the `large-payload` feature to compile.
+[[test]]
+name = "homeserver_live"
+path = "tests/homeserver_live.rs"
+required-features = ["large-payload"]
+
+# v2 large-payload: send-large→receive-large round trip under MockTransport +
+# MockBlobStore (no live server / DHT). CI-safe.
+[[test]]
+name = "large_payload_round_trip"
+path = "tests/large_payload_round_trip.rs"
+required-features = ["large-payload", "mock"]
 
 [dev-dependencies]
 tempfile = "3"

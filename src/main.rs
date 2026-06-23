@@ -361,5 +361,106 @@ fn dispatch(cli: Cli) -> Result<()> {
             println!("crypto: age, Ed25519, Argon2id, HKDF-SHA256, JCS");
             Ok(())
         }
+
+        #[cfg(feature = "large-payload")]
+        Command::SendLarge {
+            path,
+            self_,
+            purpose,
+            ttl,
+            passphrase,
+            passphrase_file,
+            passphrase_fd,
+        } => {
+            if passphrase_file.is_some() && passphrase_fd.is_some() {
+                return Err(cipherpost::Error::Config(
+                    "--passphrase-file and --passphrase-fd are mutually exclusive".into(),
+                )
+                .into());
+            }
+            if !self_ {
+                return Err(cipherpost::Error::Config(
+                    "send-large requires --self (cross-identity --share is not yet supported)".into(),
+                )
+                .into());
+            }
+            let pw = cipherpost::identity::resolve_passphrase(
+                passphrase.as_deref(),
+                Some("CIPHERPOST_PASSPHRASE"),
+                passphrase_file.as_deref(),
+                passphrase_fd,
+                false,
+            )?;
+            let id = cipherpost::identity::load(pw.as_secret())?;
+            let seed_bytes: [u8; 32] = *id.signing_seed();
+            let kp = pkarr::Keypair::from_secret_key(&seed_bytes);
+            let ttl_seconds = ttl.unwrap_or(cipherpost::flow::DEFAULT_TTL_SECONDS);
+            let purpose_str = purpose.as_deref().unwrap_or("");
+
+            let transport = cipherpost::transport::DhtTransport::with_default_timeout()?;
+            let blobstore = build_homeserver_blobstore(&seed_bytes);
+
+            let uri = cipherpost::flow::run_send_large(
+                &id,
+                &transport,
+                &blobstore,
+                &kp,
+                cipherpost::flow::SendMode::SelfMode,
+                purpose_str,
+                &path,
+                ttl_seconds,
+            )?;
+            println!("{uri}");
+            Ok(())
+        }
+
+        #[cfg(feature = "large-payload")]
+        Command::ReceiveLarge {
+            share,
+            output,
+            passphrase,
+            passphrase_file,
+            passphrase_fd,
+        } => {
+            if passphrase_file.is_some() && passphrase_fd.is_some() {
+                return Err(cipherpost::Error::Config(
+                    "--passphrase-file and --passphrase-fd are mutually exclusive".into(),
+                )
+                .into());
+            }
+            let uri = cipherpost::ShareUri::parse(&share)?;
+            let pw = cipherpost::identity::resolve_passphrase(
+                passphrase.as_deref(),
+                Some("CIPHERPOST_PASSPHRASE"),
+                passphrase_file.as_deref(),
+                passphrase_fd,
+                false,
+            )?;
+            let id = cipherpost::identity::load(pw.as_secret())?;
+            let seed_bytes: [u8; 32] = *id.signing_seed();
+
+            let transport = cipherpost::transport::DhtTransport::with_default_timeout()?;
+            let blobstore = build_homeserver_blobstore(&seed_bytes);
+            let prompter = cipherpost::flow::TtyPrompter::new();
+
+            cipherpost::flow::run_receive_large(
+                &id,
+                &transport,
+                &blobstore,
+                &uri,
+                &output,
+                &prompter,
+            )?;
+            Ok(())
+        }
     }
+}
+
+/// Build the production `HomeserverBlobStore` for the large-payload commands.
+/// Homeserver URL comes from `CIPHERPOST_HS` (defaults to the project test box).
+#[cfg(feature = "large-payload")]
+fn build_homeserver_blobstore(seed_bytes: &[u8; 32]) -> cipherpost::blobstore::HomeserverBlobStore {
+    let url = std::env::var("CIPHERPOST_HS")
+        .unwrap_or_else(|_| "https://hs.trustedgelabs.com".to_string());
+    cipherpost::blobstore::HomeserverBlobStore::new(url, pkarr::Keypair::from_secret_key(seed_bytes))
 }

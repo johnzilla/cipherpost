@@ -189,6 +189,61 @@ pub enum Command {
     #[command(long_about = "Print version and build info.\n\nEXAMPLES:\n  \
               cipherpost version")]
     Version,
+
+    /// Send a large payload (file/dir) via homeserver blob + DHT manifest (v2)
+    #[cfg(feature = "large-payload")]
+    #[command(long_about = "Send a large file or directory: tar'd, age-encrypted, uploaded to your \
+              pubky homeserver, with a tiny signed manifest published to the DHT.\n\n\
+              The homeserver URL comes from the CIPHERPOST_HS env var.\n\n\
+              EXAMPLES:\n  \
+              CIPHERPOST_HS=https://hs.example.com cipherpost send-large --self ./my-workspace\n  \
+              cipherpost send-large --self -p 'vllm backup' ./workspace")]
+    SendLarge {
+        /// Path to the file or directory to send
+        path: std::path::PathBuf,
+
+        /// Encrypt to self (the only mode supported in v2-alpha)
+        #[arg(long)]
+        self_: bool,
+
+        /// Purpose string (signed, sender-attested)
+        #[arg(short, long)]
+        purpose: Option<String>,
+
+        /// TTL in seconds for the manifest (default 86400 = 24h)
+        #[arg(long)]
+        ttl: Option<u64>,
+
+        #[arg(long, value_name = "PATH")]
+        passphrase_file: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "N")]
+        passphrase_fd: Option<i32>,
+        #[arg(long, value_name = "VALUE", hide = true)]
+        passphrase: Option<String>,
+    },
+
+    /// Receive a large payload into a directory (v2)
+    #[cfg(feature = "large-payload")]
+    #[command(long_about = "Receive a large payload: resolve + verify the manifest, show the \
+              acceptance screen (size + hash), download the blob from the homeserver, verify its \
+              hash, decrypt, and unpack into the output directory.\n\n\
+              EXAMPLES:\n  \
+              cipherpost receive-large <share-uri> -o ./restored")]
+    ReceiveLarge {
+        /// Share URI printed by `send-large`
+        share: String,
+
+        /// Output directory to unpack into
+        #[arg(short, long)]
+        output: std::path::PathBuf,
+
+        #[arg(long, value_name = "PATH")]
+        passphrase_file: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "N")]
+        passphrase_fd: Option<i32>,
+        #[arg(long, value_name = "VALUE", hide = true)]
+        passphrase: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

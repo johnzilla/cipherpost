@@ -78,6 +78,50 @@ cipherpost receipts --from <recipient-z32> --json
 
 Fetches the recipient's PKARR packet, filters TXT records by the `_cprcpt-` prefix, verifies each receipt's Ed25519 signature, and renders a structured summary (or a 10-field audit-detail view when filtering by `--share-ref`).
 
+## Large payloads (v2, experimental)
+
+Behind an **off-by-default** `large-payload` cargo feature, cipherpost can hand off
+arbitrarily large payloads (directories, workspaces, archives) that blow past the
+1000-byte DHT wire budget — without adding any operator you don't control.
+
+```bash
+cargo build --release --features large-payload
+```
+
+The model is **manifest-on-DHT, ciphertext-blob-on-homeserver**: the payload is
+tar'd, age-encrypted to the recipient (same envelope crypto as small shares), and
+uploaded as an **opaque ciphertext blob** to a [pubky homeserver](https://github.com/pubky/pubky-core)
+(self-hostable, pkarr-addressed — the "relay" is a homeserver you run). A tiny
+signed manifest carrying only `sha256(ciphertext)` + size is published to the DHT
+via the normal dual-signed flow.
+
+```bash
+# homeserver URL comes from CIPHERPOST_HS (your own homeserver)
+export CIPHERPOST_HS=https://hs.example.com
+
+cipherpost send-large --self -p "vllm workspace backup" ./workspace
+# → prints a share URI
+
+cipherpost receive-large <share-uri> -o ./restored
+# acceptance screen shows payload size + SHA-256; on confirm, downloads the blob,
+# verifies the hash against the signed manifest, decrypts, and unpacks.
+```
+
+Talks to the homeserver over blocking HTTPS (`ureq` + OS-native TLS — **no `tokio`,
+no `ring`/`aws-lc` in the default tree**; the feature adds them only when enabled).
+The blob never leaves the sender's machine as plaintext: the homeserver, like the
+DHT, sees only ciphertext, and a mismatched hash aborts receive with exit 3.
+
+**v2-alpha scope / caveats:**
+- `--self` only (cross-identity `--share` for large payloads is not yet implemented).
+- Blobs live under the homeserver's world-readable `/pub/` at an unguessable
+  content-addressed path (pubky-homeserver has no writable private space). This is a
+  **capability-URL** model: confidentiality rests on the age ciphertext + the
+  unguessable path (which travels only inside the encrypted manifest). Someone who
+  knows your identity **and** homeserver could enumerate `/pub/` to see blob
+  hashes + sizes (never content) — see [`THREAT-MODEL.md`](./THREAT-MODEL.md).
+- Signed receipts for large-payload pickup are not yet wired (deferred).
+
 ## Security model at a glance
 
 - **Dual signatures verified before any decrypt.** Every share carries an outer PKARR-packet signature (SignedPacket) and an inner Ed25519 signature over canonical JSON (RFC 8785 / JCS). Tampering at either layer aborts `cipherpost receive` with exit 3 **before** age-decrypt runs, and no envelope field (including `purpose`) is displayed prior to that check.

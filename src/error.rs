@@ -90,6 +90,12 @@ pub enum Error {
     #[error("invalid share URI: {0}")]
     InvalidShareUri(String),
 
+    /// v2 large-payload: a plain `receive` was attempted on a `large_payload`
+    /// share whose bytes live off-DHT. Directs the user to `receive-large`.
+    /// Exit 1 (usage/content-error class, via the `_ => 1` arm).
+    #[error("this is a large-payload share — use `cipherpost receive-large`")]
+    LargePayloadShare,
+
     #[error("invalid passphrase input method (inline argv rejected)")]
     PassphraseInvalidInput,
 

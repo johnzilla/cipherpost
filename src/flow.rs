@@ -830,6 +830,11 @@ pub fn run_receive(
             let sub = preview::render_ssh_preview(bytes)?;
             (bytes, Some(sub))
         }
+        // v2: the plain `receive` path cannot surface a large-payload share —
+        // its bytes live off-DHT. Bail BEFORE any acceptance/output with a
+        // message directing the user to `receive-large`. (Inner-sig has already
+        // been verified above, so it is safe to act on the material variant.)
+        Material::LargePayload { .. } => return Err(Error::LargePayloadShare),
     };
 
     let ttl_remaining = (expires_at - now).max(0) as u64;
@@ -1148,6 +1153,7 @@ fn material_type_string(m: &Material) -> &'static str {
         Material::X509Cert { .. } => "x509_cert",
         Material::PgpKey { .. } => "pgp_key",
         Material::SshKey { .. } => "ssh_key",
+        Material::LargePayload { .. } => "large_payload",
     }
 }
 
@@ -1446,6 +1452,235 @@ fn sender_openssh_fingerprint_and_z32(z32: &str) -> Result<(String, String), Err
 // compiled as a separate crate (cfg(test) on lib does NOT activate), so
 // gating only on `feature = "mock"` would force tests/real_dht_e2e.rs to
 // inline-define its own prompter.
+// ---- run_send_large / run_receive_large (v2 large-payload) ------------------
+
+#[cfg(feature = "large-payload")]
+pub use large::{run_receive_large, run_send_large};
+
+/// v2 large-payload flow. Self-contained (composes the v1 primitives —
+/// `crypto`, `record`, `Transport`, `check_wire_budget`, the acceptance
+/// `Prompter`); the v1 `run_send`/`run_receive` paths are untouched.
+///
+/// Model: the bulk payload is tar'd → age-encrypted → uploaded to a pubky
+/// homeserver as opaque ciphertext (a `BlobStore`); a tiny `LargePayload`
+/// manifest (location + `sha256(ciphertext)` + size) is published via the
+/// existing dual-signed DHT flow. The recipient verifies the manifest, fetches
+/// the blob, checks the inner-signed hash, decrypts, and untars.
+#[cfg(feature = "large-payload")]
+mod large {
+    use super::*;
+    use crate::blobstore::BlobStore;
+    use std::path::Path;
+
+    /// Writable blob prefix. pubky-homeserver v0.9.1 only permits writes under
+    /// `/pub/`; the per-blob component is `sha256(ciphertext)` (content-addressed
+    /// → unguessable, and no circular dependency with the manifest's share_ref).
+    const BLOB_PREFIX: &str = "pub/cipherpost";
+
+    /// Lowercase-hex SHA-256 — integrity check AND content-addressed blob path.
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(bytes);
+        let mut out = String::with_capacity(64);
+        for b in digest {
+            out.push_str(&format!("{b:02x}"));
+        }
+        out
+    }
+
+    /// Pack a file or directory into an in-memory tar archive.
+    fn tar_path(path: &Path) -> Result<Vec<u8>, Error> {
+        let name = path
+            .file_name()
+            .ok_or_else(|| Error::Config(format!("invalid send path: {}", path.display())))?;
+        let mut builder = tar::Builder::new(Vec::new());
+        if path.is_dir() {
+            builder.append_dir_all(name, path).map_err(Error::Io)?;
+        } else {
+            let mut f = std::fs::File::open(path).map_err(Error::Io)?;
+            builder.append_file(name, &mut f).map_err(Error::Io)?;
+        }
+        builder.into_inner().map_err(Error::Io)
+    }
+
+    /// Unpack a tar archive into `dest` (created if missing). The `tar` crate's
+    /// `unpack` rejects absolute paths and `..` traversal by default.
+    fn untar_to(bytes: &[u8], dest: &Path) -> Result<(), Error> {
+        std::fs::create_dir_all(dest).map_err(Error::Io)?;
+        let mut archive = tar::Archive::new(bytes);
+        archive.unpack(dest).map_err(Error::Io)
+    }
+
+    /// v2 `send-large` (MVP: `--self` only). Returns the share URI.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_send_large(
+        identity: &Identity,
+        transport: &dyn Transport,
+        blobstore: &dyn BlobStore,
+        keypair: &pkarr::Keypair,
+        mode: SendMode,
+        purpose: &str,
+        path: &Path,
+        ttl_seconds: u64,
+    ) -> Result<String, Error> {
+        // Recipient = self (MVP). Cross-identity --share is deferred.
+        let recipient = match mode {
+            SendMode::SelfMode => {
+                let ed_pub = identity.public_key_bytes();
+                let x = crypto::ed25519_to_x25519_public(&ed_pub)?;
+                crypto::recipient_from_x25519_bytes(&x)?
+            }
+            SendMode::Share { .. } => {
+                return Err(Error::Config(
+                    "large --share is not yet implemented; use --self".into(),
+                ));
+            }
+        };
+
+        // tar → age-encrypt → content hash (= integrity check AND blob path)
+        let archive = tar_path(path)?;
+        let ciphertext = crypto::age_encrypt(&archive, &recipient)?;
+        let hash = sha256_hex(&ciphertext);
+        let size = ciphertext.len() as u64;
+
+        // upload opaque ciphertext to the homeserver at its content-addressed path
+        blobstore.put(&format!("{BLOB_PREFIX}/{hash}"), &ciphertext)?;
+
+        // build the tiny manifest (carries only hash + size; path is derived)
+        let created_at = now_unix_seconds()?;
+        let envelope = Envelope {
+            burn_after_read: false,
+            created_at,
+            material: Material::large_payload(hash, size),
+            protocol_version: PROTOCOL_VERSION,
+            purpose: payload::strip_control_chars(purpose),
+        };
+        let jcs_bytes = envelope.to_jcs_bytes()?;
+
+        // Publish via the v1 dual-signed DHT flow. age adds a random-length
+        // "grease" stanza per encryption; near the 1000-byte budget an unlucky
+        // draw can overflow, so re-sample on WireBudgetExceeded (mirrors run_send).
+        use base64::Engine;
+        let mut last_err: Option<(usize, usize)> = None;
+        for _ in 0..WIRE_BUDGET_RETRY_ATTEMPTS {
+            let manifest_ct = crypto::age_encrypt(&jcs_bytes, &recipient)?;
+            let share_ref = record::share_ref_from_bytes(&manifest_ct, created_at);
+            let blob = base64::engine::general_purpose::STANDARD.encode(&manifest_ct);
+            let signable = OuterRecordSignable {
+                blob: blob.clone(),
+                created_at,
+                pin_required: false,
+                protocol_version: PROTOCOL_VERSION,
+                pubkey: identity.z32_pubkey(),
+                recipient: None,
+                share_ref: share_ref.clone(),
+                ttl_seconds,
+            };
+            let signature = record::sign_record(&signable, keypair)?;
+            let record = OuterRecord {
+                blob,
+                created_at,
+                pin_required: false,
+                protocol_version: PROTOCOL_VERSION,
+                pubkey: identity.z32_pubkey(),
+                recipient: None,
+                share_ref: share_ref.clone(),
+                signature,
+                ttl_seconds,
+            };
+            match check_wire_budget(&record, keypair, jcs_bytes.len()) {
+                Ok(()) => {
+                    transport.publish(keypair, &record)?;
+                    return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref));
+                }
+                Err(Error::WireBudgetExceeded { encoded, .. }) => {
+                    last_err = Some((encoded, jcs_bytes.len()));
+                    continue;
+                }
+                Err(other) => return Err(other),
+            }
+        }
+        let (encoded, plaintext) = last_err.unwrap_or((WIRE_BUDGET_BYTES + 1, jcs_bytes.len()));
+        Err(Error::WireBudgetExceeded {
+            encoded,
+            budget: WIRE_BUDGET_BYTES,
+            plaintext,
+        })
+    }
+
+    /// v2 `receive-large`: resolve+verify manifest → acceptance (size+hash) →
+    /// download blob → verify sha256 against the inner-signed hash → age-decrypt
+    /// → untar into `dest`. MVP: `--self` (decrypts with the receiver's identity).
+    pub fn run_receive_large(
+        identity: &Identity,
+        transport: &dyn Transport,
+        blobstore: &dyn BlobStore,
+        uri: &ShareUri,
+        dest: &Path,
+        prompter: &dyn Prompter,
+    ) -> Result<(), Error> {
+        // resolve → dual-sig verify (inside resolve) → share_ref → TTL
+        let record = transport.resolve(&uri.sender_z32)?;
+        if record.share_ref != uri.share_ref_hex {
+            return Err(Error::ShareRefMismatch);
+        }
+        let now = now_unix_seconds()?;
+        let expires_at = record.created_at.saturating_add(record.ttl_seconds as i64);
+        if now >= expires_at {
+            return Err(Error::Expired);
+        }
+
+        // decrypt the manifest (receiver identity)
+        use base64::Engine;
+        let blob_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&record.blob)
+            .map_err(|_| Error::SignatureCanonicalMismatch)?;
+        let seed = identity.signing_seed();
+        let x = crypto::ed25519_to_x25519_secret(&seed);
+        let age_id = crypto::identity_from_x25519_bytes(&x)?;
+        let jcs = crypto::age_decrypt(&blob_bytes, &age_id)?;
+        let envelope = Envelope::from_jcs_bytes(&jcs)?;
+
+        // must be a large-payload manifest
+        let (hash, size) = match envelope.material.as_large_payload() {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(Error::Config(
+                    "not a large-payload share; use `cipherpost receive`".into(),
+                ))
+            }
+        };
+
+        // acceptance screen (size + hash) BEFORE any download or output
+        let (sender_fp, _) = sender_openssh_fingerprint_and_z32(&record.pubkey)?;
+        let ttl_remaining = (expires_at - now).max(0) as u64;
+        let preview = format!("off-DHT blob: {size} bytes\nSHA-256: {hash}");
+        prompter.render_and_confirm(
+            &envelope.purpose,
+            &sender_fp,
+            &record.pubkey,
+            &record.share_ref,
+            None,
+            "large_payload",
+            size as usize,
+            Some(&preview),
+            ttl_remaining,
+            expires_at,
+        )?;
+
+        // download (content-addressed path derived from the signed hash) +
+        // integrity-verify against that inner-signed hash
+        let ciphertext = blobstore.get(&format!("{BLOB_PREFIX}/{hash}"))?;
+        if sha256_hex(&ciphertext).as_str() != hash {
+            // Homeserver served bytes that don't match the signed manifest hash.
+            // Funnel through the unified signature-failure Display (exit 3).
+            return Err(Error::SignatureTampered);
+        }
+        let archive = crypto::age_decrypt(&ciphertext, &age_id)?;
+        untar_to(&archive, dest)
+    }
+}
+
 #[cfg(any(test, feature = "mock", feature = "real-dht-e2e"))]
 pub mod test_helpers {
     use super::*;

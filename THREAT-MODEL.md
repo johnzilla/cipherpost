@@ -608,6 +608,45 @@ to cross-decrypt fail at the HKDF step. This domain separation means a cclink co
 NOT directly compromise cipherpost identities (and vice versa); the two systems share
 library surface but not key material. [D-08, CRYPTO-03, TRANS-05]
 
+## 10. Large-Payload Homeserver Adversary (v2, experimental)
+
+Applies only to the off-by-default `large-payload` feature, where the bulk payload is
+stored on a [pubky homeserver](https://github.com/pubky/pubky-core) and only a tiny signed
+manifest (carrying `sha256(ciphertext)` + size) goes on the DHT.
+
+**Trust assumption: the homeserver is an UNTRUSTED blob mirror, not an operator.** It
+stores and serves opaque bytes; it never holds plaintext, decryption keys, or any
+cipherpost identity secret. This preserves Principle #1 in substance — the homeserver
+sees exactly what the DHT already sees (ciphertext), and is a user-controlled,
+self-hostable component, not a trusted third party in the rendezvous path.
+
+- **Confidentiality.** The blob is age ciphertext (X25519 → ChaCha20-Poly1305 via `age`),
+  identical to small-share encryption. The homeserver, the network, and anyone who fetches
+  the blob obtain only ciphertext. A compromised or malicious homeserver cannot read the
+  payload.
+- **Integrity.** The blob's `sha256` is carried in the **inner-Ed25519-signed** manifest.
+  `receive-large` recomputes it after download and aborts with exit 3 (the unified
+  signature-failure Display) on any mismatch. A malicious homeserver can therefore
+  **withhold or corrupt** a blob (availability/DoS) but **cannot forge** accepted content.
+- **Addressing / metadata leak.** pubky-homeserver v0.9.1 permits writes only under the
+  world-readable `/pub/` namespace, so the blob lives at an unguessable, content-addressed
+  path `/pub/cipherpost/<sha256>`. The path travels only inside the **encrypted** DHT
+  manifest, so it is a *capability URL*. Residual exposure: an adversary who learns **both**
+  the sender's z-base-32 identity **and** which homeserver it uses can enumerate that
+  tenant's `/pub/` and observe **blob hashes and sizes** (handoff activity metadata) — never
+  plaintext. This is comparable to the DHT already exposing the existence and size of a
+  share, and is the documented cost of the v0.9.1 `/pub/`-only constraint. A homeserver with
+  a writable private namespace (or a patched self-hosted one) would remove this enumeration
+  surface.
+- **Availability.** If the homeserver deletes the blob, goes offline, or the operator
+  refuses service, the manifest still resolves on the DHT but the blob `GET` fails
+  (`Error::NotFound`). There is no replication; large-payload availability is bounded by the
+  chosen homeserver, unlike DHT-resident small shares.
+- **Relay/NAT note.** Unlike the rejected iroh transport, this path introduces no n0 relay
+  or hole-punching operator: it is a direct client→homeserver HTTPS connection over a
+  blocking `ureq` client with OS-native TLS (no `tokio`, no `ring`/`aws-lc` in the default
+  build).
+
 **Fork point:** cclink v1.3.0 (the last release before cclink was mothballed). Any cclink
 CVE that surfaces post-fork is evaluated on a case-by-case basis for cipherpost applicability
 — cipherpost inherits cclink's *code patterns* but is an independently maintained codebase
