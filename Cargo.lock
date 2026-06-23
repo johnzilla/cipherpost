@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "cipherpost"
-version = "0.1.0"
+version = "1.2.0-alpha.1"
 dependencies = [
  "age",
  "anyhow",
