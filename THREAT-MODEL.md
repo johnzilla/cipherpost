@@ -646,6 +646,17 @@ self-hostable component, not a trusted third party in the rendezvous path.
   or hole-punching operator: it is a direct client→homeserver HTTPS connection over a
   blocking `ureq` client with OS-native TLS (no `tokio`, no `ring`/`aws-lc` in the default
   build).
+- **No delivery attestation (v2-alpha gap).** The signed-receipt mechanism of §7 is **not
+  wired** for large payloads: `receive-large` does not publish a `Receipt`. So the
+  delivery-proof property that holds for small shares — a sender can independently verify a
+  recipient picked up a share — does **not** extend to large payloads in this alpha. A
+  sender has no cryptographic evidence that a large blob was received, and the
+  receipt-replay/race analysis of §7 does not apply here. Closing this (recipient-signed
+  receipt over the manifest's `share_ref`) is required before large-payload handoff can
+  claim the same attestation guarantees as small shares. Likewise, cross-identity `--share`
+  is unimplemented (errors at send time), so the only large-payload flow today is
+  self-to-self backup, where sender and recipient are the same identity and a receipt would
+  be self-attesting anyway.
 
 **Fork point:** cclink v1.3.0 (the last release before cclink was mothballed). Any cclink
 CVE that surfaces post-fork is evaluated on a case-by-case basis for cipherpost applicability

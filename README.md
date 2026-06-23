@@ -80,6 +80,13 @@ Fetches the recipient's PKARR packet, filters TXT records by the `_cprcpt-` pref
 
 ## Large payloads (v2, experimental)
 
+> **Status: experimental preview, partial.** This is a **self-backup** tool today:
+> `--self` only (cross-identity `--share` errors out), and a large-payload `receive`
+> does **not** publish a signed receipt — so the delivery-attestation guarantee small
+> shares get does **not** extend to large payloads yet. Off-by-default; the CLI surface
+> and wire details may change before it graduates from `-alpha`. See the full gap list
+> below.
+
 Behind an **off-by-default** `large-payload` cargo feature, cipherpost can hand off
 arbitrarily large payloads (directories, workspaces, archives) that blow past the
 1000-byte DHT wire budget — without adding any operator you don't control.
@@ -112,15 +119,23 @@ no `ring`/`aws-lc` in the default tree**; the feature adds them only when enable
 The blob never leaves the sender's machine as plaintext: the homeserver, like the
 DHT, sees only ciphertext, and a mismatched hash aborts receive with exit 3.
 
-**v2-alpha scope / caveats:**
-- `--self` only (cross-identity `--share` for large payloads is not yet implemented).
-- Blobs live under the homeserver's world-readable `/pub/` at an unguessable
-  content-addressed path (pubky-homeserver has no writable private space). This is a
-  **capability-URL** model: confidentiality rests on the age ciphertext + the
-  unguessable path (which travels only inside the encrypted manifest). Someone who
-  knows your identity **and** homeserver could enumerate `/pub/` to see blob
-  hashes + sizes (never content) — see [`THREAT-MODEL.md`](./THREAT-MODEL.md).
-- Signed receipts for large-payload pickup are not yet wired (deferred).
+**v2-alpha scope — what is NOT here yet:**
+- **`--self` only.** Cross-identity `--share` for large payloads is unimplemented and
+  returns an error; today this is self-backup (encrypt a workspace to your own identity,
+  restore it on another machine you control).
+- **No delivery attestation.** Unlike small shares, a large-payload `receive` does **not**
+  publish a signed receipt. The signed-receipt loop that lets a small-share sender prove
+  pickup (see *Verify receipts for shares you sent* above) is **not wired** for large
+  payloads — there is currently no cryptographic proof that a large blob was received.
+- **Live homeserver flow is manual.** The real end-to-end homeserver round-trip is covered
+  by `#[ignore]`'d tests run by hand (`tests/homeserver_live.rs`); CI exercises only the
+  mock-backed round-trip, so the HTTP/auth path is not continuously regression-tested.
+- **Capability-URL exposure.** Blobs live under the homeserver's world-readable `/pub/` at
+  an unguessable content-addressed path (pubky-homeserver has no writable private space).
+  Confidentiality rests on the age ciphertext + the unguessable path (which travels only
+  inside the encrypted manifest); someone who knows your identity **and** homeserver could
+  enumerate `/pub/` to see blob hashes + sizes (never content). See
+  [`THREAT-MODEL.md` §10](./THREAT-MODEL.md).
 
 ## Security model at a glance
 

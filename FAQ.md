@@ -72,7 +72,14 @@ Shipped **experimentally** in v2-alpha behind the off-by-default `large-payload`
 - Only a tiny **signed manifest** — the ciphertext's `sha256` and size, nothing else — is published to the DHT via the normal dual-signed flow. The blob's path is *derived* from that hash, so the manifest stays well under the 1000-byte wire budget.
 - The recipient performs the same acceptance flow (now showing the payload size + hash), then downloads the blob, **verifies its hash against the signed manifest** (mismatch aborts with exit 3), decrypts, and unpacks.
 
-The homeserver only ever sees ciphertext — it's a dumb mirror, not a trusted operator. It talks plain HTTPS via a blocking client with OS-native TLS, so the default build pulls no `tokio`/`ring`. See the README "Large payloads (v2)" section and [`THREAT-MODEL.md` §10](./THREAT-MODEL.md) for the trust model and the `/pub/` enumeration caveat.
+The homeserver only ever sees ciphertext — it's a dumb mirror, not a trusted operator. It talks plain HTTPS via a blocking client with OS-native TLS, so the default build pulls no `tokio`/`ring`.
+
+**This alpha is intentionally narrow** — treat it as a self-backup preview, not the full handoff story:
+- **`--self` only.** Cross-identity `--share` for large payloads returns an error today.
+- **No signed receipt.** `receive-large` does **not** publish the signed receipt that small shares get, so there is no delivery proof for large payloads yet.
+- **Live homeserver path is manual-only** (`#[ignore]`'d tests); CI exercises only the mock round-trip.
+
+See the README "Large payloads (v2)" section and [`THREAT-MODEL.md` §10](./THREAT-MODEL.md) for the trust model, the `/pub/` enumeration caveat, and the attestation gap.
 
 </details>
 
@@ -126,7 +133,7 @@ Some features (larger payloads via wire-budget escape hatch, key import, multipl
   
 <summary>What are the next planned features?</summary>
 
-- Larger payloads via Pubky homeservers + fallback
+- Larger payloads via Pubky homeservers — **`--self` shipped experimentally** (`large-payload` feature); remaining: cross-identity `--share`, signed receipts for large pickup, and a DHT-only fallback
 - `identity import`
 - Multiple identities support
 - Compression
