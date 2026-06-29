@@ -17,7 +17,7 @@ Cipherpost is a self-sovereign, serverless, accountless CLI for cryptographic-ma
     - `--burn` single-consumption mode with emit-before-mark state ledger
     - non-interactive automation via `--passphrase-file` / `--passphrase-fd`
     - CAS-protected concurrent receipt publication with retry-and-merge contract
-    - TUI wizard, non-interactive PIN input, and destruction attestation deferred to v1.2+
+    - still unimplemented (deferred past v1.1): TUI wizard, non-interactive PIN input (`--pin-file`/`--pin-fd`), destruction attestation — the post-v1.1 effort went into experimental [large-payload support](#large-payloads-v2-experimental) instead
 
 ## Quick start
 
@@ -28,7 +28,7 @@ cargo build --release
 # binary: ./target/release/cipherpost
 ```
 
-Requires Rust 1.85+ (pinned in `rust-toolchain.toml`). No `tokio` dependency at the cipherpost layer — uses `pkarr::ClientBlocking`. Bootstrap nodes are pkarr defaults (Mainline DHT — `router.bittorrent.com:6881` and three peers); no user-tunable bootstrap configuration in v1.1.
+Requires Rust 1.88+ (pinned in `rust-toolchain.toml`). No `tokio` dependency at the cipherpost layer — uses `pkarr::ClientBlocking`. Bootstrap nodes are pkarr defaults (Mainline DHT — `router.bittorrent.com:6881` and three peers); no user-tunable bootstrap configuration in v1.1.
 
 ### Generate an identity
 
@@ -168,19 +168,19 @@ Full taxonomy in [SPEC.md § Exit Codes](./SPEC.md#6-exit-codes).
 - [`SECURITY.md`](./SECURITY.md) — Vulnerability disclosure policy (GitHub Security Advisory, 90-day embargo)
 - [`cipherpost-prd.md`](./cipherpost-prd.md) — Original product requirements document
 
-All three protocol documents are kept current through v1.1 — wire-format decisions are stable (v1.0 fixtures byte-identical; v1.1 added pin/burn fields preserving v1.0 byte-shape via `is_false` skip-serializing-if). Editorial polish across the full v1.x scope continues.
+All three protocol documents are kept current, including the v2-alpha large-payload additions (`SPEC.md` §Pitfall #22, `THREAT-MODEL.md` §10/§10.1). The v1 wire format is unchanged — v1.0 fixtures byte-identical; v1.1 pin/burn fields preserve v1.0 byte-shape via `is_false` skip-serializing-if; the v2 `Material::LargePayload` variant is additive.
 
 ## Architecture lineage
 
 Cipherpost is a fork-and-diverge from mothballed [`cclink`](https://github.com/johnzilla/cclink) focused on keyshare workflows. Crypto and transport primitives (Ed25519/PKARR, age, Mainline DHT, Argon2id KDF, dual signatures) were vendored unchanged; the delta is at the payload and flow layer: typed payload schema, explicit acceptance step, signed receipt.
 
-## Known limitations in v1.1
+## Known limitations
 
 - **Wire-budget ceiling for typed Material.** Realistic X.509 / PGP / SSH keys exceed the 1000-byte PKARR BEP44 ceiling; `Material::GenericSecret` payloads above ~550 bytes also exceed it. Round-trip tests for realistic typed inputs are `#[ignore]`'d behind positive `Error::WireBudgetExceeded` clean-error pins. An experimental two-tier escape hatch now ships behind the off-by-default `large-payload` feature (ciphertext on a Pubky homeserver, tiny signed manifest on the DHT) — see [Large payloads (v2)](#large-payloads-v2-experimental) above; chunking / out-of-band variants remain targeted for later (see [`SPEC.md` §Pitfall #22](./SPEC.md)).
 - **Real-DHT cross-identity round trip is per-release, not per-commit.** The cross-identity Mainline-DHT round trip lives at `tests/real_dht_e2e.rs` behind a triple-gate (`#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` + `#[serial]`). PR + push CI stays mock-only — UDP/NAT variance + the 60-90s DHT long tail make per-commit real-DHT testing structurally unworkable (Pitfall #29). The `release-acceptance` workflow at [`.github/workflows/release-acceptance.yml`](./.github/workflows/release-acceptance.yml) runs the same gate on every `v*` tag push and uploads the output as a 90-day artifact, so each release publishes its own real-DHT evidence next to the tag. The v1.1.0 evidence run (manual demo + automated test, both PASS against pkarr-default Mainline bootstrap nodes) is checked in at [`RELEASE-EVIDENCE-v1.1.0.md`](./RELEASE-EVIDENCE-v1.1.0.md).
 - **No TUI.** CLI + non-interactive automation cover v1.x use cases.
-- **Non-interactive PIN input deferred.** PIN is intentionally human-in-the-loop second factor in v1.x. `--pin-file` / `--pin-fd` deferred to v1.2+ pending concrete automation use case.
-- **Destruction attestation not implemented.** Originally PRD v1.1; shifted to v1.2+ because v1.1 filled with PRD-closure scope. `--burn` is local-state-only (DHT ciphertext survives until TTL).
+- **Non-interactive PIN input deferred.** PIN is intentionally a human-in-the-loop second factor. `--pin-file` / `--pin-fd` remain deferred, pending a concrete automation use case.
+- **Destruction attestation not implemented.** Originally scoped for PRD v1.1; deferred when v1.1 filled with PRD-closure scope, and still unimplemented. `--burn` is local-state-only (DHT ciphertext survives until TTL).
 - **No identity import.** `cipherpost identity generate` is the only path; importing existing Ed25519 / SSH / age keys (`cipherpost identity import`) is planned for a future release.
 
 ## License
