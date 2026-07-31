@@ -399,8 +399,12 @@ re-builds a new SignedPacket preserving all existing TXT records (including `_ci
 outgoing shares and any prior `_cprcpt-*` receipts), adds or replaces the TXT under label
 `_cprcpt-<this_share_ref_hex>` with the new receipt's JSON bytes, and re-signs. DNS TTL on
 receipt TXT records = 300 seconds. The wire budget (~1000 bytes total SignedPacket) applies
-to the merged packet; overflow surfaces `Error::WireBudgetExceeded { encoded, budget, plaintext: 0 }`
-(plaintext=0 distinguishes receipt overflow from share overflow) — D-MRG-06.
+to the merged packet; overflow surfaces `Error::PacketBudgetExceeded { encoded, budget }`
+(accumulated-records overflow, distinct from the payload-too-big `WireBudgetExceeded` and
+carrying no `plaintext` field) — D-MRG-06. Because any two real records (share ~650 B,
+receipt ~570 B) exceed the budget, a key holds at most one; on the share-publish path this
+error is routed through the send retry loop, and on the receipt-publish path it is
+warn+degraded (D-SEQ-02).
 
 **Publish sequencing (D-SEQ-01):** The recipient publishes the receipt only AFTER local state
 commits (sentinel file + ledger line). Publish failure is degraded to a stderr warning with
@@ -561,10 +565,20 @@ emit-then-mark dispatch at STEP 11/12 (Phase 8 Plan 04):
     - **Accepted flow (v1.0 unchanged):** `append_ledger_entry(...)`. The
       ledger row has no `state` field; deserializes via serde default to
       `state: None` and maps to `LedgerState::Accepted` on read.
-13. **Publish receipt — UNCONDITIONAL (BURN-04).** No `if !envelope.burn_after_read`
-    guard around `publish_receipt`. Receipt = delivery confirmation; burn does
-    NOT suppress attestation. Asserted by `tests/burn_roundtrip.rs`'s
-    receipt-count assertion (== 1 after first-then-second receive).
+13. **Publish receipt — SKIPPED for self-shares (D-SEQ-06 revised), otherwise
+    unconditional.** When `sender_pubkey == recipient_pubkey` (a self-share) the
+    receipt is NOT published: it is self-attestation with no value, and publishing
+    it onto your own key would collide with your outgoing `_cipherpost` share in
+    the single ~1000-byte per-key packet (any two real records exceed the budget),
+    breaking the `send --self → receive → send --self` self-backup workflow. For
+    cross-identity shares the receipt is published unconditionally — burn does NOT
+    suppress attestation (there is no `if !envelope.burn_after_read` guard).
+    Receipt = delivery confirmation. Overflow of the recipient's merged packet
+    (e.g. a recipient already holding an outgoing share, or a second receipt)
+    surfaces `PacketBudgetExceeded` and is warn+degraded here (D-SEQ-02), so a
+    recipient holds at most one outstanding receipt. Asserted by
+    `tests/phase3_coexistence_b_self_share_and_receipt.rs` and
+    `tests/phase3_share_ref_filter.rs`.
 
 **Burn ≠ cryptographic destruction.** A second machine with a fresh
 ledger can still decrypt the same share until TTL expires. Burn IS:
@@ -960,10 +974,12 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
     ```
 12. Create sentinel `~/.cipherpost/state/accepted/<share_ref>` (mode 0600); append a ledger
     line to `~/.cipherpost/state/accepted.jsonl` (mode 0600) with `receipt_published_at: null` (D-STATE-01, D-SEQ-04).
-13. Construct `Receipt`, sign with recipient's Ed25519 key, call `Transport::publish_receipt`.
-    On success: append a new ledger line with `receipt_published_at: <ISO-8601 UTC>` (D-SEQ-04,
-    D-SEQ-05). On failure: print `receipt publish failed: <user_message>` to stderr, continue,
-    exit 0 anyway (D-SEQ-02). No auto-retry (D-SEQ-03).
+13. **Self-shares (`sender_pubkey == recipient_pubkey`): SKIP — no receipt (D-SEQ-06
+    revised, packet-budget fix).** Otherwise construct `Receipt`, sign with recipient's
+    Ed25519 key, call `Transport::publish_receipt`. On success: append a new ledger line
+    with `receipt_published_at: <ISO-8601 UTC>` (D-SEQ-04, D-SEQ-05). On failure (incl.
+    `PacketBudgetExceeded` when the recipient's key is already full): print `receipt publish
+    failed: <user_message>` to stderr, continue, exit 0 anyway (D-SEQ-02). No auto-retry (D-SEQ-03).
 
 **No payload field** (including `purpose`) is printed to stdout or stderr before step 9 begins
 (D-RECV-01). This is the "verify before reveal" invariant.
@@ -994,7 +1010,7 @@ attacks (D-16).
 | Code | Meaning | User-facing message | Error variants (internal) |
 |------|---------|---------------------|---------------------------|
 | 0 | Success | — | — |
-| 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded`, `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), **`SshKeyFormatNotSupported`** (Phase 7 Plan 05 / D-P7-12 — input not OpenSSH v1; distinct variant because Display embeds the `ssh-keygen -p -o -f <path>` conversion hint that would be wrong for non-SSH content errors; SPEC §3.2 SshKey), any unclassified |
+| 1 | Generic error | `<sanitized anyhow message>` | `Config`, `InvalidShareUri`, `ShareRefMismatch`, `WireBudgetExceeded` (payload too big), `PacketBudgetExceeded` (accumulated records under a key exceed the per-key packet — distinct message, no `plaintext` field), `NotImplemented`, `PayloadTooLarge`, **`InvalidMaterial { variant, reason }`** (X509-08 — content error at ingest, distinct from exit 3 sig failures; Display is `invalid material: variant=..., reason=...` with no parser internals leaked), **`SshKeyFormatNotSupported`** (Phase 7 Plan 05 / D-P7-12 — input not OpenSSH v1; distinct variant because Display embeds the `ssh-keygen -p -o -f <path>` conversion hint that would be wrong for non-SSH content errors; SPEC §3.2 SshKey), any unclassified |
 | 2 | TTL expired | `share expired` | `Expired` |
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
 | 4 | Passphrase / decryption failure | `wrong passphrase or identity decryption failed` | `DecryptFailed` (Phase 8 PIN-07: covers wrong identity-passphrase OR wrong PIN OR tampered inner age ciphertext — IDENTICAL Display across all three credential-failure modes; oracle hygiene — see §3.6 PIN Crypto Stack), `IdentityPermissions`, `PassphraseInvalidInput` |
