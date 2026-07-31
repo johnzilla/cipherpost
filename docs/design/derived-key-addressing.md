@@ -1,8 +1,11 @@
 # Design: Derived-key packet addressing (lift the one-record-per-key ceiling)
 
-> **Status: DESIGN / pre-implementation.** Not shipped. Gated on a feasibility
-> spike (see §14). Touches signed bytes and key derivation — nothing here lands
-> in production until the spike is green and the schema (§8) is signed off.
+> **Status: DESIGN / pre-implementation — FEASIBILITY SPIKE PASSED.** Not shipped.
+> The throwaway spike (§14) ran green offline and was reverted (it added the
+> `ed25519-dalek` `hazmat`+`digest` features, a `curve25519-dalek` dep, and a
+> `bytes` dev-dep — Phase 1 reintroduces these properly). Nothing lands in
+> production until the schema (§8) is signed off and Phase 1 begins. Touches
+> signed bytes and key derivation.
 
 ## 1. Problem
 
@@ -62,7 +65,7 @@ Given parent public key `A` (an Ed25519 point, = `a·G` where `a` is the parent'
 clamped scalar) and a 128-bit `share_ref`:
 
 ```
-t   = clamp_scalar( SHA-512( DOMAIN ‖ A_bytes ‖ share_ref ) )      // public tweak
+t   = reduce_mod_ℓ( SHA-512( DOMAIN ‖ A_bytes ‖ share_ref ) )      // public tweak (Scalar::from_bytes_mod_order_wide)
 A'  = A + t·G                                                       // derived pubkey (public derivation)
 a'  = a + t   (mod ℓ)                                               // derived scalar (secret side only)
 ```
@@ -245,3 +248,29 @@ A single `#[ignore]` test (mock, no network) that proves the seam end-to-end:
 
 Green spike ⇒ the approach is real and Phase 1 begins. Red ⇒ reassess (hand-rolled
 BEP44 publish, or push pkarr for a raw-scalar signing API upstream).
+
+### 14.1 Spike result — PASSED
+
+Ran as two offline tests (no network), both green:
+
+- **`signable_replication_matches_pkarr`** — built a normal packet with a random
+  pkarr `Keypair`; pkarr's *own* signature verified against *our* recomputed
+  `signable(ts, v)` → byte-exact replication (R1 guarded).
+- **`derived_key_publish_resolve_verify`** — fixed seed `[7;32]`, `share_ref
+  [0x11;16]`: public derivation `A + t·G` equalled secret `a'·G`; `raw_sign::<Sha512>`
+  under `{scalar: a', hash_prefix: prefix'}` self-verified under `A'`;
+  `SignedPacket::from_relay_payload(&A', payload)` returned Ok (pkarr verified our
+  hand-signed packet); resolve + serialize→deserialize re-verified the BEP44
+  signature under `A'`. Derived packet `v = 114 bytes` (budget 1000).
+
+Implementation notes for Phase 1 (learned in the spike):
+- Enable **both** `hazmat` *and* `digest` on `ed25519-dalek` (`digest` gates the
+  re-exported `ed25519_dalek::Sha512`, whose `digest` version — sha2 0.11-rc —
+  is the one `raw_sign`'s `CtxDigest` bound requires; sha2 0.10 does **not**
+  satisfy it). Our own byte-hashing can stay on the workspace `sha2 0.10` (same
+  algorithm → identical bytes; only the `raw_sign` type param is version-sensitive).
+- `pkarr::PublicKey::from(VerifyingKey)` converts the derived key directly.
+- `from_relay_payload` wants `&bytes::Bytes`; `bytes = sig(64) ‖ ts_be(8) ‖ v`.
+- Minor doc correction: the tweak `t` is `reduce_mod_ℓ(SHA-512(...))` via
+  `Scalar::from_bytes_mod_order_wide` — a reduction, not a clamp (clamping is only
+  for the master scalar). §4 says "clamp_scalar"; read as "reduce mod ℓ".
