@@ -165,10 +165,15 @@ already prove "the holder of `recipient_pub`'s secret attested, bound to
 | `sender_pubkey` | **DROP (decided 2026-07-31)** | The strongest privacy/size win: it carried the recipient's *claim* of who they received from (D-RS-07 provenance), the last cleartext graph edge in the receipt body. Under derived addressing the fetching sender already knows it's their share (they derived `recipient_derived` with their own `share_ref`), so it is redundant for their own verification; third-party-auditable provenance is deliberately given up in favor of graph privacy. |
 
 **Final signed receipt (decided):**
-`{ accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref }`
-plus the outer packet signature; `recipient_pub` supplied to `verify_receipt` as
-context (the caller derived `recipient_derived` from it, so it always has it).
-Both `nonce` and both pubkeys are gone. Provenance now rests entirely on the
+`{ accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref, signature }`
+— `nonce` and both pubkeys dropped; the inner `signature` (Ed25519 by the
+recipient's identity key over JCS of the other fields) is **KEPT** (Q2 resolved
+2026-07-31: keep). `recipient_pub` is supplied to `verify_receipt` as context (the
+caller derived `recipient_derived` from it, so it always has it) rather than read
+from the receipt. Rationale for keeping the inner sig: authenticity is then checked
+by cipherpost (`verify_receipt`) independent of transport — so mock tests exercise
+it — it is defense-in-depth alongside the outer BEP44 sig, and a receipt stays a
+standalone-verifiable attestation. Provenance now rests entirely on the
 composition **"receipt found at `derive(recipient_pub, share_ref)` + BEP44 sig
 valid under that derived key"** — the derived location binds recipient + share_ref,
 and only the recipient's master secret can sign there. Regenerate
@@ -225,10 +230,9 @@ behind a feature/flag during rollout so v1.1 stays buildable for comparison.
 - **R3 — from_relay_payload is the only seam.** If a future pkarr removes it,
   we'd need a hand-rolled BEP44 publish. Low near-term risk; note it.
 - **Q1 — drop `sender_pubkey`? RESOLVED (2026-07-31): drop it** (§8). Schema settled.
-- **Q2 — inner receipt signature.** The outer BEP44 sig now authenticates the
-  packet; is the inner Ed25519 receipt signature still worth keeping for
-  standalone (relay-independent) receipt verifiability? Default: **keep** (cheap,
-  preserves portability); revisit if size-critical.
+- **Q2 — inner receipt signature. RESOLVED (2026-07-31): KEEP** (§8). Kept for
+  transport-independent authenticity (mock tests exercise it), defense-in-depth,
+  and standalone verifiability. `verify_receipt` takes `recipient_pub` as context.
 
 ## 13. Phased plan (each phase self-contained, tests green)
 

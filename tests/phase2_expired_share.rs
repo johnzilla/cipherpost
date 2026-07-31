@@ -6,7 +6,7 @@ use base64::Engine;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{run_receive, OutputSink};
 use cipherpost::record::{share_ref_from_bytes, sign_record, OuterRecord, OuterRecordSignable};
-use cipherpost::transport::{MockTransport, Transport};
+use cipherpost::transport::MockTransport;
 use cipherpost::{ShareUri, PROTOCOL_VERSION};
 use secrecy::SecretBox;
 use serial_test::serial;
@@ -54,7 +54,12 @@ fn expired_share_aborts_with_error_expired_exit_2() {
     };
 
     let transport = MockTransport::new();
-    transport.publish(&kp, &record).unwrap();
+    // v2: the share lives under its derived key; inject there so run_receive finds it.
+    let derived =
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
+            .unwrap();
+    let rdata = serde_json::to_string(&record).unwrap();
+    transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &rdata);
 
     let uri = ShareUri {
         sender_z32: kp.public_key().to_z32(),

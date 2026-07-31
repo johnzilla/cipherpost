@@ -591,6 +591,26 @@ mod mock {
             entry.records.push((DHT_LABEL_OUTER.to_string(), rdata));
         }
 
+        /// v2 test helper: inject a raw `rdata` at `label` under a DERIVED key
+        /// (compressed Ed25519 bytes), bypassing `publish_derived`'s budget/signing
+        /// so tests can place wire-budget-exceeding records (e.g. PIN shares) at the
+        /// exact key `run_receive` resolves from. Mirrors
+        /// `inject_outer_record_for_test` for the derived-addressing world.
+        pub fn inject_derived_record_for_test(
+            &self,
+            derived_pub: &[u8; 32],
+            label: &str,
+            rdata: &str,
+        ) {
+            let z32 = pkarr::PublicKey::try_from(derived_pub)
+                .expect("valid derived pubkey")
+                .to_z32();
+            let mut store = self.store.lock().unwrap();
+            let entry = store.entry(z32).or_default();
+            entry.records.retain(|(l, _)| l != label);
+            entry.records.push((label.to_string(), rdata.to_string()));
+        }
+
         /// Phase 9 D-P9-A3: lock → read seq → drop lock → build merged set →
         /// re-lock → cas-check → bump-and-write OR signal CasConflict.
         /// Pitfall #28 invariant: the lock is RELEASED between the seq read

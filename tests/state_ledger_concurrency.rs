@@ -22,7 +22,7 @@ use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
 };
 use cipherpost::transport::MockTransport;
-use cipherpost::{Error, ShareUri, DHT_LABEL_RECEIPT_PREFIX};
+use cipherpost::{Error, ShareUri};
 use secrecy::SecretBox;
 use serial_test::serial;
 use std::sync::{Arc, Barrier, Mutex};
@@ -57,12 +57,16 @@ fn count_receipts_for(
     recipient_z32: &str,
     share_ref_hex: &str,
 ) -> usize {
-    let label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
-    transport
-        .resolve_all_txt(recipient_z32)
-        .iter()
-        .filter(|(l, _)| l == &label)
-        .count()
+    use cipherpost::transport::Transport;
+    let recipient_pub = pkarr::PublicKey::try_from(recipient_z32)
+        .expect("valid recipient z32")
+        .to_bytes();
+    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex.as_bytes())
+        .expect("derive receipt key");
+    match transport.resolve_derived(&derived, cipherpost::DHT_LABEL_RECEIPT) {
+        Ok(Some(_)) => 1,
+        _ => 0,
+    }
 }
 
 #[test]
@@ -315,15 +319,14 @@ fn concurrent_receive_same_share_ref_burn_one_succeeds_one_declined() {
          Without the per-share_ref lock the count would be 2."
     );
 
-    // Receipt count == 0: this is a SELF-mode burn (recipient == sender), and
-    // self-shares no longer publish a receipt (D-SEQ-06 revised — self-attestation
-    // is skipped to avoid the share+receipt per-key packet-budget collision). The
-    // concurrency invariant under test (exactly one winner decrypts, the loser
-    // sees Burned and declines) is asserted above and is unaffected.
+    // Receipt count == 1 (BURN-04 under contention): exactly one winning receive
+    // publishes exactly one receipt, self-mode included (self-receipts re-enabled
+    // in v2 — its own derived key). The concurrency invariant (one winner decrypts,
+    // the loser sees Burned and declines) is asserted above.
     let receipt_count = count_receipts_for(&transport, &recipient_z32, &uri.share_ref_hex);
     assert_eq!(
-        receipt_count, 0,
-        "self-share burn publishes NO receipt (D-SEQ-06 revised); got {receipt_count}"
+        receipt_count, 1,
+        "exactly one receipt after concurrent burn-receive; got {receipt_count}"
     );
 
     assert!(

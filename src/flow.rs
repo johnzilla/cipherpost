@@ -549,12 +549,13 @@ pub fn run_send(
     // with the last-seen encoded size, so the caller sees a concrete number
     // and can decide whether to split the payload.
     let mut last_err: Option<(usize, usize)> = None;
-    // Separate accumulator for the MERGED-packet overflow (share + accumulated
-    // records under this key), which only surfaces from `transport.publish`, not
-    // the share-alone pre-flight. Greasing rarely helps here (the overflow is
-    // real records, not grease variance), but we route it through the same loop
-    // for uniformity and then surface the accurate `PacketBudgetExceeded`.
+    // Accumulator for a merged-packet overflow. Under v2 derived-key addressing a
+    // share has its OWN packet, so this is unreachable (the share-alone pre-flight
+    // already caught an oversized share as WireBudgetExceeded); kept for safety.
     let mut last_packet_err: Option<(usize, usize)> = None;
+    // v2: each share publishes under its OWN derived key derive(sender_pub,
+    // share_ref) — needs the sender seed. Constant across grease attempts.
+    let sender_seed: [u8; 32] = *identity.signing_seed();
     for _attempt in 0..WIRE_BUDGET_RETRY_ATTEMPTS {
         // 6. age_encrypt (grease stanza re-sampled each call). Phase 8 Plan 01
         //    (D-P8-06): when pin_setup.is_some(), nest two age layers — INNER
@@ -613,13 +614,14 @@ pub fn run_send(
         // rdata.len()).
         match check_wire_budget(&record, keypair, jcs_bytes.len()) {
             Ok(()) => {
-                // 13. publish — this is where the MERGED packet (share +
-                //     accumulated records under this key) is actually built, so a
-                //     budget failure here is `PacketBudgetExceeded`, not the
-                //     share-alone `WireBudgetExceeded` from the pre-flight above.
-                //     Route it through the retry loop (re-sample grease once more
-                //     in case a smaller draw just fits) rather than short-circuit.
-                match transport.publish(keypair, &record) {
+                // 13. publish under the DERIVED key derive(sender_pub, share_ref)
+                //     (v2): the share gets its OWN one-record packet — no shared
+                //     budget, no merge, no CAS. The recipient derives the same key
+                //     from sender_pub + share_ref (both in the URI).
+                let signer = crate::derive::derive_signer(&sender_seed, share_ref.as_bytes());
+                let rdata =
+                    serde_json::to_string(&record).map_err(|e| Error::Transport(Box::new(e)))?;
+                match transport.publish_derived(&signer, DHT_LABEL_OUTER, &rdata) {
                     Ok(()) => {
                         // 14. return URI
                         return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref));
@@ -768,11 +770,21 @@ pub fn run_receive(
         }
     }
 
-    // STEP 2 + 3: transport.resolve() does outer PKARR sig check (pkarr
-    // internals) + inner Ed25519 sig check (record::verify_record called inside
-    // resolve). Any sig failure → Error::Signature* with unified Display
-    // (exit 3).
-    let record = transport.resolve(&uri.sender_z32)?;
+    // STEP 2 + 3 (v2): resolve the share from its OWN derived key
+    // derive(sender_pub, share_ref). The transport verified the outer BEP44 sig on
+    // resolve (pkarr on the DHT; validated at publish in the mock); the inner
+    // Ed25519 sig is checked by `verify_record` below. Any sig failure →
+    // Error::Signature* with unified Display (exit 3).
+    let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
+        .map_err(|_| Error::NotFound)?
+        .to_bytes();
+    let derived = crate::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes())?;
+    let rdata = transport
+        .resolve_derived(&derived, DHT_LABEL_OUTER)?
+        .ok_or(Error::NotFound)?;
+    let record: crate::record::OuterRecord =
+        serde_json::from_str(&rdata).map_err(|_| Error::SignatureCanonicalMismatch)?;
+    crate::record::verify_record(&record)?;
 
     // STEP 4: URI/record share_ref match (D-URI-02)
     if record.share_ref != uri.share_ref_hex {
@@ -1053,80 +1065,75 @@ pub fn run_receive(
     // disagree). `ciphertext_hash` is SHA-256 of the full decoded blob per
     // SPEC D-RS-04 (includes the PIN salt); `cleartext_hash` is SHA-256(JCS).
     //
-    // Step 13 DOES skip on self-mode (D-SEQ-06 REVISED — packet-budget fix).
-    // When sender_pubkey == recipient_pubkey the receipt is self-attestation
-    // with ~no value, AND publishing it onto your OWN key accumulates records
-    // that collide with your outgoing `_cipherpost` share in the single
-    // ~1000-byte per-key PKARR packet (shares and receipts share one budget).
-    // Self-backup — `send --self → receive → send --self` — is the common
-    // workflow; skipping the self-receipt keeps it working instead of
-    // hard-failing the next send with PacketBudgetExceeded. Cross-identity
-    // receipts (the ones that carry real delivery attestation) are unchanged.
+    // Step 13 publishes a receipt for EVERY successful receive — including
+    // self-mode (D-SEQ-06 RE-ENABLED in v2). Under derived-key addressing the
+    // receipt lives under its OWN key derive(recipient_pub, share_ref), so it no
+    // longer collides with the recipient's outgoing share (that was the reason
+    // v1.2-alpha skipped self-receipts); a self-share now yields a normal personal
+    // audit receipt.
     //
-    // The non-self path is wrapped in a closure so EVERY Result-returning op
-    // inside honors D-SEQ-02 warn+degrade: if any pre-publish op fails
-    // (now_unix_seconds, sign_receipt's JCS serialize, serde_json::to_string)
-    // OR the publish itself OR the D-SEQ-05 ledger update, we warn to stderr
-    // and return Ok(()) from run_receive — the material was already delivered
-    // (step 11) and locally recorded (step 12), so core-value delivery is
-    // complete. Only the final warn is user-visible; the specific failure
-    // class is still surfaced via user_message(&e).
-    let is_self_share = record.pubkey == keypair.public_key().to_z32();
-    let publish_outcome: Result<(), Error> = if is_self_share {
+    // Wrapped in a closure so EVERY Result-returning op inside honors D-SEQ-02
+    // warn+degrade: if any pre-publish op fails (now_unix_seconds, sign_receipt's
+    // JCS serialize, serde_json::to_string) OR the publish itself OR the D-SEQ-05
+    // ledger update, we warn to stderr and return Ok(()) from run_receive — the
+    // material was already delivered (step 11) and locally recorded (step 12), so
+    // core-value delivery is complete. Only the final warn is user-visible; the
+    // specific failure class is still surfaced via user_message(&e).
+    let publish_outcome: Result<(), Error> = (|| {
+        let accepted_at_unix = now_unix_seconds()?;
+        let recipient_z32 = keypair.public_key().to_z32();
+
+        let signable = crate::receipt::ReceiptSignable {
+            accepted_at: accepted_at_unix,
+            ciphertext_hash: ciphertext_hash.clone(),
+            cleartext_hash: cleartext_hash.clone(),
+            nonce: crate::receipt::nonce_hex(),
+            protocol_version: crate::PROTOCOL_VERSION,
+            // purpose is deliberately NOT in the receipt — it would leak in
+            // cleartext on the DHT; cleartext_hash already binds it. (See
+            // crate::receipt::Receipt.) envelope.purpose is still recorded in
+            // the LOCAL ledger below (private, not published).
+            recipient_pubkey: recipient_z32.clone(),
+            sender_pubkey: record.pubkey.clone(),
+            share_ref: record.share_ref.clone(),
+        };
+        let signature = crate::receipt::sign_receipt(&signable, keypair)?;
+        let receipt = crate::receipt::Receipt {
+            accepted_at: signable.accepted_at,
+            ciphertext_hash: signable.ciphertext_hash.clone(),
+            cleartext_hash: signable.cleartext_hash.clone(),
+            nonce: signable.nonce.clone(),
+            protocol_version: signable.protocol_version,
+            recipient_pubkey: signable.recipient_pubkey.clone(),
+            sender_pubkey: signable.sender_pubkey.clone(),
+            share_ref: signable.share_ref.clone(),
+            signature,
+        };
+        let receipt_json = serde_json::to_string(&receipt)
+            .map_err(|e| Error::Config(format!("receipt encode: {e}")))?;
+
+        // v2: publish the receipt under derive(recipient_pub, share_ref) — its
+        // OWN packet. The recipient IS this identity, so derive from its seed.
+        let recipient_seed: [u8; 32] = *identity.signing_seed();
+        let signer = crate::derive::derive_signer(&recipient_seed, record.share_ref.as_bytes());
+        transport.publish_derived(&signer, crate::DHT_LABEL_RECEIPT, &receipt_json)?;
+
+        // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
+        // This receipt row has state:None; check_already_consumed scans ALL rows
+        // with "burned" dominating, so it never downgrades a burned share.
+        // The receipt is already on the DHT — a ledger failure here is still
+        // non-fatal, and falls under the same warn+degrade path.
+        let iso = iso8601_utc_now()?;
+        append_ledger_entry_with_receipt(
+            &record.share_ref,
+            &record.pubkey,
+            &envelope.purpose,
+            &ciphertext_hash,
+            &cleartext_hash,
+            &iso,
+        )?;
         Ok(())
-    } else {
-        (|| {
-            let accepted_at_unix = now_unix_seconds()?;
-            let recipient_z32 = keypair.public_key().to_z32();
-
-            let signable = crate::receipt::ReceiptSignable {
-                accepted_at: accepted_at_unix,
-                ciphertext_hash: ciphertext_hash.clone(),
-                cleartext_hash: cleartext_hash.clone(),
-                nonce: crate::receipt::nonce_hex(),
-                protocol_version: crate::PROTOCOL_VERSION,
-                // purpose is deliberately NOT in the receipt — it would leak in
-                // cleartext on the DHT; cleartext_hash already binds it. (See
-                // crate::receipt::Receipt.) envelope.purpose is still recorded in
-                // the LOCAL ledger below (private, not published).
-                recipient_pubkey: recipient_z32.clone(),
-                sender_pubkey: record.pubkey.clone(),
-                share_ref: record.share_ref.clone(),
-            };
-            let signature = crate::receipt::sign_receipt(&signable, keypair)?;
-            let receipt = crate::receipt::Receipt {
-                accepted_at: signable.accepted_at,
-                ciphertext_hash: signable.ciphertext_hash.clone(),
-                cleartext_hash: signable.cleartext_hash.clone(),
-                nonce: signable.nonce.clone(),
-                protocol_version: signable.protocol_version,
-                recipient_pubkey: signable.recipient_pubkey.clone(),
-                sender_pubkey: signable.sender_pubkey.clone(),
-                share_ref: signable.share_ref.clone(),
-                signature,
-            };
-            let receipt_json = serde_json::to_string(&receipt)
-                .map_err(|e| Error::Config(format!("receipt encode: {e}")))?;
-
-            transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
-
-            // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
-            // This receipt row has state:None; check_already_consumed scans ALL rows
-            // with "burned" dominating, so it never downgrades a burned share.
-            // The receipt is already on the DHT — a ledger failure here is still
-            // non-fatal, and falls under the same warn+degrade path.
-            let iso = iso8601_utc_now()?;
-            append_ledger_entry_with_receipt(
-                &record.share_ref,
-                &record.pubkey,
-                &envelope.purpose,
-                &ciphertext_hash,
-                &cleartext_hash,
-                &iso,
-            )?;
-            Ok(())
-        })()
-    };
+    })();
 
     if let Err(e) = publish_outcome {
         // D-SEQ-02: warn + degrade; exit 0.
@@ -1156,68 +1163,40 @@ pub fn run_receipts(
     share_ref_filter: Option<&str>,
     json_mode: bool,
 ) -> Result<(), Error> {
-    // Fetch all _cprcpt-* TXT bodies. NotFound if no packet OR no matching label.
-    let candidate_jsons = transport.resolve_all_cprcpt(from_z32)?;
-    // resolve_all_cprcpt already returns Err(NotFound) on empty; so candidate_jsons is non-empty here.
+    // v2: receipts are addressed per-share at derive(recipient_pub, share_ref) and
+    // are NOT enumerable without the share_ref (that unlinkability is the privacy
+    // win). So a share_ref is REQUIRED, and we fetch exactly the one receipt.
+    let share_ref = share_ref_filter.ok_or_else(|| {
+        Error::Config(
+            "receipts requires --share-ref (v2: receipts are addressed per-share, not enumerable)"
+                .into(),
+        )
+    })?;
+    let recipient_pub = pkarr::PublicKey::try_from(from_z32)
+        .map_err(|_| Error::NotFound)?
+        .to_bytes();
+    let derived = crate::derive::derive_public(&recipient_pub, share_ref.as_bytes())?;
+    let raw = transport
+        .resolve_derived(&derived, crate::DHT_LABEL_RECEIPT)?
+        .ok_or(Error::NotFound)?;
 
-    let mut valid: Vec<crate::receipt::Receipt> = Vec::new();
-    let mut malformed = 0usize;
-    let mut invalid_sig = 0usize;
-    for raw in &candidate_jsons {
-        let parsed: crate::receipt::Receipt = match serde_json::from_str(raw) {
-            Ok(r) => r,
-            Err(_) => {
-                malformed += 1;
-                continue;
-            }
-        };
-        if crate::receipt::verify_receipt(&parsed).is_err() {
-            invalid_sig += 1;
-            continue;
-        }
-        valid.push(parsed);
+    let receipt: crate::receipt::Receipt =
+        serde_json::from_str(&raw).map_err(|_| Error::Config("receipt malformed".into()))?;
+    // Inner Ed25519 sig check (kept in v2 — transport-independent authenticity).
+    crate::receipt::verify_receipt(&receipt).map_err(|_| Error::SignatureInner)?;
+    // Defense-in-depth: the receipt's own share_ref must match the one we derived.
+    if receipt.share_ref != share_ref {
+        return Err(Error::ShareRefMismatch);
     }
+    eprintln!("fetched 1 receipt; 1 valid");
 
-    // Summary on stderr (CLI-01).
-    let mut summary = format!(
-        "fetched {} receipt(s); {} valid",
-        candidate_jsons.len(),
-        valid.len()
-    );
-    if malformed > 0 {
-        summary.push_str(&format!(", {malformed} malformed"));
-    }
-    if invalid_sig > 0 {
-        summary.push_str(&format!(", {invalid_sig} invalid-signature"));
-    }
-    eprintln!("{summary}");
-
-    // D-OUT-02: filter after verify.
-    if let Some(filter) = share_ref_filter {
-        valid.retain(|r| r.share_ref == filter);
-    }
-
-    // Exit-code taxonomy.
-    if valid.is_empty() {
-        if invalid_sig > 0 {
-            return Err(Error::SignatureInner);
-        }
-        if malformed > 0 {
-            return Err(Error::Config("all receipts malformed".into()));
-        }
-        return Err(Error::NotFound);
-    }
-
-    // Render.
+    let valid = vec![receipt];
     if json_mode {
-        // RESEARCH §"Open Questions" #4: pretty-print for UX (output is display-only,
-        // not signed). JCS stays on the signature path inside verify_receipt.
         let out = serde_json::to_string_pretty(&valid)
             .map_err(|e| Error::Config(format!("json encode: {e}")))?;
         println!("{out}");
     } else {
-        let audit_detail = share_ref_filter.is_some() && valid.len() == 1;
-        render_receipts_table(&valid, audit_detail)?;
+        render_receipts_table(&valid, true)?; // single-receipt audit-detail view
     }
     Ok(())
 }
@@ -1815,14 +1794,21 @@ mod large {
                 ttl_seconds,
             };
             match check_wire_budget(&record, keypair, jcs_bytes.len()) {
-                Ok(()) => match transport.publish(keypair, &record) {
-                    Ok(()) => return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref)),
-                    Err(Error::PacketBudgetExceeded { encoded, budget }) => {
-                        last_packet_err = Some((encoded, budget));
-                        continue;
+                Ok(()) => {
+                    // v2: manifest publishes under derive(sender_pub, share_ref).
+                    let seed: [u8; 32] = *identity.signing_seed();
+                    let signer = crate::derive::derive_signer(&seed, share_ref.as_bytes());
+                    let rdata = serde_json::to_string(&record)
+                        .map_err(|e| Error::Transport(Box::new(e)))?;
+                    match transport.publish_derived(&signer, DHT_LABEL_OUTER, &rdata) {
+                        Ok(()) => return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref)),
+                        Err(Error::PacketBudgetExceeded { encoded, budget }) => {
+                            last_packet_err = Some((encoded, budget));
+                            continue;
+                        }
+                        Err(other) => return Err(other),
                     }
-                    Err(other) => return Err(other),
-                },
+                }
                 Err(Error::WireBudgetExceeded { encoded, .. }) => {
                     last_err = Some((encoded, jcs_bytes.len()));
                     continue;
@@ -1852,8 +1838,18 @@ mod large {
         dest: &Path,
         prompter: &dyn Prompter,
     ) -> Result<(), Error> {
-        // resolve → dual-sig verify (inside resolve) → share_ref → TTL
-        let record = transport.resolve(&uri.sender_z32)?;
+        // v2: resolve the manifest from derive(sender_pub, share_ref); inner sig
+        // via verify_record (outer BEP44 checked by the transport on resolve).
+        let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
+            .map_err(|_| Error::NotFound)?
+            .to_bytes();
+        let derived = crate::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes())?;
+        let rdata = transport
+            .resolve_derived(&derived, DHT_LABEL_OUTER)?
+            .ok_or(Error::NotFound)?;
+        let record: crate::record::OuterRecord =
+            serde_json::from_str(&rdata).map_err(|_| Error::SignatureCanonicalMismatch)?;
+        crate::record::verify_record(&record)?;
         if record.share_ref != uri.share_ref_hex {
             return Err(Error::ShareRefMismatch);
         }

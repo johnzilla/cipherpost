@@ -41,12 +41,18 @@ fn count_receipts_for_share_ref(
     recipient_z32: &str,
     share_ref_hex: &str,
 ) -> usize {
-    let label_prefix = format!("_cprcpt-{share_ref_hex}");
-    transport
-        .resolve_all_txt(recipient_z32)
-        .iter()
-        .filter(|(label, _json)| label == &label_prefix)
-        .count()
+    // v2: the receipt lives under its own derived key derive(recipient_pub,
+    // share_ref); at most one exists per share_ref.
+    use cipherpost::transport::Transport;
+    let recipient_pub = pkarr::PublicKey::try_from(recipient_z32)
+        .expect("valid recipient z32")
+        .to_bytes();
+    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex.as_bytes())
+        .expect("derive receipt key");
+    match transport.resolve_derived(&derived, cipherpost::DHT_LABEL_RECEIPT) {
+        Ok(Some(_)) => 1,
+        _ => 0,
+    }
 }
 
 #[test]
@@ -142,17 +148,14 @@ fn burn_share_first_receive_succeeds_second_returns_exit_7() {
         _ => panic!("InMemory sink expected"),
     }
 
-    // Receipt count == 0: this is a SELF-mode burn (recipient == sender), and
-    // self-shares no longer publish a receipt (D-SEQ-06 revised — self-attestation
-    // is skipped so a self-share and a self-receipt can't collide in the single
-    // ~1000-byte per-key PKARR packet). Cross-identity burn-receipt coverage lives
-    // in the phase3 end-to-end tests. The burn LEDGER row (state=burned) and the
-    // exit-7-on-second behavior above are this test's real subject.
+    // Receipt count == 1: burn publishes a receipt, self-mode included (D-SEQ-06
+    // RE-ENABLED in v2 — the self-receipt lives under its OWN derived key
+    // derive(self, share_ref), so it no longer collides with the outgoing share).
     let recipient_z32 = id.z32_pubkey();
     let receipt_count =
         count_receipts_for_share_ref(&transport, &recipient_z32, &uri.share_ref_hex);
     assert_eq!(
-        receipt_count, 0,
-        "self-share burn publishes NO receipt (D-SEQ-06 revised); got {receipt_count}"
+        receipt_count, 1,
+        "burn publishes exactly one receipt (self-receipts re-enabled in v2); got {receipt_count}"
     );
 }

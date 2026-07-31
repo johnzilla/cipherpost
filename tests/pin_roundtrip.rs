@@ -240,9 +240,13 @@ fn pin_required_share_with_no_pin_at_receive() {
         signature,
         ttl_seconds: DEFAULT_TTL_SECONDS,
     };
-    transport
-        .publish(&kp, &record)
-        .expect("MockTransport accepts pin-required record under wire ceiling");
+    // v2: inject the (over-budget) PIN share at its derived key so run_receive
+    // finds it (bypassing publish_derived's budget check).
+    let derived =
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
+            .unwrap();
+    let rdata = serde_json::to_string(&record).unwrap();
+    transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &rdata);
 
     let uri = ShareUri::parse(&format!("cipherpost://{}/{}", id.z32_pubkey(), share_ref)).unwrap();
 
@@ -379,10 +383,18 @@ fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
         ttl_seconds: DEFAULT_TTL_SECONDS,
     };
 
-    // Inject under the SENDER's key (bypass the wire-budget publish); receive as
-    // this identity (the recipient) with the correct PIN. sender != recipient, so
-    // step 13 publishes a receipt under the recipient's (this identity's) key.
-    transport.inject_outer_record_for_test(&kp_s, &record);
+    // v2: inject the (over-budget) PIN share at its derived key derive(sender_pub,
+    // share_ref); receive as this identity (recipient) with the correct PIN. sender
+    // != recipient, so step 13 publishes a receipt at derive(recipient_pub, share_ref).
+    let derived_share =
+        cipherpost::derive::derive_public(&kp_s.public_key().to_bytes(), share_ref.as_bytes())
+            .unwrap();
+    let share_rdata = serde_json::to_string(&record).unwrap();
+    transport.inject_derived_record_for_test(
+        &derived_share,
+        cipherpost::DHT_LABEL_OUTER,
+        &share_rdata,
+    );
     std::env::set_var("CIPHERPOST_TEST_PIN", "validpin1");
     let uri = ShareUri::parse(&ShareUri::format(&s_z32, &share_ref)).unwrap();
     let mut sink = OutputSink::InMemory(Vec::new());
@@ -398,11 +410,15 @@ fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
     .expect("PIN receive should succeed on the injected record");
     std::env::remove_var("CIPHERPOST_TEST_PIN");
 
-    // Fetch the published receipt and check its ciphertext_hash.
-    let receipts = transport
-        .resolve_all_cprcpt(&z32)
+    // Fetch the published receipt (at derive(recipient_pub, share_ref)) + check hash.
+    let derived_receipt =
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
+            .unwrap();
+    let receipt_json = transport
+        .resolve_derived(&derived_receipt, cipherpost::DHT_LABEL_RECEIPT)
+        .unwrap()
         .expect("a receipt was published");
-    let receipt: serde_json::Value = serde_json::from_str(&receipts[0]).unwrap();
+    let receipt: serde_json::Value = serde_json::from_str(&receipt_json).unwrap();
     let got = receipt
         .get("ciphertext_hash")
         .and_then(|s| s.as_str())

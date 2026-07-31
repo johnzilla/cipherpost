@@ -96,9 +96,16 @@ fn burn_only_send_round_trip_recovers_plaintext() {
     // (burn_after_read is INNER-signed on Envelope, NOT on OuterRecord —
     // CLAUDE.md ciphertext-only-on-wire principle 3). DHT observers cannot
     // distinguish a burn share from a non-burn share.
-    let record = transport
-        .resolve(&id.z32_pubkey())
-        .expect("MockTransport::resolve returns the published OuterRecord");
+    let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
+        .unwrap()
+        .to_bytes();
+    let derived =
+        cipherpost::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let rdata = transport
+        .resolve_derived(&derived, cipherpost::DHT_LABEL_OUTER)
+        .unwrap()
+        .expect("resolve derived share");
+    let record: cipherpost::record::OuterRecord = serde_json::from_str(&rdata).unwrap();
     assert!(
         !record.pin_required,
         "burn-only share must not flip pin_required — burn lives on Envelope, not OuterRecord"

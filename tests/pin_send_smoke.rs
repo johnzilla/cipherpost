@@ -151,7 +151,7 @@ fn pin_none_send_preserves_v1_blob_shape() {
     let plaintext = b"topsecret1".to_vec();
     let transport = MockTransport::new();
 
-    let _uri_str = run_send(
+    let uri_str = run_send(
         &id,
         &transport,
         &kp,
@@ -165,7 +165,18 @@ fn pin_none_send_preserves_v1_blob_shape() {
     )
     .expect("run_send self-mode without pin");
 
-    let record = transport.resolve(&id.z32_pubkey()).expect("resolve");
+    // v2: the share is at its derived key derive(sender_pub, share_ref).
+    let uri = cipherpost::ShareUri::parse(&uri_str).unwrap();
+    let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
+        .unwrap()
+        .to_bytes();
+    let derived =
+        cipherpost::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let rdata = transport
+        .resolve_derived(&derived, cipherpost::DHT_LABEL_OUTER)
+        .unwrap()
+        .expect("resolve derived share");
+    let record: cipherpost::record::OuterRecord = serde_json::from_str(&rdata).unwrap();
     assert!(
         !record.pin_required,
         "OuterRecord.pin_required must be false when pin=None"

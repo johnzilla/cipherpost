@@ -49,9 +49,14 @@ pub const ENVELOPE_MAGIC: &[u8; 8] = b"CIPHPOSK";
 /// DHT label for outer share records (under the SENDER's PKARR key). D-05.
 pub const DHT_LABEL_OUTER: &str = "_cipherpost";
 
-/// DHT label prefix for receipts (under the RECIPIENT's PKARR key). D-06.
+/// DHT label prefix for receipts (v1: under the RECIPIENT's PKARR key). D-06.
 /// Full label: format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, share_ref_hex).
 pub const DHT_LABEL_RECEIPT_PREFIX: &str = "_cprcpt-";
+
+/// v2 fixed receipt label. Under derived-key addressing a receipt lives under its
+/// OWN key `derive(recipient_pub, share_ref)`, so the label no longer needs the
+/// share_ref suffix (the KEY encodes it) — one record per packet.
+pub const DHT_LABEL_RECEIPT: &str = "_cprcpt";
 
 /// Scheme marker for share URIs (D-URI-01). Full URI shape:
 /// `cipherpost://<sender-z32>/<share_ref_hex>`.

@@ -50,8 +50,19 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
     // MockTransport::publish (which does NOT verify — only resolve does, per
     // src/transport.rs). The bad record lands in the store; the next
     // run_receive's transport.resolve() call will fail inner-sig verify.
-    let good = transport.resolve(&uri.sender_z32).expect("good resolve");
-    let mut bad = good.clone();
+    // v2: the share is at its derived key derive(sender_pub, share_ref).
+    let derived = cipherpost::derive::derive_public(
+        &kp.public_key().to_bytes(),
+        uri.share_ref_hex.as_bytes(),
+    )
+    .unwrap();
+    let good_rdata = {
+        transport
+            .resolve_derived(&derived, cipherpost::DHT_LABEL_OUTER)
+            .unwrap()
+            .expect("good resolve")
+    };
+    let mut bad: cipherpost::record::OuterRecord = serde_json::from_str(&good_rdata).unwrap();
     // Flip last base64 char of signature so it still base64-decodes but verify
     // fails (or Canonical re-serialize fails — either way: unified Display).
     let mut sig_chars: Vec<char> = bad.signature.chars().collect();
@@ -59,7 +70,8 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
     *last = if *last == 'A' { 'B' } else { 'A' };
     bad.signature = sig_chars.into_iter().collect();
 
-    transport.publish(&kp, &bad).expect("publish corrupt");
+    let bad_rdata = serde_json::to_string(&bad).unwrap();
+    transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &bad_rdata);
 
     // Now run_receive; the corrupt signature must fail verify inside resolve()
     let mut sink = OutputSink::InMemory(Vec::new());

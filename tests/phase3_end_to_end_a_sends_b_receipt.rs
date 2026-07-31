@@ -15,7 +15,7 @@ use cipherpost::flow::{
 use cipherpost::identity::Identity;
 use cipherpost::receipt::{verify_receipt, Receipt};
 use cipherpost::transport::MockTransport;
-use cipherpost::{ShareUri, DHT_LABEL_RECEIPT_PREFIX};
+use cipherpost::ShareUri;
 use secrecy::SecretBox;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
@@ -105,16 +105,21 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         panic!("sink was not InMemory");
     }
 
-    // 3. Assert receipt is published under B's key at _cprcpt-<share_ref>.
-    let entries = transport.resolve_all_txt(&b_z32);
-    let label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, uri.share_ref_hex);
-    let receipt_entry = entries
-        .iter()
-        .find(|(l, _)| l == &label)
-        .expect("_cprcpt-<share_ref> must exist under B's key after accept");
+    // 3. Receipt is published at its own derived key derive(B_pub, share_ref).
+    let b_pub = pkarr::PublicKey::try_from(b_z32.as_str())
+        .unwrap()
+        .to_bytes();
+    let derived = cipherpost::derive::derive_public(&b_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let receipt_json = {
+        use cipherpost::transport::Transport;
+        transport
+            .resolve_derived(&derived, cipherpost::DHT_LABEL_RECEIPT)
+            .unwrap()
+            .expect("receipt must exist at its derived key after accept")
+    };
 
     // 4. Parse + verify the receipt.
-    let receipt: Receipt = serde_json::from_str(&receipt_entry.1).expect("receipt JSON must parse");
+    let receipt: Receipt = serde_json::from_str(&receipt_json).expect("receipt JSON must parse");
     verify_receipt(&receipt).expect("verify_receipt must succeed on freshly-published receipt");
 
     // 5. Assert receipt field values.
@@ -139,14 +144,20 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
 
     // 6. Assert ciphertext_hash matches sha256 of what B actually resolved.
-    //    Pull the outer record from the mock and hash its decoded blob.
-    let outer_entries = transport.resolve_all_txt(&a_z32);
-    let outer_entry = outer_entries
-        .iter()
-        .find(|(l, _)| l == cipherpost::DHT_LABEL_OUTER)
-        .expect("A's outer _cipherpost entry must exist");
-    let outer_record: cipherpost::record::OuterRecord =
-        serde_json::from_str(&outer_entry.1).unwrap();
+    //    Pull the outer record from A's derived share key and hash its decoded blob.
+    let a_pub = pkarr::PublicKey::try_from(a_z32.as_str())
+        .unwrap()
+        .to_bytes();
+    let a_share_key =
+        cipherpost::derive::derive_public(&a_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let outer_rdata = {
+        use cipherpost::transport::Transport;
+        transport
+            .resolve_derived(&a_share_key, cipherpost::DHT_LABEL_OUTER)
+            .unwrap()
+            .expect("A's outer share must exist at its derived key")
+    };
+    let outer_record: cipherpost::record::OuterRecord = serde_json::from_str(&outer_rdata).unwrap();
     let ciphertext_bytes = {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
@@ -159,9 +170,12 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         "receipt.ciphertext_hash must match sha256(ciphertext) that B received"
     );
 
-    // 7. A fetches B's receipts via run_receipts (no Identity needed — D-OUT-04).
-    //    This is stdout-printing so we just assert it returns Ok(()).
-    run_receipts(&transport, &b_z32, None, false).expect("A run_receipts must succeed");
+    // 7. A fetches B's receipt via run_receipts --share-ref (v2: per-share
+    //    addressing; no Identity needed — D-OUT-04). Without --share-ref it errors.
     run_receipts(&transport, &b_z32, Some(&uri.share_ref_hex), false)
-        .expect("filter match must succeed");
+        .expect("run_receipts by share_ref must succeed");
+    assert!(
+        run_receipts(&transport, &b_z32, None, false).is_err(),
+        "v2 run_receipts requires --share-ref",
+    );
 }

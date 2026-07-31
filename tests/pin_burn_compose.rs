@@ -74,12 +74,16 @@ fn count_receipts_for_share_ref(
     recipient_z32: &str,
     share_ref_hex: &str,
 ) -> usize {
-    let label = format!("_cprcpt-{share_ref_hex}");
-    transport
-        .resolve_all_txt(recipient_z32)
-        .iter()
-        .filter(|(l, _json)| l == &label)
-        .count()
+    use cipherpost::transport::Transport;
+    let recipient_pub = pkarr::PublicKey::try_from(recipient_z32)
+        .expect("valid recipient z32")
+        .to_bytes();
+    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex.as_bytes())
+        .expect("derive receipt key");
+    match transport.resolve_derived(&derived, cipherpost::DHT_LABEL_RECEIPT) {
+        Ok(Some(_)) => 1,
+        _ => 0,
+    }
 }
 
 fn setup(dir: &TempDir) -> (cipherpost::identity::Identity, pkarr::Keypair) {
@@ -309,7 +313,7 @@ compose_base_test_lenient!(ssh_pin_burn, MaterialVariant::SshKey, true, true);
 // skipped so a self-share and its receipt can't collide in the single
 // ~1000-byte per-key packet), so the count is ZERO. Cross-identity burn-receipt
 // coverage lives in the phase3 end-to-end tests.
-macro_rules! self_burn_publishes_no_receipt {
+macro_rules! self_burn_publishes_one_receipt {
     ($name:ident, $variant:expr) => {
         #[test]
         #[serial]
@@ -329,8 +333,8 @@ macro_rules! self_burn_publishes_no_receipt {
                     );
                     assert_eq!(
                         count,
-                        0,
-                        "{}+burn (self-mode): self-shares publish NO receipt (D-SEQ-06 revised), got {}",
+                        1,
+                        "{}+burn (self-mode): publishes exactly one receipt (self-receipts re-enabled in v2), got {}",
                         variant_label($variant),
                         count
                     );
@@ -348,20 +352,20 @@ macro_rules! self_burn_publishes_no_receipt {
     };
 }
 
-self_burn_publishes_no_receipt!(
-    generic_burn_self_share_publishes_no_receipt,
+self_burn_publishes_one_receipt!(
+    generic_burn_self_share_publishes_one_receipt,
     MaterialVariant::GenericSecret
 );
-self_burn_publishes_no_receipt!(
-    x509_burn_self_share_publishes_no_receipt,
+self_burn_publishes_one_receipt!(
+    x509_burn_self_share_publishes_one_receipt,
     MaterialVariant::X509Cert
 );
-self_burn_publishes_no_receipt!(
-    pgp_burn_self_share_publishes_no_receipt,
+self_burn_publishes_one_receipt!(
+    pgp_burn_self_share_publishes_one_receipt,
     MaterialVariant::PgpKey
 );
-self_burn_publishes_no_receipt!(
-    ssh_burn_self_share_publishes_no_receipt,
+self_burn_publishes_one_receipt!(
+    ssh_burn_self_share_publishes_one_receipt,
     MaterialVariant::SshKey
 );
 
@@ -453,7 +457,6 @@ second_receive_burn_returns_exit_7!(ssh_burn_second_receive_exit_7, MaterialVari
 fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receivable() {
     use base64::Engine;
     use cipherpost::record::{sign_record, OuterRecord, OuterRecordSignable};
-    use cipherpost::transport::Transport;
 
     let dir = TempDir::new().unwrap();
     let (id, kp) = setup(&dir);
@@ -497,9 +500,12 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
         signature,
         ttl_seconds: DEFAULT_TTL_SECONDS,
     };
-    transport
-        .publish(&kp, &record)
-        .expect("MockTransport accepts pin-required record under wire ceiling");
+    // v2: inject the (over-budget) PIN share at its derived key so run_receive finds it.
+    let derived =
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
+            .unwrap();
+    let rdata = serde_json::to_string(&record).unwrap();
+    transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &rdata);
 
     let uri = ShareUri::parse(&format!("cipherpost://{}/{}", id.z32_pubkey(), share_ref)).unwrap();
 
