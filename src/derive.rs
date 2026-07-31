@@ -54,10 +54,8 @@ fn tweak(parent_pub: &[u8; 32], share_ref: &[u8]) -> Scalar {
 ///
 /// **No `Debug` derive** (Pitfall #7 leak-scan): the scalar and nonce prefix are
 /// secret. Both are held in `Zeroizing` so drop wipes them.
-// `scalar`/`prefix` and their accessors are the Phase 2 (transport) signing
-// interface — used by the unit tests here, but not yet consumed by non-test code,
-// so allow dead_code until Phase 2 wires `hazmat::raw_sign`.
-#[allow(dead_code)]
+/// `scalar`/`prefix` and their accessors are the transport signing interface
+/// (`build_derived_signed_packet`), consumed via `hazmat::raw_sign`.
 pub struct DerivedSigner {
     /// `a' = a + t (mod ℓ)`, canonical little-endian bytes. SECRET — Phase 2
     /// rebuilds an `ed25519_dalek::hazmat::ExpandedSecretKey` from this.
@@ -76,13 +74,11 @@ impl DerivedSigner {
 
     /// Derived secret scalar bytes (`a'`). `pub(crate)` — only the transport layer
     /// (Phase 2) consumes it to sign; never crosses the public API surface.
-    #[allow(dead_code)] // consumed by Phase 2 transport signing
     pub(crate) fn scalar_bytes(&self) -> &[u8; 32] {
         &self.scalar
     }
 
     /// Derived nonce prefix. `pub(crate)` for the same reason as `scalar_bytes`.
-    #[allow(dead_code)] // consumed by Phase 2 transport signing
     pub(crate) fn prefix(&self) -> &[u8; 32] {
         &self.prefix
     }

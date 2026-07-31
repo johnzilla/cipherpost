@@ -34,14 +34,18 @@ real-dht-e2e = []
 pkarr = { version = "5.0.3", default-features = false, features = ["dht"] }
 # HARD PIN: pkarr 5.0.3 depends on ^3.0.0-pre.1 and cargo won't auto-pick newer pre-releases without =.
 # Do NOT change until pkarr publishes on a stable ed25519-dalek 3.x.
-ed25519-dalek = "=3.0.0-pre.5"
-# Phase 1 of derived-key addressing (docs/design/derived-key-addressing.md): point
-# + scalar arithmetic for single-hop stealth derivation. Already in the tree via
-# ed25519-dalek; pinned to the exact same version. `zeroize` feature so secret
-# intermediate scalars can be wiped. NOTE: only the `derive` module uses this so
-# far and it is not yet wired into the flow — the hazmat SIGNING half stays a
-# test-only dev-dep until Phase 2 (transport).
+# `hazmat` + `digest`: Phase 2 of derived-key addressing (docs/design/derived-key-
+# addressing.md) signs BEP44 packets under blinded keys via raw-scalar signing —
+# pkarr's seed-based Keypair can't. `digest` gates the re-exported Sha512 that
+# hazmat::raw_sign's CtxDigest bound requires. USE IS CONFINED to the derived-key
+# signing path in transport.rs (self-verified before use; ed25519-unsafe-libs guard).
+ed25519-dalek = { version = "=3.0.0-pre.5", features = ["hazmat", "digest"] }
+# Derived-key addressing: point + scalar arithmetic for single-hop stealth
+# derivation (src/derive.rs). Already in the tree via ed25519-dalek; same exact
+# pin; `zeroize` so secret intermediate scalars can be wiped.
 curve25519-dalek = { version = "=5.0.0-pre.5", features = ["zeroize"] }
+# from_relay_payload takes a `bytes::Bytes` — used to assemble derived-key packets.
+bytes = "1"
 age = "0.11"
 argon2 = "0.5"
 hkdf = "0.12"
@@ -467,14 +471,8 @@ required-features = ["large-payload", "mock"]
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
-# Derived-key addressing feasibility spike (docs/design/derived-key-addressing.md §14).
-# TEST-ONLY on purpose: the hazmat raw-scalar signing + curve arithmetic live in
-# dev-deps so the SHIPPED binary's ed25519-dalek stays hazmat-free until Phase 1
-# actually wires derivation into src/. Same exact version as the [dependencies]
-# pin; features union only in test/dev builds. curve25519-dalek is already in the
-# tree transitively (via ed25519-dalek) — this just makes it a direct test dep.
-ed25519-dalek = { version = "=3.0.0-pre.5", features = ["hazmat", "digest"] }
-bytes = "1"
+# (Phase 2: ed25519-dalek hazmat/digest + bytes are now real [dependencies] — the
+# derived-key signing path is production code in transport.rs.)
 # Plan 02 Task 2's tests/identity_passphrase_argv_rejected.rs uses these to spawn
 # the compiled binary and assert exit code + stderr substring. Declared here (not in
 # Plan 02) because Cargo.toml is owned by Plan 01. Both crates are MIT/Apache-2.0 —

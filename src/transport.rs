@@ -101,6 +101,32 @@ pub trait Transport {
     /// with zero matching `_cprcpt-*` TXT records. Callers (`run_receipts` in
     /// Plan 03) map this to exit code 5.
     fn resolve_all_cprcpt(&self, pubkey_z32: &str) -> Result<Vec<String>, Error>;
+
+    // ---- Derived-key addressing (v2; docs/design/derived-key-addressing.md) ----
+    //
+    // Phase 2: a share/receipt gets its OWN key `derive(parent_pub, share_ref)`, so
+    // each PKARR packet holds exactly ONE record — lifting the one-record-per-key
+    // ceiling. These carry the CAPABILITY only; the send/receive flow does not use
+    // them until Phase 3.
+
+    /// Publish `rdata` at `label` under the DERIVED key `signer.public()`, signing
+    /// the BEP44 packet with the derived scalar (pkarr's seed-based `Keypair`
+    /// cannot). Each derived key is written by a single writer and holds one
+    /// record, so — unlike the parent-key path — there is NO resolve-merge-
+    /// republish and NO CAS. Over-budget rdata surfaces `PacketBudgetExceeded`.
+    fn publish_derived(
+        &self,
+        signer: &crate::derive::DerivedSigner,
+        label: &str,
+        rdata: &str,
+    ) -> Result<(), Error>;
+
+    /// Resolve the TXT `rdata` at `label` under the derived key `derived_pub`
+    /// (compressed Ed25519 bytes, from `derive::derive_public`). `Ok(None)` if the
+    /// key has no packet or no matching label. Verification of the record body is
+    /// the caller's job (Phase 3), exactly as with `resolve`.
+    fn resolve_derived(&self, derived_pub: &[u8; 32], label: &str)
+        -> Result<Option<String>, Error>;
 }
 
 // ---- DhtTransport -----------------------------------------------------------
@@ -312,6 +338,38 @@ impl Transport for DhtTransport {
         }
         Ok(out)
     }
+
+    fn publish_derived(
+        &self,
+        signer: &crate::derive::DerivedSigner,
+        label: &str,
+        rdata: &str,
+    ) -> Result<(), Error> {
+        eprintln!("Publishing to derived key on DHT..."); // TRANS-05
+        let packet = build_derived_signed_packet(signer, label, rdata)?;
+        // No CAS: a derived key is single-writer, single-record.
+        self.client
+            .publish(&packet, None)
+            .map_err(map_pkarr_publish_error)
+    }
+
+    fn resolve_derived(
+        &self,
+        derived_pub: &[u8; 32],
+        label: &str,
+    ) -> Result<Option<String>, Error> {
+        eprintln!("Resolving derived key from DHT..."); // TRANS-05
+        let pk = pkarr::PublicKey::try_from(derived_pub).map_err(|_| Error::NotFound)?;
+        let Some(packet) = self.client.resolve_most_recent(&pk) else {
+            return Ok(None);
+        };
+        for rr in packet.resource_records(label) {
+            if let Some(rdata) = extract_txt_string(&rr.rdata) {
+                return Ok(Some(rdata));
+            }
+        }
+        Ok(None)
+    }
 }
 
 // ---- Label matching --------------------------------------------------------
@@ -362,6 +420,95 @@ fn map_dns_err(
     e: impl std::error::Error + Send + Sync + 'static,
 ) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(e)
+}
+
+// ---- Derived-key packet signing (v2) ---------------------------------------
+
+/// BEP44 mutable-item signable bytes. MUST match pkarr's private `signable()`
+/// byte-for-byte — guarded by `tests/derived_transport.rs::
+/// signable_replication_matches_pkarr` (verifies a pkarr-built packet's own
+/// signature against these bytes). If pkarr ever changes this encoding, that
+/// test fails loudly.
+fn bep44_signable(timestamp: u64, v: &[u8]) -> Vec<u8> {
+    let mut s = format!("3:seqi{}e1:v{}:", timestamp, v.len()).into_bytes();
+    s.extend_from_slice(v);
+    s
+}
+
+/// Build a `SignedPacket` carrying one TXT (`label` → `rdata`) under the DERIVED
+/// key `signer.public()`. pkarr's `Keypair` is seed-based and cannot sign under a
+/// blinded key, so we hand-sign the BEP44 bytes with `hazmat::raw_sign` (raw
+/// scalar) and assemble via the public `from_relay_payload` (which re-verifies the
+/// signature under the public key — a built-in correctness gate). The signature is
+/// self-verified first: `raw_sign` leaks the scalar if the passed verifying key is
+/// not `scalar·G` (ed25519-unsafe-libs), so a mismatch fails closed here.
+fn build_derived_signed_packet(
+    signer: &crate::derive::DerivedSigner,
+    label: &str,
+    rdata: &str,
+) -> Result<pkarr::SignedPacket, Error> {
+    let derived_pub = signer.public();
+    let derived_pk = pkarr::PublicKey::try_from(&derived_pub)
+        .map_err(|_| Error::Config("derived pubkey is not a valid PKARR key".into()))?;
+    let origin = derived_pk.to_z32();
+
+    // One TXT record at `<label>.<origin>` — the form pkarr's builder normalizes a
+    // bare label to (we can't use the builder here; it requires a seed Keypair).
+    let rec_name = format!("{label}.{origin}");
+    let name: pkarr::dns::Name<'_> = rec_name
+        .as_str()
+        .try_into()
+        .map_err(|e| Error::Transport(map_dns_err(e)))?;
+    let txt: pkarr::dns::rdata::TXT<'_> = rdata
+        .try_into()
+        .map_err(|e| Error::Transport(map_dns_err(e)))?;
+    let mut packet = pkarr::dns::Packet::new_reply(0);
+    packet.answers.push(pkarr::dns::ResourceRecord::new(
+        name,
+        pkarr::dns::CLASS::IN,
+        300,
+        pkarr::dns::rdata::RData::TXT(txt),
+    ));
+    let v = packet
+        .build_bytes_vec_compressed()
+        .map_err(|e| Error::Transport(Box::new(e)))?;
+    // Each derived key holds ONE record; enforce the BEP44 budget defensively.
+    if v.len() > crate::flow::WIRE_BUDGET_BYTES {
+        return Err(Error::PacketBudgetExceeded {
+            encoded: v.len(),
+            budget: crate::flow::WIRE_BUDGET_BYTES,
+        });
+    }
+
+    let ts: u64 = pkarr::Timestamp::now().into();
+    let signable = bep44_signable(ts, &v);
+
+    // Reconstruct the derived expanded key and sign. `a'` is canonical (reduced),
+    // so `from_bytes_mod_order` is a no-op reduction.
+    let scalar = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(*signer.scalar_bytes());
+    let esk = ed25519_dalek::hazmat::ExpandedSecretKey {
+        scalar,
+        hash_prefix: *signer.prefix(),
+    };
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(&derived_pub)
+        .map_err(|e| Error::Crypto(Box::new(e)))?;
+    let sig = ed25519_dalek::hazmat::raw_sign::<ed25519_dalek::Sha512>(&esk, &signable, &vk);
+    vk.verify_strict(&signable, &sig)
+        .map_err(|e| Error::Crypto(Box::new(e)))?; // ed25519-unsafe-libs guard
+
+    let mut payload = Vec::with_capacity(64 + 8 + v.len());
+    payload.extend_from_slice(&sig.to_bytes());
+    payload.extend_from_slice(&ts.to_be_bytes());
+    payload.extend_from_slice(&v);
+    pkarr::SignedPacket::from_relay_payload(&derived_pk, &bytes::Bytes::from(payload))
+        .map_err(|e| Error::Transport(Box::new(e)))
+}
+
+/// z-base-32 of a derived compressed Ed25519 key.
+fn derived_z32(derived_pub: &[u8; 32]) -> Result<String, Error> {
+    Ok(pkarr::PublicKey::try_from(derived_pub)
+        .map_err(|_| Error::Config("derived pubkey is not a valid PKARR key".into()))?
+        .to_z32())
 }
 
 // ---- MockTransport (cfg-gated) ---------------------------------------------
@@ -586,5 +733,152 @@ mod mock {
             }
             Ok(out)
         }
+
+        fn publish_derived(
+            &self,
+            signer: &crate::derive::DerivedSigner,
+            label: &str,
+            rdata: &str,
+        ) -> Result<(), Error> {
+            // Fidelity (design §9): build the REAL derived-key SignedPacket — this
+            // exercises the exact hazmat signing + budget + from_relay_payload path
+            // the DHT uses, so the mock can't hide a signing/budget bug (the class
+            // the clobber + merged-budget blind spots belonged to). Only the
+            // network hop is mocked: on success we store in-memory, keyed by the
+            // SAME derived z32 the real derivation produces (shared code, no re-impl).
+            let _packet = build_derived_signed_packet(signer, label, rdata)?;
+            let z32 = derived_z32(&signer.public())?;
+            let mut store = self.store.lock().unwrap();
+            let entry = store.entry(z32).or_default();
+            // Single record per derived key: replace any prior record at this label.
+            entry.records.retain(|(l, _)| l != label);
+            entry.records.push((label.to_string(), rdata.to_string()));
+            entry.seq = entry.seq.saturating_add(1);
+            Ok(())
+        }
+
+        fn resolve_derived(
+            &self,
+            derived_pub: &[u8; 32],
+            label: &str,
+        ) -> Result<Option<String>, Error> {
+            let z32 = derived_z32(derived_pub)?;
+            let store = self.store.lock().unwrap();
+            Ok(store.get(&z32).and_then(|e| {
+                e.records
+                    .iter()
+                    .find(|(l, _)| l == label)
+                    .map(|(_, rd)| rd.clone())
+            }))
+        }
+    }
+}
+
+// ---- Derived-key transport tests (Phase 2) ---------------------------------
+
+#[cfg(test)]
+mod derived_tests {
+    use super::*;
+    use crate::derive::{derive_public, derive_signer};
+
+    const LABEL: &str = "_cipherpost";
+
+    fn parent_pub(seed: &[u8; 32]) -> [u8; 32] {
+        pkarr::Keypair::from_secret_key(seed)
+            .public_key()
+            .to_bytes()
+    }
+
+    /// R1 guard (design §10.2 / §12): pkarr's OWN signature over a builder-made
+    /// packet must verify against transport's `bep44_signable()` — i.e. our
+    /// replication of pkarr's PRIVATE BEP44 encoder is byte-exact. NON-ignored:
+    /// a pkarr bump that changed the encoding would silently break every
+    /// hand-signed derived-key packet; this fails loudly instead.
+    #[test]
+    fn signable_replication_matches_pkarr() {
+        let kp = pkarr::Keypair::random();
+        let sp = pkarr::SignedPacket::builder()
+            .txt(
+                "_cipherpost".try_into().unwrap(),
+                "hello".try_into().unwrap(),
+                300,
+            )
+            .sign(&kp)
+            .unwrap();
+        let ts: u64 = sp.timestamp().into();
+        let v = sp.encoded_packet();
+        let ours = bep44_signable(ts, &v);
+        kp.public_key()
+            .verify(&ours, &sp.signature())
+            .expect("pkarr's signature must verify against transport::bep44_signable — byte-exact");
+    }
+
+    /// Publish a record under a derived key; the counterparty resolves it via
+    /// PUBLIC derivation only. Exercises the real hazmat signing +
+    /// `from_relay_payload` path inside `MockTransport::publish_derived`.
+    #[test]
+    fn derived_publish_resolve_roundtrip() {
+        let transport = MockTransport::new();
+        let seed = [9u8; 32];
+        let share_ref = [0x22u8; 16];
+
+        let signer = derive_signer(&seed, &share_ref);
+        transport
+            .publish_derived(&signer, LABEL, "derived-payload")
+            .expect("publish under derived key");
+
+        // Counterparty derives the SAME key from PUBLIC data only.
+        let derived_pub = derive_public(&parent_pub(&seed), &share_ref).unwrap();
+        assert_eq!(derived_pub, signer.public(), "public == secret derivation");
+        assert_eq!(
+            transport
+                .resolve_derived(&derived_pub, LABEL)
+                .unwrap()
+                .as_deref(),
+            Some("derived-payload"),
+        );
+
+        // A never-published key resolves to None (not an error).
+        let unused = derive_public(&parent_pub(&seed), &[0x33u8; 16]).unwrap();
+        assert_eq!(transport.resolve_derived(&unused, LABEL).unwrap(), None);
+    }
+
+    /// The ceiling-lifting property: two share_refs from the SAME parent land
+    /// under DIFFERENT keys — independent packets, no clobber, no shared budget.
+    #[test]
+    fn distinct_share_refs_are_independent_packets() {
+        let transport = MockTransport::new();
+        let seed = [4u8; 32];
+        transport
+            .publish_derived(&derive_signer(&seed, &[0x01u8; 16]), LABEL, "one")
+            .unwrap();
+        transport
+            .publish_derived(&derive_signer(&seed, &[0x02u8; 16]), LABEL, "two")
+            .unwrap();
+        let k1 = derive_public(&parent_pub(&seed), &[0x01u8; 16]).unwrap();
+        let k2 = derive_public(&parent_pub(&seed), &[0x02u8; 16]).unwrap();
+        assert_eq!(
+            transport.resolve_derived(&k1, LABEL).unwrap().as_deref(),
+            Some("one")
+        );
+        assert_eq!(
+            transport.resolve_derived(&k2, LABEL).unwrap().as_deref(),
+            Some("two")
+        );
+    }
+
+    /// An over-budget record surfaces `PacketBudgetExceeded` (the mock builds the
+    /// real packet, so it sees the same budget the DHT would).
+    #[test]
+    fn oversized_derived_record_rejected() {
+        let transport = MockTransport::new();
+        let signer = derive_signer(&[1u8; 32], &[0u8; 16]);
+        let err = transport
+            .publish_derived(&signer, LABEL, &"x".repeat(1100))
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::PacketBudgetExceeded { .. }),
+            "got {err:?}"
+        );
     }
 }

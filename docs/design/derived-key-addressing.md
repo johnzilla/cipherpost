@@ -241,7 +241,14 @@ behind a feature/flag during rollout so v1.1 stays buildable for comparison.
    until Phase 2.
 2. **Transport: publish/resolve under derived keys** — the `from_relay_payload` +
    hazmat signing path behind the trait; `signable` replication test (§10.2);
-   **mock updated in the same phase** (§9).
+   **mock updated in the same phase** (§9). **DONE** — `Transport::publish_derived`
+   / `resolve_derived` on both `DhtTransport` and `MockTransport`;
+   `build_derived_signed_packet` + `bep44_signable` in `src/transport.rs`; the
+   mock builds the REAL packet (same hazmat/budget path) then stores in-memory
+   keyed by the derived z32. R1 guard `signable_replication_matches_pkarr`
+   promoted to a **non-ignored** unit test. hazmat/digest/bytes moved dev→main
+   (the derived-signing path is now shipped code; use is confined to
+   `build_derived_signed_packet`, self-verified before use). No flow wiring yet.
 3. **Flow wiring** — shares publish under `derive(sender_pub, share_ref)`;
    receipts under `derive(recipient_pub, share_ref)`; lift the one-per-key limits
    (re-enable self-receipts, multi-receipt). PROTOCOL_VERSION → 2.

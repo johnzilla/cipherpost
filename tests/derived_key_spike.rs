@@ -25,7 +25,7 @@ use ed25519_dalek::hazmat::{raw_sign, ExpandedSecretKey};
 use ed25519_dalek::Sha512 as HazmatSha512;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use pkarr::dns::{rdata::RData, rdata::TXT, Name, Packet, ResourceRecord, CLASS};
-use pkarr::{Keypair, PublicKey, SignedPacket};
+use pkarr::{PublicKey, SignedPacket};
 use sha2::{Digest, Sha512};
 
 const DOMAIN: &[u8] = b"cipherpost/v2/derive-addr";
@@ -52,29 +52,10 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// R1 guard (§10.2, §12): a normal pkarr packet's OWN signature must verify
-/// against OUR recomputed `signable()` — passes iff our encoder is byte-exact.
-/// Fails loudly if a pkarr bump ever changes the BEP44 signable encoding.
-#[test]
-#[ignore = "spike; run with --ignored"]
-fn signable_replication_matches_pkarr() {
-    let kp = Keypair::random();
-    let sp = SignedPacket::builder()
-        .txt(
-            Name::new("_cipherpost").unwrap(),
-            "hello".try_into().unwrap(),
-            300,
-        )
-        .sign(&kp)
-        .unwrap();
-
-    let ts: u64 = sp.timestamp().into();
-    let v = sp.encoded_packet();
-    let ours = signable(ts, &v);
-    kp.public_key()
-        .verify(&ours, &sp.signature())
-        .expect("pkarr's own signature must verify against OUR recomputed signable() — byte-exact");
-}
+// NOTE: the signable-replication R1 guard was PROMOTED (design §10.2) to a
+// non-ignored unit test — `src/transport.rs::derived_tests::
+// signable_replication_matches_pkarr` — which tests the production
+// `bep44_signable()`. It is intentionally not duplicated here.
 
 /// End-to-end seam + BYTE-EXACT golden vectors for single-hop stealth derivation.
 #[test]
