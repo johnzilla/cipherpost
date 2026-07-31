@@ -54,7 +54,7 @@ struct CasConflictFinal;
 
 impl std::fmt::Display for CasConflictFinal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "CAS conflict on receipt publish (after one retry)")
+        write!(f, "CAS conflict on merge-republish (after one retry)")
     }
 }
 
@@ -133,37 +133,35 @@ impl DhtTransport {
         Self::new(DEFAULT_DHT_TIMEOUT)
     }
 
-    /// Phase 9 D-P9-A2: single resolve-merge-republish attempt for the
-    /// receipt-publish path. Returns `PublishOutcome` so the trait method's
-    /// outer single-retry loop can pattern-match on `CasConflict` without
-    /// crossing the public Error surface (PITFALLS.md #16 oracle hygiene).
+    /// Shared resolve-merge-republish attempt for BOTH the share-publish and the
+    /// receipt-publish paths. Resolves the key's current SignedPacket, rebuilds it
+    /// from every existing resource record EXCEPT the one whose `label` we're
+    /// replacing, adds the new TXT under `label`, signs, and publishes with CAS.
     ///
-    /// The function body is the v1.0 publish_receipt implementation
-    /// (resolve → rebuild builder skipping same-label RRs → set CAS token
-    /// from packet.timestamp() → sign → publish). Phase 9's only delta is
-    /// the return-type translation: `Ok(())` → `PublishOutcome::Ok`,
-    /// `Err(PublishError::Concurrency(_))` → `PublishOutcome::CasConflict`
-    /// (catches ALL three inner variants `ConflictRisk`, `NotMostRecent`,
-    /// `CasFailed` per RESEARCH.md OQ-1), every other error path →
-    /// `PublishOutcome::Other(...)`.
-    fn publish_receipt_attempt(
+    /// This is what keeps a sender's outgoing `_cipherpost` share and their inbound
+    /// `_cprcpt-*` receipts coexisting in the single per-key packet — publishing
+    /// one label must NOT clobber the others. (The share path formerly built a
+    /// from-scratch packet and wiped every receipt; only the receipt path merged.)
+    ///
+    /// Returns `PublishOutcome` so the caller's single-retry loop can absorb
+    /// `CasConflict` without crossing the public Error surface (PITFALLS.md #16
+    /// oracle hygiene). `what` is only for the TRANS-05 progress line. A merged
+    /// `PacketTooLarge` (e.g. a share plus accumulated receipts exceeding the
+    /// 1000-byte budget) surfaces as `WireBudgetExceeded{plaintext:0}`.
+    fn merge_republish_attempt(
         &self,
         keypair: &pkarr::Keypair,
-        share_ref_hex: &str,
-        receipt_json: &str,
+        label: &str,
+        rdata: &str,
+        what: &str,
     ) -> PublishOutcome {
-        // D-MRG-01: resolve → rebuild builder from existing RRs (replacing same-label
-        // duplicates) → add new receipt TXT → sign → publish with optional CAS.
-        // D-MRG-03: 300-second TXT TTL matches the outer-share TTL.
-        // D-MRG-06: SignedPacketBuildError::PacketTooLarge → WireBudgetExceeded{plaintext:0}.
-        eprintln!("Publishing receipt to DHT..."); // TRANS-05
+        eprintln!("Publishing {what} to DHT..."); // TRANS-05
 
-        let receipt_label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
-        let new_name: pkarr::dns::Name<'_> = match receipt_label.as_str().try_into() {
+        let new_name: pkarr::dns::Name<'_> = match label.try_into() {
             Ok(n) => n,
             Err(e) => return PublishOutcome::Other(Error::Transport(map_dns_err(e))),
         };
-        let new_txt: pkarr::dns::rdata::TXT<'_> = match receipt_json.try_into() {
+        let new_txt: pkarr::dns::rdata::TXT<'_> = match rdata.try_into() {
             Ok(t) => t,
             Err(e) => return PublishOutcome::Other(Error::Transport(map_dns_err(e))),
         };
@@ -181,7 +179,7 @@ impl DhtTransport {
             let origin_z32 = pk.to_z32();
             for rr in packet.all_resource_records() {
                 let rr_name = rr.name.to_string();
-                if matches_receipt_label(&rr_name, &receipt_label, &origin_z32) {
+                if matches_label(&rr_name, label, &origin_z32) {
                     continue;
                 }
                 builder = builder.record(rr.clone());
@@ -214,27 +212,43 @@ impl DhtTransport {
             Err(other) => PublishOutcome::Other(map_pkarr_publish_error(other)),
         }
     }
+
+    /// Single-retry-then-fail wrapper around `merge_republish_attempt`, shared by
+    /// `publish` and `publish_receipt`. A first-attempt CasConflict is retried
+    /// once with a fresh resolve; a second conflict collapses to `Error::Transport`
+    /// (no public `Error::CasConflict` — oracle hygiene).
+    fn merge_republish(
+        &self,
+        keypair: &pkarr::Keypair,
+        label: &str,
+        rdata: &str,
+        what: &str,
+    ) -> Result<(), Error> {
+        match self.merge_republish_attempt(keypair, label, rdata, what) {
+            PublishOutcome::Ok => return Ok(()),
+            PublishOutcome::Other(e) => return Err(e),
+            PublishOutcome::CasConflict => {
+                if cipherpost_debug_enabled() {
+                    eprintln!("{what} publish: CAS conflict, retrying once...");
+                }
+            }
+        }
+        match self.merge_republish_attempt(keypair, label, rdata, what) {
+            PublishOutcome::Ok => Ok(()),
+            PublishOutcome::Other(e) => Err(e),
+            PublishOutcome::CasConflict => Err(Error::Transport(Box::new(CasConflictFinal))),
+        }
+    }
 }
 
 impl Transport for DhtTransport {
     fn publish(&self, keypair: &pkarr::Keypair, record: &OuterRecord) -> Result<(), Error> {
-        eprintln!("Publishing to DHT..."); // TRANS-05
+        // Resolve-merge-republish (NOT a from-scratch packet) so publishing a
+        // share preserves the sender's `_cprcpt-*` receipts and any other records.
+        // Previously this clobbered the whole packet, silently deleting every
+        // receipt the same identity had published.
         let rdata = serde_json::to_string(record).map_err(|e| Error::Transport(Box::new(e)))?;
-        let name: pkarr::dns::Name<'_> = DHT_LABEL_OUTER
-            .try_into()
-            .map_err(|e| Error::Transport(map_dns_err(e)))?;
-        let txt: pkarr::dns::rdata::TXT<'_> = rdata
-            .as_str()
-            .try_into()
-            .map_err(|e| Error::Transport(map_dns_err(e)))?;
-        let packet = pkarr::SignedPacket::builder()
-            .txt(name, txt, 300)
-            .sign(keypair)
-            .map_err(|e| Error::Transport(Box::new(e)))?;
-        self.client
-            .publish(&packet, None)
-            .map_err(map_pkarr_publish_error)?;
-        Ok(())
+        self.merge_republish(keypair, DHT_LABEL_OUTER, &rdata, "share")
     }
 
     fn resolve(&self, pubkey_z32: &str) -> Result<OuterRecord, Error> {
@@ -262,28 +276,11 @@ impl Transport for DhtTransport {
         share_ref_hex: &str,
         receipt_json: &str,
     ) -> Result<(), Error> {
-        // D-P9-A1: single-retry-then-fail. ConcurrencyError variants
-        // (ConflictRisk / NotMostRecent / CasFailed) are absorbed inside the
-        // trait method; caller sees Ok(()) or final Err only. Second
-        // conflict rides Error::Transport (D-P9-anti-pattern: no public
-        // Error::CasConflict variant; PITFALLS.md #16 oracle hygiene).
-        match self.publish_receipt_attempt(keypair, share_ref_hex, receipt_json) {
-            PublishOutcome::Ok => return Ok(()),
-            PublishOutcome::Other(e) => return Err(e),
-            PublishOutcome::CasConflict => {
-                if cipherpost_debug_enabled() {
-                    eprintln!("Receipt publish: CAS conflict, retrying once...");
-                }
-            }
-        }
-        // Single retry — resolve-merge-republish from scratch with a fresh
-        // CAS token (publish_receipt_attempt re-runs resolve_most_recent
-        // internally).
-        match self.publish_receipt_attempt(keypair, share_ref_hex, receipt_json) {
-            PublishOutcome::Ok => Ok(()),
-            PublishOutcome::Other(e) => Err(e),
-            PublishOutcome::CasConflict => Err(Error::Transport(Box::new(CasConflictFinal))),
-        }
+        // Same resolve-merge-republish + single-retry-then-fail discipline as the
+        // share path (shared helper). Receipts for different share_refs — and any
+        // outgoing `_cipherpost` share — coexist under the one per-key packet.
+        let receipt_label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
+        self.merge_republish(keypair, &receipt_label, receipt_json, "receipt")
     }
 
     fn resolve_all_cprcpt(&self, pubkey_z32: &str) -> Result<Vec<String>, Error> {
@@ -315,13 +312,14 @@ impl Transport for DhtTransport {
 
 // ---- Label matching --------------------------------------------------------
 
-/// Returns true if a DNS name (normalized to `<label>.<z32>.`) matches the given
-/// receipt label. pkarr 5.0.4 normalizes names to `<label>.<origin-z32>` relative
-/// to the keypair's pubkey (signed_packet.rs:256-271); either the bare label or
-/// the suffixed form may appear depending on pkarr's internal state.
-fn matches_receipt_label(rr_name: &str, receipt_label: &str, origin_z32: &str) -> bool {
+/// Returns true if a DNS name (normalized to `<label>.<z32>.`) matches `label`.
+/// pkarr normalizes names to `<label>.<origin-z32>` relative to the keypair's
+/// pubkey (signed_packet.rs:256-271); either the bare label or the suffixed form
+/// may appear. Generic over any label — the `_cipherpost` share label and the
+/// `_cprcpt-*` receipt labels both flow through here.
+fn matches_label(rr_name: &str, label: &str, origin_z32: &str) -> bool {
     let trimmed = rr_name.trim_end_matches('.');
-    trimmed == format!("{receipt_label}.{origin_z32}") || trimmed == receipt_label
+    trimmed == format!("{label}.{origin_z32}") || trimmed == label
 }
 
 // ---- RData TXT extraction --------------------------------------------------
@@ -433,14 +431,13 @@ mod mock {
         /// single retry — the retry observes the most recent merged state via
         /// the same lock-read-drop-rebuild-recheck dance, exactly mirroring
         /// pkarr's resolve-merge-republish flow.
-        fn publish_receipt_attempt_mock(
+        fn merge_attempt_mock(
             &self,
             kp: &pkarr::Keypair,
-            share_ref_hex: &str,
-            receipt_json: &str,
+            label: &str,
+            rdata: &str,
         ) -> PublishOutcome {
             let z32 = kp.public_key().to_z32();
-            let label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
 
             // 1. Lock; read current seq + clone records; release.
             let (seq_at_read, mut merged) = {
@@ -452,10 +449,10 @@ mod mock {
             };
 
             // 2. Build merged record set (no lock held — analog of pkarr's
-            //    resolve-merge-republish where the merge is a pure local op).
-            //    Replace any existing receipt for this share_ref.
-            merged.retain(|(l, _)| l != &label);
-            merged.push((label, receipt_json.to_string()));
+            //    resolve-merge-republish). Replace ONLY the same-label record;
+            //    every OTHER label (an outgoing share, other receipts) is kept.
+            merged.retain(|(l, _)| l.as_str() != label);
+            merged.push((label.to_string(), rdata.to_string()));
 
             // 3. Re-lock; cas-check the seq; commit or signal conflict.
             let mut store = self.store.lock().unwrap();
@@ -467,28 +464,45 @@ mod mock {
             entry.records = merged;
             PublishOutcome::Ok
         }
+
+        /// Single-retry-then-fail wrapper (mirrors `DhtTransport::merge_republish`),
+        /// used by both mock `publish` and `publish_receipt`.
+        fn merge_mock(&self, kp: &pkarr::Keypair, label: &str, rdata: &str) -> Result<(), Error> {
+            match self.merge_attempt_mock(kp, label, rdata) {
+                PublishOutcome::Ok => return Ok(()),
+                PublishOutcome::Other(e) => return Err(e),
+                PublishOutcome::CasConflict => {
+                    if cipherpost_debug_enabled() {
+                        eprintln!("{label} publish: CAS conflict, retrying once...");
+                    }
+                }
+            }
+            match self.merge_attempt_mock(kp, label, rdata) {
+                PublishOutcome::Ok => Ok(()),
+                PublishOutcome::Other(e) => Err(e),
+                PublishOutcome::CasConflict => Err(Error::Transport(Box::new(CasConflictFinal))),
+            }
+        }
     }
 
     impl Transport for MockTransport {
         fn publish(&self, kp: &pkarr::Keypair, record: &OuterRecord) -> Result<(), Error> {
             let rdata = serde_json::to_string(record).map_err(|e| Error::Transport(Box::new(e)))?;
             // Enforce the same ceiling pkarr enforces — prevents tests-pass-locally-fail-on-publish
-            // (T-01-03-05). 1000 bytes is pkarr's MAX encoded DNS packet size.
+            // (T-01-03-05). 1000 bytes is pkarr's MAX encoded DNS packet size. NOTE:
+            // this checks the share record ALONE, not the merged packet — the mock
+            // does not model merged-packet overflow (the real DhtTransport surfaces
+            // that as WireBudgetExceeded).
             if rdata.len() > 1000 {
                 return Err(Error::Config(format!(
                     "MockTransport: record too large for PKARR packet: {} > 1000 bytes",
                     rdata.len()
                 )));
             }
-            let z32 = kp.public_key().to_z32();
-            let mut store = self.store.lock().unwrap();
-            let entry = store.entry(z32).or_default();
-            // Phase 9: D-P9-A3 — outer-share publish path is NOT cas-checked
-            // (only `publish_receipt` is). Clobber-replace the same-label
-            // entry; do not bump seq (seq is receipt-publish bookkeeping).
-            entry.records.retain(|(label, _)| label != DHT_LABEL_OUTER);
-            entry.records.push((DHT_LABEL_OUTER.to_string(), rdata));
-            Ok(())
+            // Merge-republish (preserve `_cprcpt-*` receipts) via the shared seq-CAS
+            // path — matches the fixed DhtTransport::publish so tests exercise the
+            // real behavior, not the old clobber where a share wiped every receipt.
+            self.merge_mock(kp, DHT_LABEL_OUTER, &rdata)
         }
 
         fn resolve(&self, pubkey_z32: &str) -> Result<OuterRecord, Error> {
@@ -511,27 +525,12 @@ mod mock {
             share_ref_hex: &str,
             receipt_json: &str,
         ) -> Result<(), Error> {
-            // D-P9-A3: model PKARR cas semantics via per-key seq:u64. The
-            // Phase 9 racer test (tests/cas_racer.rs) exercises this path via
-            // two Barrier-synced threads — exactly one wins on first attempt,
-            // the loser observes a stale seq and retries.
-            //
-            // D-P9-A1: single-retry-then-fail. The retry loop lives ABOVE the
-            // attempt helper, mirroring DhtTransport's structure (D-P9-A2).
-            match self.publish_receipt_attempt_mock(kp, share_ref_hex, receipt_json) {
-                PublishOutcome::Ok => return Ok(()),
-                PublishOutcome::Other(e) => return Err(e),
-                PublishOutcome::CasConflict => {
-                    if cipherpost_debug_enabled() {
-                        eprintln!("Receipt publish: CAS conflict, retrying once...");
-                    }
-                }
-            }
-            match self.publish_receipt_attempt_mock(kp, share_ref_hex, receipt_json) {
-                PublishOutcome::Ok => Ok(()),
-                PublishOutcome::Other(e) => Err(e),
-                PublishOutcome::CasConflict => Err(Error::Transport(Box::new(CasConflictFinal))),
-            }
+            // D-P9-A3: model PKARR cas semantics via per-key seq:u64. The racer
+            // test (tests/cas_racer.rs) exercises this via two Barrier-synced
+            // threads — exactly one wins, the loser observes a stale seq and
+            // retries (shared merge_mock, same discipline as the share path).
+            let label = format!("{DHT_LABEL_RECEIPT_PREFIX}{share_ref_hex}");
+            self.merge_mock(kp, &label, receipt_json)
         }
 
         fn resolve_all_cprcpt(&self, pubkey_z32: &str) -> Result<Vec<String>, Error> {
