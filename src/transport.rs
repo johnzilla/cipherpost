@@ -425,10 +425,10 @@ fn map_dns_err(
 // ---- Derived-key packet signing (v2) ---------------------------------------
 
 /// BEP44 mutable-item signable bytes. MUST match pkarr's private `signable()`
-/// byte-for-byte — guarded by `tests/derived_transport.rs::
-/// signable_replication_matches_pkarr` (verifies a pkarr-built packet's own
-/// signature against these bytes). If pkarr ever changes this encoding, that
-/// test fails loudly.
+/// byte-for-byte — guarded by the unit test
+/// `derived_tests::signable_replication_matches_pkarr` (below, in this file),
+/// which verifies a pkarr-built packet's own signature against these bytes. If
+/// pkarr ever changes this encoding, that test fails loudly.
 fn bep44_signable(timestamp: u64, v: &[u8]) -> Vec<u8> {
     let mut s = format!("3:seqi{}e1:v{}:", timestamp, v.len()).into_bytes();
     s.extend_from_slice(v);
@@ -505,9 +505,15 @@ fn build_derived_signed_packet(
 }
 
 /// z-base-32 of a derived compressed Ed25519 key.
+// Maps a bad key to `Error::NotFound` so `MockTransport::resolve_derived` agrees
+// taxonomically with `DhtTransport::resolve_derived` (both: unresolvable key →
+// NotFound, composing with the `Ok(None)` absent-key case). On the mock PUBLISH
+// path this is unreachable — `build_derived_signed_packet` validates the same key
+// first and fails with `Config` — so publish stays `Config` on both impls.
+// (In practice every derived key is a valid curve point, so neither fires.)
 fn derived_z32(derived_pub: &[u8; 32]) -> Result<String, Error> {
     Ok(pkarr::PublicKey::try_from(derived_pub)
-        .map_err(|_| Error::Config("derived pubkey is not a valid PKARR key".into()))?
+        .map_err(|_| Error::NotFound)?
         .to_z32())
 }
 
@@ -740,20 +746,24 @@ mod mock {
             label: &str,
             rdata: &str,
         ) -> Result<(), Error> {
-            // Fidelity (design §9): build the REAL derived-key SignedPacket — this
-            // exercises the exact hazmat signing + budget + from_relay_payload path
-            // the DHT uses, so the mock can't hide a signing/budget bug (the class
-            // the clobber + merged-budget blind spots belonged to). Only the
-            // network hop is mocked: on success we store in-memory, keyed by the
-            // SAME derived z32 the real derivation produces (shared code, no re-impl).
-            let _packet = build_derived_signed_packet(signer, label, rdata)?;
+            // Fidelity (design §9): BUILD the real derived-key SignedPacket purely
+            // for its validation side effects — the exact hazmat signing + budget +
+            // from_relay_payload (pkarr re-verify) path the DHT uses — then DISCARD
+            // it. The in-memory store holds the rdata, not the packet; building it
+            // here means the mock can't hide a signing/budget bug (the class the
+            // clobber + merged-budget blind spots belonged to). Only the network hop
+            // is mocked; storage is keyed by the SAME derived z32 the real derivation
+            // produces (shared code, no re-impl).
+            let _ = build_derived_signed_packet(signer, label, rdata)?;
             let z32 = derived_z32(&signer.public())?;
             let mut store = self.store.lock().unwrap();
             let entry = store.entry(z32).or_default();
             // Single record per derived key: replace any prior record at this label.
+            // No `seq` bump: a derived key is no-CAS by design (single writer,
+            // single record); `seq` is receipt-CAS bookkeeping (D-P9-A3) for the
+            // merge path and stays untouched here.
             entry.records.retain(|(l, _)| l != label);
             entry.records.push((label.to_string(), rdata.to_string()));
-            entry.seq = entry.seq.saturating_add(1);
             Ok(())
         }
 
