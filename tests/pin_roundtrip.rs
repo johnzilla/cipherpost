@@ -315,6 +315,12 @@ fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
     let dir = TempDir::new().unwrap();
     let (id, kp) = setup_identity_in(&dir);
     let z32 = kp.public_key().to_z32();
+    // CROSS-identity share: a DISTINCT sender signs + publishes the share (still
+    // encrypted TO this identity, the recipient). Cross-identity is required for
+    // a receipt to be published at all — self-shares now skip receipts (D-SEQ-06
+    // revised), and this test is specifically about the receipt's ciphertext_hash.
+    let kp_s = pkarr::Keypair::from_secret_key(&[0x5a; 32]);
+    let s_z32 = kp_s.public_key().to_z32();
     let transport = MockTransport::new();
 
     let created_at = std::time::SystemTime::now()
@@ -355,28 +361,30 @@ fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
         created_at,
         pin_required: true,
         protocol_version: PROTOCOL_VERSION,
-        pubkey: z32.clone(),
-        recipient: None,
+        pubkey: s_z32.clone(),
+        recipient: Some(z32.clone()),
         share_ref: share_ref.clone(),
         ttl_seconds: DEFAULT_TTL_SECONDS,
     };
-    let signature = cipherpost::record::sign_record(&signable, &kp).unwrap();
+    let signature = cipherpost::record::sign_record(&signable, &kp_s).unwrap();
     let record = OuterRecord {
         blob: blob.clone(),
         created_at,
         pin_required: true,
         protocol_version: PROTOCOL_VERSION,
-        pubkey: z32.clone(),
-        recipient: None,
+        pubkey: s_z32.clone(),
+        recipient: Some(z32.clone()),
         share_ref: share_ref.clone(),
         signature,
         ttl_seconds: DEFAULT_TTL_SECONDS,
     };
 
-    // Inject (bypass the wire-budget publish) and receive with the correct PIN.
-    transport.inject_outer_record_for_test(&kp, &record);
+    // Inject under the SENDER's key (bypass the wire-budget publish); receive as
+    // this identity (the recipient) with the correct PIN. sender != recipient, so
+    // step 13 publishes a receipt under the recipient's (this identity's) key.
+    transport.inject_outer_record_for_test(&kp_s, &record);
     std::env::set_var("CIPHERPOST_TEST_PIN", "validpin1");
-    let uri = ShareUri::parse(&ShareUri::format(&z32, &share_ref)).unwrap();
+    let uri = ShareUri::parse(&ShareUri::format(&s_z32, &share_ref)).unwrap();
     let mut sink = OutputSink::InMemory(Vec::new());
     run_receive(
         &id,

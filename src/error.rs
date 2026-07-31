@@ -61,6 +61,16 @@ pub enum Error {
         plaintext: usize,
     },
 
+    /// The MERGED per-key packet is over budget — distinct from `WireBudgetExceeded`
+    /// (which is "your payload alone doesn't fit"). PKARR gives each key ONE
+    /// ~1000-byte packet shared by every record under it: your outgoing `_cipherpost`
+    /// share PLUS every `_cprcpt-*` receipt accrued on this key. Once those together
+    /// exceed the budget, publishing fails even though the share alone is tiny. The
+    /// user's content is irrelevant here, so — unlike `WireBudgetExceeded` — this
+    /// carries no `plaintext` field. Known ceiling; see FAQ ("one receipt per identity").
+    #[error("PKARR packet over budget: encoded={encoded} bytes exceeds the {budget}-byte limit because of accumulated records under this key (your outgoing share plus receipts you've received) — not your payload size. This is a known ceiling; see the FAQ (\"one outstanding receipt per identity\").")]
+    PacketBudgetExceeded { encoded: usize, budget: usize },
+
     /// D-P6-03 (Phase 6): typed-material ingest failure OR variant-accessor mismatch.
     /// `variant` is the snake-case wire tag (e.g. `"x509_cert"`); `reason` is a curated
     /// short string — NEVER wraps an x509-parser / nom / parse-position string.
@@ -125,7 +135,10 @@ pub fn exit_code(err: &Error) -> i32 {
         Error::NotFound => 5,
         Error::Network => 6,
         Error::Declined => 7,
-        Error::ShareRefMismatch | Error::WireBudgetExceeded { .. } | Error::InvalidShareUri(_) => 1,
+        Error::ShareRefMismatch
+        | Error::WireBudgetExceeded { .. }
+        | Error::PacketBudgetExceeded { .. }
+        | Error::InvalidShareUri(_) => 1,
         Error::InvalidMaterial { .. } => 1, // X509-08: content error, NOT sig (exit 3)
         Error::SshKeyFormatNotSupported => 1, // D-P7-12: distinct format-rejection class
         _ => 1,

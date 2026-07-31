@@ -50,7 +50,7 @@ fn deterministic_identity_at(home: &std::path::Path, seed: [u8; 32]) -> (Identit
 
 #[test]
 #[serial]
-fn bs_self_share_survives_publish_receipt() {
+fn bs_self_share_blocks_receipt_accrual_over_budget() {
     let dir_a = TempDir::new().unwrap();
     let (id_a, kp_a) = deterministic_identity_at(dir_a.path(), [0xAA; 32]);
 
@@ -100,7 +100,11 @@ fn bs_self_share_survives_publish_receipt() {
     .expect("A run_send share mode");
     let uri = ShareUri::parse(&uri_str).expect("parse share URI");
 
-    // 3. B receives + accepts — step 13 publishes a receipt under B's key.
+    // 3. B receives + accepts. B ALREADY holds a self-share (~647B) under its key,
+    //    so publishing the ~568B receipt would push the merged per-key packet to
+    //    ~1215B > 1000B. publish_receipt is best-effort (D-SEQ-02 warn+degrade):
+    //    the PacketBudgetExceeded is logged to stderr, the plaintext is still
+    //    delivered, and run_receive returns Ok — but NO receipt is accrued.
     std::env::set_var("CIPHERPOST_HOME", dir_b.path());
     let mut sink = OutputSink::InMemory(Vec::new());
     run_receive(
@@ -112,39 +116,49 @@ fn bs_self_share_survives_publish_receipt() {
         &AutoConfirmPrompter,
         false,
     )
-    .expect("B run_receive");
+    .expect("B run_receive still succeeds (receipt failure is warn+degrade)");
+    match sink {
+        OutputSink::InMemory(buf) => assert_eq!(
+            buf, b"a-to-b share",
+            "plaintext must still be delivered despite receipt degradation"
+        ),
+        _ => panic!("InMemory sink expected"),
+    }
 
-    // 4. Assert coexistence: B's key now holds 2 entries — one _cipherpost (B's self-share)
-    //    AND one _cprcpt-<share_ref> (the new receipt).
+    // 4. Packet-budget ceiling: a key holds at most ONE real record — B's outgoing
+    //    self-share (~647B) plus even a single receipt (~568B) exceed the 1000B
+    //    per-key budget together. So B still holds ONLY its self-share; the receipt
+    //    could not be accrued. This is NOT a clobber (the merge preserves the
+    //    share) — the NEW receipt is what overflows and is dropped.
     let post = transport.resolve_all_txt(&b_z32);
     assert_eq!(
         post.len(),
-        2,
-        "expected 2 entries under B (1 outgoing + 1 receipt), got {:?}",
+        1,
+        "B holds only its self-share; the receipt can't coexist (packet budget), got {:?}",
         post.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>()
     );
-    let has_outgoing = post.iter().any(|(l, _)| l == DHT_LABEL_OUTER);
-    let expected_receipt_label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, uri.share_ref_hex);
-    let has_receipt = post.iter().any(|(l, _)| l == &expected_receipt_label);
-    assert!(
-        has_outgoing,
-        "TRANS-03 invariant violated: B's outgoing _cipherpost share clobbered by publish_receipt"
+    assert_eq!(
+        post[0].0, DHT_LABEL_OUTER,
+        "the surviving entry is B's outgoing share"
     );
+    let expected_receipt_label = format!("{}{}", DHT_LABEL_RECEIPT_PREFIX, uri.share_ref_hex);
     assert!(
-        has_receipt,
-        "receipt must be published under B's key at {expected_receipt_label}"
+        !post.iter().any(|(l, _)| l == &expected_receipt_label),
+        "receipt must NOT be present — it was budget-degraded (D-SEQ-02)"
     );
 }
 
-/// Regression for the reverse direction (the actual bug): B first accrues a
-/// receipt (as a recipient), THEN publishes its own share (as a sender). The
-/// share publish must NOT clobber the receipt. Before the fix, `DhtTransport::
-/// publish` rebuilt the packet from scratch and silently deleted every
-/// `_cprcpt-*` — and `MockTransport::publish` hid it by preserving receipts;
-/// now both merge-republish, so this test faithfully exercises the fixed path.
+/// Canonical regression for the packet-budget collision: B first accrues a
+/// receipt (as a recipient), THEN tries to publish its own share (as a sender).
+/// Because any two real records (share ~647B + receipt ~568B) exceed the 1000B
+/// per-key packet, the merge PRESERVES the receipt but the new share cannot fit,
+/// so the send fails with `PacketBudgetExceeded` — an identity that has received
+/// a share is blocked from sending until the receipt clears. This is the exact
+/// consequence fix #1 (merge-don't-clobber) exposed; the accurate error names
+/// accumulated records, not the user's (fine) payload.
 #[test]
 #[serial]
-fn receipt_survives_subsequent_share_publishes() {
+fn accrued_receipt_blocks_self_share_with_packet_budget_error() {
     let dir_a = TempDir::new().unwrap();
     let (id_a, kp_a) = deterministic_identity_at(dir_a.path(), [0xCC; 32]);
     let dir_b = TempDir::new().unwrap();
@@ -194,51 +208,50 @@ fn receipt_survives_subsequent_share_publishes() {
         "precondition: B has not published a share yet"
     );
 
-    // 2. B publishes its OWN share. The receipt MUST survive.
-    let self_send = |note: &[u8]| {
-        run_send(
-            &id_b,
-            &transport,
-            &kp_b,
-            SendMode::SelfMode,
-            "b self",
-            MaterialSource::Bytes(note.to_vec()),
-            MaterialVariant::GenericSecret,
-            DEFAULT_TTL_SECONDS,
-            None,
-            false,
-        )
-        .expect("B self-send");
-    };
-    self_send(b"b self 1");
-    let after_share = transport.resolve_all_txt(&b_z32);
+    // 2. B tries to publish its OWN self-share. The merge preserves the receipt,
+    //    but receipt (~568B) + share (~647B) blow past the 1000B per-key budget,
+    //    so the publish fails with PacketBudgetExceeded — NOT WireBudgetExceeded
+    //    (the payload is fine; accumulated records are the cause). run_send
+    //    surfaces the error (unlike receive's warn+degrade).
+    let err = run_send(
+        &id_b,
+        &transport,
+        &kp_b,
+        SendMode::SelfMode,
+        "b self",
+        MaterialSource::Bytes(b"b self 1".to_vec()),
+        MaterialVariant::GenericSecret,
+        DEFAULT_TTL_SECONDS,
+        None,
+        false,
+    )
+    .expect_err("B self-send must fail — receipt + share exceed the per-key packet budget");
     assert!(
-        after_share.iter().any(|(l, _)| l == DHT_LABEL_OUTER),
-        "B's share must be published"
+        matches!(err, cipherpost::Error::PacketBudgetExceeded { .. }),
+        "expected PacketBudgetExceeded (accumulated records), got {err:?}"
     );
+    // Accurate, non-misleading message: blames accumulated records, never the
+    // user's payload (no "plaintext" phrasing like the old WireBudgetExceeded).
+    let msg = format!("{err}");
     assert!(
-        after_share.iter().any(|(l, _)| l == &receipt_label),
-        "REGRESSION: B's share publish clobbered its receipt (got {:?})",
-        after_share
-            .iter()
-            .map(|(l, _)| l.clone())
-            .collect::<Vec<_>>()
+        msg.contains("accumulated records") && !msg.contains("plaintext"),
+        "message must blame accumulated records, not payload size: {msg}"
+    );
+    assert_eq!(
+        cipherpost::error::exit_code(&err),
+        1,
+        "PacketBudgetExceeded maps to exit 1"
     );
 
-    // 3. A SECOND share publish: receipt still survives, and the share is REPLACED
-    //    (one outstanding _cipherpost, not accumulated).
-    self_send(b"b self 2");
-    let after_share2 = transport.resolve_all_txt(&b_z32);
+    // The receipt is untouched (merge preserved it) and B's share was NOT published.
+    let after = transport.resolve_all_txt(&b_z32);
     assert!(
-        after_share2.iter().any(|(l, _)| l == &receipt_label),
-        "REGRESSION: second share publish clobbered the receipt"
+        after.iter().any(|(l, _)| l == &receipt_label),
+        "B's receipt must survive the failed share publish (got {:?})",
+        after.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>()
     );
-    let cipherpost_count = after_share2
-        .iter()
-        .filter(|(l, _)| l == DHT_LABEL_OUTER)
-        .count();
-    assert_eq!(
-        cipherpost_count, 1,
-        "the second share should REPLACE the first _cipherpost, not accumulate"
+    assert!(
+        !after.iter().any(|(l, _)| l == DHT_LABEL_OUTER),
+        "B's share must NOT have been published (it overflowed the budget)"
     );
 }

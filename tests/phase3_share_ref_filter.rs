@@ -98,8 +98,9 @@ fn receipts_filter_and_senders_own_share_coexists() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Share 2 full cycle: A sends again (replaces A's _cipherpost entry), B accepts.
-    // B's _cprcpt-<uri1.share_ref> receipt under B's key persists because
-    // MockTransport::publish_receipt uses retain+push per share_ref label.
+    // B already holds uri1's receipt; publishing uri2's would push B's per-key
+    // packet over budget, so this second accept's receipt is dropped
+    // (warn+degrade) and only uri1's receipt persists — asserted below.
     std::env::set_var("CIPHERPOST_HOME", dir_a.path());
     let uri2_str = run_send(
         &id_a,
@@ -135,7 +136,11 @@ fn receipts_filter_and_senders_own_share_coexists() {
     )
     .expect("B accept 2");
 
-    // Assert B's key has exactly 2 receipts.
+    // Packet-budget ceiling: two real receipts (~568B each) exceed the 1000B
+    // per-key budget together, so B can hold at most ONE. The first receive
+    // (uri1) accrues its receipt; the second (uri2) hits PacketBudgetExceeded
+    // inside publish_receipt and warn+degrades (D-SEQ-02), so uri2's receipt is
+    // never stored — B keeps only uri1's.
     let b_entries = transport.resolve_all_txt(&b_z32);
     let b_receipts: Vec<_> = b_entries
         .iter()
@@ -143,19 +148,35 @@ fn receipts_filter_and_senders_own_share_coexists() {
         .collect();
     assert_eq!(
         b_receipts.len(),
-        2,
-        "B should have 2 distinct receipts; got {:?}",
+        1,
+        "B holds at most ONE receipt (two would exceed the per-key packet budget); got {:?}",
         b_entries.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>()
     );
+    let surviving_label = format!(
+        "{}{}",
+        cipherpost::DHT_LABEL_RECEIPT_PREFIX,
+        uri1.share_ref_hex
+    );
+    assert_eq!(
+        b_receipts[0].0, surviving_label,
+        "the FIRST-accrued receipt (uri1) survives; uri2's was budget-degraded"
+    );
 
-    // run_receipts with share_ref_1 filter — exactly 1 receipt expected.
+    // run_receipts filter: uri1 matches the surviving receipt; uri2 finds none
+    // (its receipt never persisted), which surfaces as NotFound.
     run_receipts(&transport, &b_z32, Some(&uri1.share_ref_hex), false)
-        .expect("filter-1 should succeed with 1 match");
-    run_receipts(&transport, &b_z32, Some(&uri2.share_ref_hex), false)
-        .expect("filter-2 should succeed with 1 match");
+        .expect("filter for the surviving receipt (uri1) must succeed");
+    assert!(
+        matches!(
+            run_receipts(&transport, &b_z32, Some(&uri2.share_ref_hex), false),
+            Err(cipherpost::Error::NotFound)
+        ),
+        "uri2's receipt was budget-degraded, so filtering for it must be NotFound"
+    );
 
-    // run_receipts with no filter — both receipts returned.
-    run_receipts(&transport, &b_z32, None, false).expect("no-filter should succeed with 2 matches");
+    // run_receipts with no filter — the single surviving receipt is returned.
+    run_receipts(&transport, &b_z32, None, false)
+        .expect("no-filter returns the 1 surviving receipt");
 
     // A's own outgoing _cipherpost share under A's key is STILL resolvable
     // (ROADMAP SC4 invariant). The _cipherpost entry is the LAST uri2.

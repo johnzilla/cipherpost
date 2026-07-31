@@ -315,13 +315,15 @@ fn concurrent_receive_same_share_ref_burn_one_succeeds_one_declined() {
          Without the per-share_ref lock the count would be 2."
     );
 
-    // Receipt count == 1 (BURN-04 invariant under contention). The loser
-    // returns Declined at STEP 1 before STEP 13's publish_outcome closure
-    // can run, and the winner publishes exactly one receipt.
+    // Receipt count == 0: this is a SELF-mode burn (recipient == sender), and
+    // self-shares no longer publish a receipt (D-SEQ-06 revised — self-attestation
+    // is skipped to avoid the share+receipt per-key packet-budget collision). The
+    // concurrency invariant under test (exactly one winner decrypts, the loser
+    // sees Burned and declines) is asserted above and is unaffected.
     let receipt_count = count_receipts_for(&transport, &recipient_z32, &uri.share_ref_hex);
     assert_eq!(
-        receipt_count, 1,
-        "exactly one receipt must persist after concurrent burn-receive (BURN-04); got {receipt_count}"
+        receipt_count, 0,
+        "self-share burn publishes NO receipt (D-SEQ-06 revised); got {receipt_count}"
     );
 
     assert!(

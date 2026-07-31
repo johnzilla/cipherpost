@@ -549,6 +549,12 @@ pub fn run_send(
     // with the last-seen encoded size, so the caller sees a concrete number
     // and can decide whether to split the payload.
     let mut last_err: Option<(usize, usize)> = None;
+    // Separate accumulator for the MERGED-packet overflow (share + accumulated
+    // records under this key), which only surfaces from `transport.publish`, not
+    // the share-alone pre-flight. Greasing rarely helps here (the overflow is
+    // real records, not grease variance), but we route it through the same loop
+    // for uniformity and then surface the accurate `PacketBudgetExceeded`.
+    let mut last_packet_err: Option<(usize, usize)> = None;
     for _attempt in 0..WIRE_BUDGET_RETRY_ATTEMPTS {
         // 6. age_encrypt (grease stanza re-sampled each call). Phase 8 Plan 01
         //    (D-P8-06): when pin_setup.is_some(), nest two age layers — INNER
@@ -607,10 +613,23 @@ pub fn run_send(
         // rdata.len()).
         match check_wire_budget(&record, keypair, jcs_bytes.len()) {
             Ok(()) => {
-                // 13. publish
-                transport.publish(keypair, &record)?;
-                // 14. return URI
-                return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref));
+                // 13. publish — this is where the MERGED packet (share +
+                //     accumulated records under this key) is actually built, so a
+                //     budget failure here is `PacketBudgetExceeded`, not the
+                //     share-alone `WireBudgetExceeded` from the pre-flight above.
+                //     Route it through the retry loop (re-sample grease once more
+                //     in case a smaller draw just fits) rather than short-circuit.
+                match transport.publish(keypair, &record) {
+                    Ok(()) => {
+                        // 14. return URI
+                        return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref));
+                    }
+                    Err(Error::PacketBudgetExceeded { encoded, budget }) => {
+                        last_packet_err = Some((encoded, budget));
+                        continue;
+                    }
+                    Err(other) => return Err(other),
+                }
             }
             Err(Error::WireBudgetExceeded { encoded, .. }) => {
                 last_err = Some((encoded, jcs_bytes.len()));
@@ -620,7 +639,12 @@ pub fn run_send(
         }
     }
 
-    // Exhausted retries — surface the last-seen encoded size.
+    // Exhausted retries. Prefer the accurate merged-packet error when the share
+    // fit alone but the merged packet did not (the common accumulated-records
+    // case); otherwise surface the share-too-big pre-flight error.
+    if let Some((encoded, budget)) = last_packet_err {
+        return Err(Error::PacketBudgetExceeded { encoded, budget });
+    }
     let (encoded, plaintext) = last_err.unwrap_or((WIRE_BUDGET_BYTES + 1, jcs_bytes.len()));
     Err(Error::WireBudgetExceeded {
         encoded,
@@ -1029,66 +1053,78 @@ pub fn run_receive(
     // disagree). `ciphertext_hash` is SHA-256 of the full decoded blob per
     // SPEC D-RS-04 (includes the PIN salt); `cleartext_hash` is SHA-256(JCS).
     //
-    // Step 13 does NOT skip on self-mode (D-SEQ-06: sender_pubkey == recipient_pubkey
-    // is a valid Receipt state — personal audit log).
+    // Step 13 DOES skip on self-mode (D-SEQ-06 REVISED — packet-budget fix).
+    // When sender_pubkey == recipient_pubkey the receipt is self-attestation
+    // with ~no value, AND publishing it onto your OWN key accumulates records
+    // that collide with your outgoing `_cipherpost` share in the single
+    // ~1000-byte per-key PKARR packet (shares and receipts share one budget).
+    // Self-backup — `send --self → receive → send --self` — is the common
+    // workflow; skipping the self-receipt keeps it working instead of
+    // hard-failing the next send with PacketBudgetExceeded. Cross-identity
+    // receipts (the ones that carry real delivery attestation) are unchanged.
     //
-    // Step 13 is wrapped in a closure so EVERY Result-returning op inside
-    // honors D-SEQ-02 warn+degrade: if any pre-publish op fails
+    // The non-self path is wrapped in a closure so EVERY Result-returning op
+    // inside honors D-SEQ-02 warn+degrade: if any pre-publish op fails
     // (now_unix_seconds, sign_receipt's JCS serialize, serde_json::to_string)
     // OR the publish itself OR the D-SEQ-05 ledger update, we warn to stderr
     // and return Ok(()) from run_receive — the material was already delivered
     // (step 11) and locally recorded (step 12), so core-value delivery is
     // complete. Only the final warn is user-visible; the specific failure
     // class is still surfaced via user_message(&e).
-    let publish_outcome: Result<(), Error> = (|| {
-        let accepted_at_unix = now_unix_seconds()?;
-        let recipient_z32 = keypair.public_key().to_z32();
-
-        let signable = crate::receipt::ReceiptSignable {
-            accepted_at: accepted_at_unix,
-            ciphertext_hash: ciphertext_hash.clone(),
-            cleartext_hash: cleartext_hash.clone(),
-            nonce: crate::receipt::nonce_hex(),
-            protocol_version: crate::PROTOCOL_VERSION,
-            purpose: envelope.purpose.clone(),
-            recipient_pubkey: recipient_z32.clone(),
-            sender_pubkey: record.pubkey.clone(),
-            share_ref: record.share_ref.clone(),
-        };
-        let signature = crate::receipt::sign_receipt(&signable, keypair)?;
-        let receipt = crate::receipt::Receipt {
-            accepted_at: signable.accepted_at,
-            ciphertext_hash: signable.ciphertext_hash.clone(),
-            cleartext_hash: signable.cleartext_hash.clone(),
-            nonce: signable.nonce.clone(),
-            protocol_version: signable.protocol_version,
-            purpose: signable.purpose.clone(),
-            recipient_pubkey: signable.recipient_pubkey.clone(),
-            sender_pubkey: signable.sender_pubkey.clone(),
-            share_ref: signable.share_ref.clone(),
-            signature,
-        };
-        let receipt_json = serde_json::to_string(&receipt)
-            .map_err(|e| Error::Config(format!("receipt encode: {e}")))?;
-
-        transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
-
-        // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
-        // This receipt row has state:None; check_already_consumed scans ALL rows
-        // with "burned" dominating, so it never downgrades a burned share.
-        // The receipt is already on the DHT — a ledger failure here is still
-        // non-fatal, and falls under the same warn+degrade path.
-        let iso = iso8601_utc_now()?;
-        append_ledger_entry_with_receipt(
-            &record.share_ref,
-            &record.pubkey,
-            &envelope.purpose,
-            &ciphertext_hash,
-            &cleartext_hash,
-            &iso,
-        )?;
+    let is_self_share = record.pubkey == keypair.public_key().to_z32();
+    let publish_outcome: Result<(), Error> = if is_self_share {
         Ok(())
-    })();
+    } else {
+        (|| {
+            let accepted_at_unix = now_unix_seconds()?;
+            let recipient_z32 = keypair.public_key().to_z32();
+
+            let signable = crate::receipt::ReceiptSignable {
+                accepted_at: accepted_at_unix,
+                ciphertext_hash: ciphertext_hash.clone(),
+                cleartext_hash: cleartext_hash.clone(),
+                nonce: crate::receipt::nonce_hex(),
+                protocol_version: crate::PROTOCOL_VERSION,
+                purpose: envelope.purpose.clone(),
+                recipient_pubkey: recipient_z32.clone(),
+                sender_pubkey: record.pubkey.clone(),
+                share_ref: record.share_ref.clone(),
+            };
+            let signature = crate::receipt::sign_receipt(&signable, keypair)?;
+            let receipt = crate::receipt::Receipt {
+                accepted_at: signable.accepted_at,
+                ciphertext_hash: signable.ciphertext_hash.clone(),
+                cleartext_hash: signable.cleartext_hash.clone(),
+                nonce: signable.nonce.clone(),
+                protocol_version: signable.protocol_version,
+                purpose: signable.purpose.clone(),
+                recipient_pubkey: signable.recipient_pubkey.clone(),
+                sender_pubkey: signable.sender_pubkey.clone(),
+                share_ref: signable.share_ref.clone(),
+                signature,
+            };
+            let receipt_json = serde_json::to_string(&receipt)
+                .map_err(|e| Error::Config(format!("receipt encode: {e}")))?;
+
+            transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
+
+            // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
+            // This receipt row has state:None; check_already_consumed scans ALL rows
+            // with "burned" dominating, so it never downgrades a burned share.
+            // The receipt is already on the DHT — a ledger failure here is still
+            // non-fatal, and falls under the same warn+degrade path.
+            let iso = iso8601_utc_now()?;
+            append_ledger_entry_with_receipt(
+                &record.share_ref,
+                &record.pubkey,
+                &envelope.purpose,
+                &ciphertext_hash,
+                &cleartext_hash,
+                &iso,
+            )?;
+            Ok(())
+        })()
+    };
 
     if let Err(e) = publish_outcome {
         // D-SEQ-02: warn + degrade; exit 0.
@@ -1761,6 +1797,7 @@ mod large {
         // draw can overflow, so re-sample on WireBudgetExceeded (mirrors run_send).
         use base64::Engine;
         let mut last_err: Option<(usize, usize)> = None;
+        let mut last_packet_err: Option<(usize, usize)> = None;
         for _ in 0..WIRE_BUDGET_RETRY_ATTEMPTS {
             let manifest_ct = crypto::age_encrypt(&jcs_bytes, &recipient)?;
             let share_ref = record::share_ref_from_bytes(&manifest_ct, created_at);
@@ -1788,16 +1825,23 @@ mod large {
                 ttl_seconds,
             };
             match check_wire_budget(&record, keypair, jcs_bytes.len()) {
-                Ok(()) => {
-                    transport.publish(keypair, &record)?;
-                    return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref));
-                }
+                Ok(()) => match transport.publish(keypair, &record) {
+                    Ok(()) => return Ok(ShareUri::format(&identity.z32_pubkey(), &share_ref)),
+                    Err(Error::PacketBudgetExceeded { encoded, budget }) => {
+                        last_packet_err = Some((encoded, budget));
+                        continue;
+                    }
+                    Err(other) => return Err(other),
+                },
                 Err(Error::WireBudgetExceeded { encoded, .. }) => {
                     last_err = Some((encoded, jcs_bytes.len()));
                     continue;
                 }
                 Err(other) => return Err(other),
             }
+        }
+        if let Some((encoded, budget)) = last_packet_err {
+            return Err(Error::PacketBudgetExceeded { encoded, budget });
         }
         let (encoded, plaintext) = last_err.unwrap_or((WIRE_BUDGET_BYTES + 1, jcs_bytes.len()));
         Err(Error::WireBudgetExceeded {

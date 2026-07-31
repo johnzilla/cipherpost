@@ -5,7 +5,8 @@
 //! variants:
 //!
 //!   - 12 base round-trip cases (4 variants × {pin, burn, pin+burn})
-//!   - 4 burn receipt-count cross-cutting (BURN-04; RESEARCH Open Risk #4)
+//!   - 4 self-mode burn receipt-count cross-cutting (self-shares publish NO
+//!     receipt — D-SEQ-06 revised; cross-identity burn-receipt lives in phase3)
 //!   - 4 burn second-receive returns exit 7 cross-cutting (BURN-09)
 //!   - 1 wrong-PIN-on-burn doesn't mark burned (negative-path safety)
 //!   - 1 typed-z32-declined-on-burn doesn't mark burned (negative-path safety)
@@ -303,7 +304,12 @@ compose_base_test_lenient!(ssh_pin_burn, MaterialVariant::SshKey, true, true);
 // would not exercise the receipt path).
 // ---------------------------------------------------------------------------
 
-macro_rules! receipt_count_after_burn_first_receive {
+// SELF-mode burn (compose_round_trip uses SelfMode: recipient == sender). Self
+// shares no longer publish a receipt (D-SEQ-06 revised — self-attestation is
+// skipped so a self-share and its receipt can't collide in the single
+// ~1000-byte per-key packet), so the count is ZERO. Cross-identity burn-receipt
+// coverage lives in the phase3 end-to-end tests.
+macro_rules! self_burn_publishes_no_receipt {
     ($name:ident, $variant:expr) => {
         #[test]
         #[serial]
@@ -323,8 +329,8 @@ macro_rules! receipt_count_after_burn_first_receive {
                     );
                     assert_eq!(
                         count,
-                        1,
-                        "{}+burn: expected 1 receipt after first successful receive, got {}",
+                        0,
+                        "{}+burn (self-mode): self-shares publish NO receipt (D-SEQ-06 revised), got {}",
                         variant_label($variant),
                         count
                     );
@@ -342,13 +348,22 @@ macro_rules! receipt_count_after_burn_first_receive {
     };
 }
 
-receipt_count_after_burn_first_receive!(
-    generic_burn_publishes_one_receipt,
+self_burn_publishes_no_receipt!(
+    generic_burn_self_share_publishes_no_receipt,
     MaterialVariant::GenericSecret
 );
-receipt_count_after_burn_first_receive!(x509_burn_publishes_one_receipt, MaterialVariant::X509Cert);
-receipt_count_after_burn_first_receive!(pgp_burn_publishes_one_receipt, MaterialVariant::PgpKey);
-receipt_count_after_burn_first_receive!(ssh_burn_publishes_one_receipt, MaterialVariant::SshKey);
+self_burn_publishes_no_receipt!(
+    x509_burn_self_share_publishes_no_receipt,
+    MaterialVariant::X509Cert
+);
+self_burn_publishes_no_receipt!(
+    pgp_burn_self_share_publishes_no_receipt,
+    MaterialVariant::PgpKey
+);
+self_burn_publishes_no_receipt!(
+    ssh_burn_self_share_publishes_no_receipt,
+    MaterialVariant::SshKey
+);
 
 // ---------------------------------------------------------------------------
 // Step D — Second-receive on burned share returns exit 7 (4 variants).

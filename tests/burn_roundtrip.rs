@@ -1,18 +1,18 @@
 //! Phase 8 Plan 04 (BURN-09): two consecutive receives of the same burn
-//! share return exit 0 then exit 7. Receipt published exactly ONCE on
-//! the first successful receive (BURN-04).
+//! share return exit 0 then exit 7.
 //!
 //! Mirrors tests/phase2_idempotent_re_receive.rs but with exit-7
 //! (Declined) expected on the second call instead of idempotent Ok(()).
 //!
-//! ## Receipt-on-burn lock (RESEARCH Open Risk #4)
+//! ## Receipt-on-burn + self-share skip
 //!
-//! Plan 04 deliberately does NOT add a `if !envelope.burn_after_read {
-//! publish_receipt(...) }` guard. The receipt-count assertion below
-//! encodes that lock: exactly ONE receipt under
-//! `_cprcpt-<share_ref_hex>` after the first burn-receive, even after a
-//! subsequent declined re-receive. Receipt = delivery confirmation;
-//! burn does NOT suppress attestation.
+//! Burn does NOT suppress attestation: a CROSS-identity burn share still
+//! publishes a receipt on the recipient's key (covered in the phase3 tests).
+//! This test uses SELF-mode for convenience, and self-shares no longer publish
+//! a receipt at all (D-SEQ-06 revised — a self-share and its self-receipt would
+//! collide in the one ~1000-byte per-key packet), so the receipt-count
+//! assertion below expects ZERO. The subject here is the burn ledger row +
+//! exit-7-on-second, not attestation.
 
 #![cfg(feature = "mock")]
 
@@ -142,16 +142,17 @@ fn burn_share_first_receive_succeeds_second_returns_exit_7() {
         _ => panic!("InMemory sink expected"),
     }
 
-    // Receipt count == 1: BURN-04 explicit assertion. The receipt was
-    // published on the FIRST successful receive; the second (declined)
-    // call must NOT publish a second receipt — no publish_outcome
-    // closure runs after the STEP 1 Declined return. Recipient = sender
-    // identity in SelfMode.
+    // Receipt count == 0: this is a SELF-mode burn (recipient == sender), and
+    // self-shares no longer publish a receipt (D-SEQ-06 revised — self-attestation
+    // is skipped so a self-share and a self-receipt can't collide in the single
+    // ~1000-byte per-key PKARR packet). Cross-identity burn-receipt coverage lives
+    // in the phase3 end-to-end tests. The burn LEDGER row (state=burned) and the
+    // exit-7-on-second behavior above are this test's real subject.
     let recipient_z32 = id.z32_pubkey();
     let receipt_count =
         count_receipts_for_share_ref(&transport, &recipient_z32, &uri.share_ref_hex);
     assert_eq!(
-        receipt_count, 1,
-        "exactly one receipt published after burn round-trip (BURN-04 lock); got {receipt_count}"
+        receipt_count, 0,
+        "self-share burn publishes NO receipt (D-SEQ-06 revised); got {receipt_count}"
     );
 }

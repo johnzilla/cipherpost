@@ -147,7 +147,8 @@ impl DhtTransport {
     /// `CasConflict` without crossing the public Error surface (PITFALLS.md #16
     /// oracle hygiene). `what` is only for the TRANS-05 progress line. A merged
     /// `PacketTooLarge` (e.g. a share plus accumulated receipts exceeding the
-    /// 1000-byte budget) surfaces as `WireBudgetExceeded{plaintext:0}`.
+    /// 1000-byte budget) surfaces as `PacketBudgetExceeded` (accumulated-records
+    /// overflow — distinct from the payload-too-big `WireBudgetExceeded`).
     fn merge_republish_attempt(
         &self,
         keypair: &pkarr::Keypair,
@@ -187,15 +188,18 @@ impl DhtTransport {
         }
         builder = builder.txt(new_name, new_txt, 300);
 
-        // 3. Sign — D-MRG-06: PacketTooLarge → WireBudgetExceeded with plaintext=0
-        //    (marker that the overflow is a receipt, not a share).
+        // 3. Sign — D-MRG-06: the MERGED packet (existing records under this key +
+        //    the new one) is what pkarr sizes here. PacketTooLarge means the
+        //    accumulated records (outgoing share + receipts) overflow the single
+        //    per-key budget — NOT that the caller's payload is too big — so it maps
+        //    to `PacketBudgetExceeded`, distinct from the payload-too-big
+        //    `WireBudgetExceeded` and carrying no misleading `plaintext` field.
         let packet = match builder.sign(keypair) {
             Ok(p) => p,
             Err(pkarr::errors::SignedPacketBuildError::PacketTooLarge(encoded)) => {
-                return PublishOutcome::Other(Error::WireBudgetExceeded {
+                return PublishOutcome::Other(Error::PacketBudgetExceeded {
                     encoded,
                     budget: crate::flow::WIRE_BUDGET_BYTES,
-                    plaintext: 0,
                 });
             }
             Err(other) => return PublishOutcome::Other(Error::Transport(Box::new(other))),
@@ -467,6 +471,35 @@ mod mock {
             merged.retain(|(l, _)| l.as_str() != label);
             merged.push((label.to_string(), rdata.to_string()));
 
+            // 2b. Model the REAL merged-packet budget, not per-rdata. Build the
+            //     actual SignedPacket from ALL records now under this key and let
+            //     pkarr's encoder reject an over-budget total — this is the exact
+            //     sizing DhtTransport::merge_republish_attempt uses. Without this
+            //     the mock was blind to share+accumulated-receipt overflow (the
+            //     same class of blind spot as the original clobber bug).
+            {
+                let mut builder = pkarr::SignedPacket::builder();
+                for (l, rd) in &merged {
+                    let name: pkarr::dns::Name<'_> = match l.as_str().try_into() {
+                        Ok(n) => n,
+                        Err(e) => return PublishOutcome::Other(Error::Transport(map_dns_err(e))),
+                    };
+                    let txt: pkarr::dns::rdata::TXT<'_> = match rd.as_str().try_into() {
+                        Ok(t) => t,
+                        Err(e) => return PublishOutcome::Other(Error::Transport(map_dns_err(e))),
+                    };
+                    builder = builder.txt(name, txt, 300);
+                }
+                if let Err(pkarr::errors::SignedPacketBuildError::PacketTooLarge(encoded)) =
+                    builder.sign(kp)
+                {
+                    return PublishOutcome::Other(Error::PacketBudgetExceeded {
+                        encoded,
+                        budget: crate::flow::WIRE_BUDGET_BYTES,
+                    });
+                }
+            }
+
             // 3. Re-lock; cas-check the seq; commit or signal conflict.
             let mut store = self.store.lock().unwrap();
             let entry = store.entry(z32).or_default();
@@ -501,20 +534,13 @@ mod mock {
     impl Transport for MockTransport {
         fn publish(&self, kp: &pkarr::Keypair, record: &OuterRecord) -> Result<(), Error> {
             let rdata = serde_json::to_string(record).map_err(|e| Error::Transport(Box::new(e)))?;
-            // Enforce the same ceiling pkarr enforces — prevents tests-pass-locally-fail-on-publish
-            // (T-01-03-05). 1000 bytes is pkarr's MAX encoded DNS packet size. NOTE:
-            // this checks the share record ALONE, not the merged packet — the mock
-            // does not model merged-packet overflow (the real DhtTransport surfaces
-            // that as WireBudgetExceeded).
-            if rdata.len() > 1000 {
-                return Err(Error::Config(format!(
-                    "MockTransport: record too large for PKARR packet: {} > 1000 bytes",
-                    rdata.len()
-                )));
-            }
             // Merge-republish (preserve `_cprcpt-*` receipts) via the shared seq-CAS
             // path — matches the fixed DhtTransport::publish so tests exercise the
             // real behavior, not the old clobber where a share wiped every receipt.
+            // The 1000-byte ceiling is enforced inside merge_attempt_mock against the
+            // REAL merged packet (share + accumulated receipts), matching pkarr — so
+            // an over-budget total surfaces as `PacketBudgetExceeded`, exactly as on
+            // the DHT (was previously a lax per-rdata check that missed the merge).
             self.merge_mock(kp, DHT_LABEL_OUTER, &rdata)
         }
 
