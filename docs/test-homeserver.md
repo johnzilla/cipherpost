@@ -26,7 +26,10 @@ Live test target for the v2 large-payload flow. Deployed 2026-06-22. This is a
   (sign a pubky `AuthToken` → `POST /session` or `/signup` → session cookie → `PUT`/`GET`).
   No signup token needed. (Public/production homeservers use `token_required`.)
 - Paths: `/pub/<path>` is world-readable; `/priv/<path>` requires a session to read.
-  v2-alpha `--self` uses `/priv/cipherpost/<share_ref>` so nothing is world-readable.
+  v2-alpha `--self` uploads to the **world-readable** `/pub/cipherpost/<sha256>`
+  (content-addressed by ciphertext hash — pubky-homeserver has no writable private
+  space). Confidentiality rests on the age ciphertext plus the unguessable path, which
+  travels only inside the encrypted manifest; see THREAT-MODEL §10.
 - Limits: **100 MB / request** (homeserver code cap), **5120 MB / user** quota (configured).
 
 ### Verified (2026-06-22)

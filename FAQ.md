@@ -140,9 +140,9 @@ Simply copy `~/.cipherpost/secret_key` to a secure location (encrypted USB, pass
   
 <summary>Is Cipherpost production-ready?</summary>
 
-As of v1.1 (shipped 2026-04-26), the full PRD v1 scope ships: the core protocol, all four typed payload variants (`GenericSecret`, `X509Cert`, `PgpKey`, `SshKey`), `--pin` and `--burn` encryption modes, non-interactive automation, and CAS-protected receipt publication. 311 tests pass under `cargo test --features mock`; 116/116 v1 requirements are validated across v1.0 + v1.1.
+As of v1.1 (shipped 2026-04-26), the full PRD v1 scope ships: the core protocol, all four typed payload variants (`GenericSecret`, `X509Cert`, `PgpKey`, `SshKey`), `--pin` and `--burn` encryption modes, non-interactive automation, and CAS-protected receipt publication. 326 tests pass under `cargo nextest run --features mock` (338 under `--all-features`); the full PRD v1 requirement set is validated across v1.0 + v1.1.
 
-Some features (larger payloads via wire-budget escape hatch, key import, multiple identities, destruction attestation) are deferred to v1.2+. It is suitable for careful use. The v1.1.0 cross-identity round trip has been validated against real Mainline DHT — both via a manual CLI demo and the automated regression test, both passing on the same network with no mocks involved. Evidence is checked in at [`RELEASE-EVIDENCE-v1.1.0.md`](./RELEASE-EVIDENCE-v1.1.0.md). Future releases automatically re-run the same gate via the tag-push workflow at [`.github/workflows/release-acceptance.yml`](./.github/workflows/release-acceptance.yml), so each public version publishes its own real-DHT evidence next to the tag.
+Larger payloads shipped **experimentally** in v2-alpha (the off-by-default `large-payload` feature, `--self`-only — the crate is now `1.2.0-alpha.1`); full cross-identity large payloads, signed receipts for large pickup, key import, multiple identities, and destruction attestation remain deferred. The v1 core is suitable for careful use. The v1.1.0 cross-identity round trip has been validated against real Mainline DHT — both via a manual CLI demo and the automated regression test, both passing on the same network with no mocks involved. Evidence is checked in at [`RELEASE-EVIDENCE-v1.1.0.md`](./RELEASE-EVIDENCE-v1.1.0.md). Future releases automatically re-run the same gate via the tag-push workflow at [`.github/workflows/release-acceptance.yml`](./.github/workflows/release-acceptance.yml), so each public version publishes its own real-DHT evidence next to the tag.
 
 </details>
 
@@ -155,7 +155,6 @@ Some features (larger payloads via wire-budget escape hatch, key import, multipl
 - Multiple identities support
 - Compression
 - Direct P2P option
-- Typed payloads (X.509, SSH keys, etc.)
 
 </details>
 

@@ -1,6 +1,6 @@
 # Cipherpost Threat Model
 
-> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26)**
+> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26), plus experimental v2-alpha large-payload additions (crate `1.2.0-alpha.1`; see §10 / §10.1)**
 >
 > This document describes the threat model as shipped through v1.0 Walking Skeleton
 > (Phases 1–4) and v1.1 Real v1 (Phases 5–9), including §6.5 (PIN mode) and §6.6 (Burn mode)

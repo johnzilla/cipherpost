@@ -1,6 +1,6 @@
 # Cipherpost Protocol Specification
 
-> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26)**
+> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26), plus experimental v2-alpha large-payload additions (crate `1.2.0-alpha.1`; see §Pitfall #22)**
 >
 > This document describes the protocol as shipped through v1.0 Walking Skeleton (Phases 1–4)
 > and v1.1 Real v1 (Phases 5–9), covering all four `Material` variants, `--pin` / `--burn`
@@ -767,7 +767,11 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    both decrypt + emit, and both append ledger rows. Lock granularity is per-`share_ref`,
    so distinct shares don't serialize. Lock-acquisition I/O failures collapse into
    `Error::Io` — no new public `Error` variant is introduced (Pitfall #16 oracle
-   hygiene). Burn-flow emit-before-mark ordering (D-P8-12) is unchanged inside the
+   hygiene). At the top of each receive, a best-effort GC (`prune_consumed_locks`)
+   unlinks lock files for already-consumed `share_ref`s (those with a ledger row);
+   this is race-safe because a consumed share short-circuits at step 2 before ever
+   re-acquiring its lock, so `locks/` stays bounded rather than growing one file per
+   `share_ref` forever. Burn-flow emit-before-mark ordering (D-P8-12) is unchanged inside the
    lock; serialization is the only behavioral change. Cross-host coordination is still
    out of scope (D-STATE-01) — the lock is local-filesystem only. Regression coverage:
    `tests/state_ledger_concurrency.rs` (Barrier-synced accepted, burn, and
@@ -995,6 +999,7 @@ attacks (D-16).
 | 3 | Signature verification failed | `signature verification failed` | `SignatureOuter`, `SignatureInner`, `SignatureCanonicalMismatch` (D-16 unified) |
 | 4 | Passphrase / decryption failure | `wrong passphrase or identity decryption failed` | `DecryptFailed` (Phase 8 PIN-07: covers wrong identity-passphrase OR wrong PIN OR tampered inner age ciphertext — IDENTICAL Display across all three credential-failure modes; oracle hygiene — see §3.6 PIN Crypto Stack), `IdentityPermissions`, `PassphraseInvalidInput` |
 | 5 | Not found on DHT | `not found` | `NotFound` |
+| 6 | Network / DHT error | `network error or DHT timeout` | `Network` (incl. `--dht-timeout` expiry) |
 | 7 | User declined acceptance OR (Phase 8 BURN-02) share already consumed (burned). Stderr message: `declined` for typed-z32 mismatch; `share already consumed (burned at <timestamp>)` for the burn-already-consumed case (§3.7). | `declined` / `share already consumed (burned at <ts>)` | `Declined` |
 
 **Source chains are never displayed** (D-15). The binary matches on the top-level `Error`
@@ -1004,8 +1009,9 @@ A test (`tests/debug_leak_scan.rs` and related) scans stderr output for variants
 invocations and asserts no `age::`, `pkarr::`, `Os {`, or similar substring leaks (D-15, CLI-05).
 
 Network-layer errors (DHT request timeout, connection failure) surface as `Error::Network`
-with exit code `6` — reserved for TRANS-04 `--dht-timeout` and transport failures that are
-not `NotFound`.
+with exit code `6` — used by the TRANS-04 `receive --dht-timeout <secs>` flag (default
+`DEFAULT_DHT_TIMEOUT` = 30s; `0` is rejected as a config error) and transport failures that
+are not `NotFound`.
 
 CLI argument parse failures (e.g., `--passphrase <value>` inline argv) exit via clap's
 default path (typically exit `2` from clap, distinct from cipherpost's `Error::Expired`

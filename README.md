@@ -64,6 +64,9 @@ cipherpost receive <share-uri>
 # TTL remaining, payload type + size). Type the sender's z-base-32
 # pubkey to confirm, or anything else to decline with exit 7.
 # Payload goes to stdout, or -o <path>.
+
+# Slow DHT? Extend the resolve timeout (default 30s):
+cipherpost receive <share-uri> --dht-timeout 90
 ```
 
 Repeat runs on an already-accepted share report the prior acceptance timestamp and do **not** re-decrypt or publish a duplicate receipt (idempotent via state ledger).
@@ -151,11 +154,11 @@ DHT, sees only ciphertext, and a mismatched hash aborts receive with exit 3.
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Generic / unexpected error |
+| 1 | Generic error (incl. 64 KB payload-size cap / wire-budget exceeded) |
 | 2 | TTL expired |
 | 3 | Signature verification failed (any layer) |
 | 4 | Passphrase incorrect or missing |
-| 5 | Payload size cap exceeded (64 KB plaintext) |
+| 5 | Not found on DHT |
 | 6 | Network / DHT error |
 | 7 | Acceptance declined |
 
