@@ -1085,7 +1085,10 @@ pub fn run_receive(
                 cleartext_hash: cleartext_hash.clone(),
                 nonce: crate::receipt::nonce_hex(),
                 protocol_version: crate::PROTOCOL_VERSION,
-                purpose: envelope.purpose.clone(),
+                // purpose is deliberately NOT in the receipt — it would leak in
+                // cleartext on the DHT; cleartext_hash already binds it. (See
+                // crate::receipt::Receipt.) envelope.purpose is still recorded in
+                // the LOCAL ledger below (private, not published).
                 recipient_pubkey: recipient_z32.clone(),
                 sender_pubkey: record.pubkey.clone(),
                 share_ref: record.share_ref.clone(),
@@ -1097,7 +1100,6 @@ pub fn run_receive(
                 cleartext_hash: signable.cleartext_hash.clone(),
                 nonce: signable.nonce.clone(),
                 protocol_version: signable.protocol_version,
-                purpose: signable.purpose.clone(),
                 recipient_pubkey: signable.recipient_pubkey.clone(),
                 sender_pubkey: signable.sender_pubkey.clone(),
                 share_ref: signable.share_ref.clone(),
@@ -1236,8 +1238,9 @@ fn render_receipts_table(
             format_unix_as_iso_utc(r.accepted_at),
             format_unix_as_iso_local(r.accepted_at),
         );
-        let safe_purpose: String = r.purpose.chars().filter(|c| !c.is_control()).collect();
-        println!("purpose:            \"{safe_purpose}\"");
+        // No `purpose` — it is not published in the receipt (privacy; see
+        // receipt.rs). The sender can recover it by matching `cleartext_hash`
+        // against the envelope they sent.
         println!("ciphertext_hash:    {}", r.ciphertext_hash);
         println!("cleartext_hash:     {}", r.cleartext_hash);
         println!("nonce:              {}", r.nonce);
@@ -1246,32 +1249,19 @@ fn render_receipts_table(
         return Ok(());
     }
 
-    // Multi-row table (D-OUT-01 columns).
+    // Multi-row table (D-OUT-01 columns). No `purpose` column — it is not
+    // published in the receipt (privacy; see receipt.rs).
     println!(
-        "{:<16}  {:<20}  {:<40}  recipient_fp",
-        "share_ref", "accepted_at (UTC)", "purpose"
+        "{:<16}  {:<20}  recipient_fp",
+        "share_ref", "accepted_at (UTC)"
     );
     for r in receipts {
         let (fp, _) = sender_openssh_fingerprint_and_z32(&r.recipient_pubkey)?;
-        let purpose_display = truncate_purpose(&r.purpose, 40);
         let utc = format_unix_as_iso_utc(r.accepted_at);
         let share_ref_short: String = r.share_ref.chars().take(16).collect();
-        println!("{share_ref_short:<16}  {utc:<20}  {purpose_display:<40}  {fp}",);
+        println!("{share_ref_short:<16}  {utc:<20}  {fp}");
     }
     Ok(())
-}
-
-/// Strip ASCII control chars (defense-in-depth over send-time strip per PAYL-04 /
-/// D-WIRE-05); truncate to `max` display chars, appending `…` if truncation applies.
-fn truncate_purpose(p: &str, max: usize) -> String {
-    let stripped: String = p.chars().filter(|c| !c.is_control()).collect();
-    if stripped.chars().count() <= max {
-        stripped
-    } else {
-        // Truncate by chars (not bytes) to avoid splitting a UTF-8 codepoint.
-        let prefix: String = stripped.chars().take(max.saturating_sub(1)).collect();
-        format!("{prefix}…")
-    }
 }
 
 fn material_type_string(m: &Material) -> &'static str {

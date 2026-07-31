@@ -130,7 +130,8 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
         receipt.share_ref, uri.share_ref_hex,
         "receipt.share_ref must match URI"
     );
-    assert_eq!(receipt.purpose, "e2e test");
+    // No receipt.purpose — the purpose is intentionally NOT published (privacy);
+    // it is bound (not exposed) via cleartext_hash, verified below.
     assert_eq!(receipt.nonce.len(), 32);
     assert!(receipt
         .nonce

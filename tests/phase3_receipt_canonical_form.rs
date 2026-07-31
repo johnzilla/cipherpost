@@ -21,7 +21,6 @@ fn fixture_signable() -> ReceiptSignable {
         cleartext_hash: "b".repeat(64),
         nonce: "0123456789abcdef0123456789abcdef".to_string(),
         protocol_version: 1,
-        purpose: "canonical form fixture".to_string(),
         recipient_pubkey: "rcpt-placeholder-z32".to_string(),
         sender_pubkey: "sender-placeholder-z32".to_string(),
         share_ref: "0123456789abcdef0123456789abcdef".to_string(),

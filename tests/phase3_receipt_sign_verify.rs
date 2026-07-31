@@ -17,7 +17,6 @@ fn sample_signable(kp: &pkarr::Keypair, self_mode: bool) -> ReceiptSignable {
         cleartext_hash: "b".repeat(64),
         nonce: "0123456789abcdef0123456789abcdef".to_string(),
         protocol_version: PROTOCOL_VERSION,
-        purpose: "unit test".to_string(),
         recipient_pubkey: z32.clone(),
         sender_pubkey: if self_mode {
             z32.clone()
@@ -38,7 +37,6 @@ fn signed_receipt(kp: &pkarr::Keypair, self_mode: bool) -> Receipt {
         cleartext_hash: signable.cleartext_hash,
         nonce: signable.nonce,
         protocol_version: signable.protocol_version,
-        purpose: signable.purpose,
         recipient_pubkey: signable.recipient_pubkey,
         sender_pubkey: signable.sender_pubkey,
         share_ref: signable.share_ref,
@@ -122,11 +120,13 @@ fn tampered_ciphertext_hash_fails_verify() {
 }
 
 #[test]
-fn tampered_purpose_fails_verify() {
+fn tampered_cleartext_hash_fails_verify() {
+    // (Was tampered_purpose_fails_verify; purpose was removed from the receipt —
+    // cleartext_hash is now the field that binds the envelope, incl. its purpose.)
     let kp = deterministic_keypair(0xAA);
     let mut r = signed_receipt(&kp, false);
-    r.purpose = "EVIL".to_string();
-    let err = verify_receipt(&r).expect_err("tampered purpose must reject");
+    r.cleartext_hash = "e".repeat(64);
+    let err = verify_receipt(&r).expect_err("tampered cleartext_hash must reject");
     assert!(matches!(err, Error::SignatureInner));
     assert_unified_d16_display(&err);
 }

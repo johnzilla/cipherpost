@@ -29,7 +29,14 @@ pub struct Receipt {
     pub cleartext_hash: String,
     pub nonce: String,
     pub protocol_version: u16,
-    pub purpose: String,
+    // NOTE: no `purpose` field. Receipts are published in CLEARTEXT on the public
+    // DHT, so a descriptive purpose here would leak a signed, timestamped social
+    // graph of secret handoffs ("recipient accepted an 'emergency CA rotation'
+    // from sender") — contradicting the envelope's encrypted-metadata guarantee.
+    // The receipt still BINDS the purpose without exposing it: `cleartext_hash` is
+    // SHA-256(JCS(Envelope)) and the Envelope contains `purpose`, so a sender
+    // holding the original envelope can verify the receipt matches their exact
+    // purpose. (Removed in 1.2.0-alpha; receipts are ephemeral.)
     pub recipient_pubkey: String,
     /// Recipient's attestation of who they received from. NOT signed by the
     /// sender — only the recipient signs the receipt. Provenance comes from
@@ -51,7 +58,9 @@ pub struct ReceiptSignable {
     pub cleartext_hash: String,
     pub nonce: String,
     pub protocol_version: u16,
-    pub purpose: String,
+    // No `purpose` — see the note on `Receipt`. Its absence here changes the
+    // signed JCS bytes vs v1.1, so `tests/fixtures/receipt_signable.bin` and the
+    // SPEC §8 RECEIPT_SIG_B64 vector were regenerated.
     pub recipient_pubkey: String,
     pub sender_pubkey: String,
     pub share_ref: String,
@@ -65,7 +74,6 @@ impl From<&Receipt> for ReceiptSignable {
             cleartext_hash: r.cleartext_hash.clone(),
             nonce: r.nonce.clone(),
             protocol_version: r.protocol_version,
-            purpose: r.purpose.clone(),
             recipient_pubkey: r.recipient_pubkey.clone(),
             sender_pubkey: r.sender_pubkey.clone(),
             share_ref: r.share_ref.clone(),
