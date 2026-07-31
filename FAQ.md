@@ -85,9 +85,14 @@ See the README "Large payloads (v2)" section and [`THREAT-MODEL.md` §10](./THRE
 
 <details>
   
-<summary>Is my data stored on the DHT forever?</summary>
+<summary>Is my data stored on the DHT forever? (And can it disappear *before* the TTL?)</summary>
 
-No. DHT records have natural expiration (typically hours to days). You can republish if needed. For longer-lived storage, use a homeserver or other content-addressed storage.
+No — and importantly, **a share can die well before its signed 24h TTL.** Two independent clocks are at work:
+
+- **The signed TTL** (24h default) is the sender's *promise*: the receiver's client refuses to decrypt a share older than this. It's an upper bound, not a guarantee of availability.
+- **Mainline DHT retention** is separate and shorter. Nodes drop records on their own schedule (typically hours), and cipherpost publishes with **no relay and no background re-announce** — once your `send` process exits, *nothing* re-broadcasts the record. As DHT nodes churn and expire it, the share can become unresolvable long before 24h.
+
+**Practical guidance:** treat a share as *ephemeral rendezvous*, not storage. Have the recipient receive promptly (minutes to a few hours, not "sometime tomorrow"). If a share expires before pickup, just run `send` again to republish — it's cheap and produces a fresh record. For anything that must survive longer, use the large-payload homeserver path (the ciphertext blob persists on a homeserver you control) or other content-addressed storage.
 
 </details>
 
@@ -105,9 +110,21 @@ No. DHT records have natural expiration (typically hours to days). You can repub
   
 <summary>Do both parties need to be online at the same time?</summary>
 
-Through v1.1: Yes (for the full send → receive → receipt flow), though the parties don't need to be online *simultaneously* — the DHT holds the share for up to its TTL (24h default). The sender publishes, then can go offline; the recipient must come online to receive within the TTL window. The signed-receipt loop closes when either the sender comes back online to fetch it, or the recipient publishes it (whichever order; both work).
+Through v1.1: Not simultaneously, but the window is narrower than the 24h TTL suggests. The sender publishes, then can go offline; the recipient comes online to receive. **Caveat:** because cipherpost uses no relay and does not re-announce, the record is only kept alive by Mainline DHT nodes, which drop it on their own (typically-hours) schedule — so the recipient should receive promptly, not "within 24h" (see *Is my data stored on the DHT forever?* above). If the record has aged out, the sender just republishes with another `send`. The signed-receipt loop closes when either the sender comes back online to fetch it, or the recipient publishes it (whichever order; both work).
 
 Future versions with homeservers or chunking will support fully asynchronous operation with longer-lived shares.
+
+</details>
+
+<details>
+  
+<summary>Can I run <code>cipherpost receive</code> fully unattended (no human, no terminal)?</summary>
+
+**No — `receive` requires an interactive terminal (TTY), by design.** This is worth knowing up front if your use case is *unattended* credential handoff (a cron job or CI step that receives a share with no human present): that does **not** work in v1.
+
+The *passphrase* side is fully non-interactive — `CIPHERPOST_PASSPHRASE`, `--passphrase-file`, and `--passphrase-fd` all let you supply the identity passphrase without a prompt. But `receive` also has a deliberate **human-in-the-loop acceptance step**: it prints the sender's full fingerprint + attested purpose to stderr and requires a human to type back the sender's z-base-32 pubkey to unlock decryption. That step needs a real TTY on both stdin and stderr; there is no `--yes`/`--accept-fingerprint` bypass, and none is planned for v1 — the whole point is that a person verifies *who* they're accepting material from out-of-band before any plaintext is written.
+
+So the supported shape is **attended** receive: a person runs `cipherpost receive <uri>`, checks the fingerprint, and confirms. You can script everything *around* it (identity unlock, output path, DHT timeout), but not the acceptance itself. (`--pin` input is likewise TTY-only for the same reason — see the non-interactive-PIN note in the README's Known limitations.)
 
 </details>
 

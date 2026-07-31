@@ -103,7 +103,8 @@ signed manifest carrying only `sha256(ciphertext)` + size is published to the DH
 via the normal dual-signed flow.
 
 ```bash
-# homeserver URL comes from CIPHERPOST_HS (your own homeserver)
+# CIPHERPOST_HS is REQUIRED — the pubky homeserver you control. There is no
+# default: cipherpost never uploads your blobs to a host you didn't choose.
 export CIPHERPOST_HS=https://hs.example.com
 
 cipherpost send-large --self -p "vllm workspace backup" ./workspace
@@ -179,6 +180,7 @@ Cipherpost is a fork-and-diverge from mothballed [`cclink`](https://github.com/j
 - **Wire-budget ceiling for typed Material.** Realistic X.509 / PGP / SSH keys exceed the 1000-byte PKARR BEP44 ceiling; `Material::GenericSecret` payloads above ~550 bytes also exceed it. Round-trip tests for realistic typed inputs are `#[ignore]`'d behind positive `Error::WireBudgetExceeded` clean-error pins. An experimental two-tier escape hatch now ships behind the off-by-default `large-payload` feature (ciphertext on a Pubky homeserver, tiny signed manifest on the DHT) — see [Large payloads (v2)](#large-payloads-v2-experimental) above; chunking / out-of-band variants remain targeted for later (see [`SPEC.md` §Pitfall #22](./SPEC.md)).
 - **Real-DHT cross-identity round trip is per-release, not per-commit.** The cross-identity Mainline-DHT round trip lives at `tests/real_dht_e2e.rs` behind a triple-gate (`#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` + `#[serial]`). PR + push CI stays mock-only — UDP/NAT variance + the 60-90s DHT long tail make per-commit real-DHT testing structurally unworkable (Pitfall #29). The `release-acceptance` workflow at [`.github/workflows/release-acceptance.yml`](./.github/workflows/release-acceptance.yml) runs the same gate on every `v*` tag push and uploads the output as a 90-day artifact, so each release publishes its own real-DHT evidence next to the tag. The v1.1.0 evidence run (manual demo + automated test, both PASS against pkarr-default Mainline bootstrap nodes) is checked in at [`RELEASE-EVIDENCE-v1.1.0.md`](./RELEASE-EVIDENCE-v1.1.0.md).
 - **No TUI.** CLI + non-interactive automation cover v1.x use cases.
+- **`receive` acceptance is interactive-only.** Passphrase (and every other input) can be scripted, but the fingerprint-acceptance step — type the sender's z-base-32 pubkey to unlock decrypt — requires an interactive TTY on stdin + stderr, and there is no `--yes`/bypass flag. So *fully unattended* receive (a cron job or CI step with no human present) is **not** supported in v1: the accept step is deliberately human-in-the-loop so a person verifies the sender out-of-band before any plaintext is written. See [FAQ.md](FAQ.md).
 - **Non-interactive PIN input deferred.** PIN is intentionally a human-in-the-loop second factor. `--pin-file` / `--pin-fd` remain deferred, pending a concrete automation use case.
 - **Destruction attestation not implemented.** Originally scoped for PRD v1.1; deferred when v1.1 filled with PRD-closure scope, and still unimplemented. `--burn` is local-state-only (DHT ciphertext survives until TTL).
 - **No identity import.** `cipherpost identity generate` is the only path; importing existing Ed25519 / SSH / age keys (`cipherpost identity import`) is planned for a future release.
