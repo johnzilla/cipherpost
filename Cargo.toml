@@ -460,6 +460,15 @@ required-features = ["large-payload", "mock"]
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
+# Derived-key addressing feasibility spike (docs/design/derived-key-addressing.md §14).
+# TEST-ONLY on purpose: the hazmat raw-scalar signing + curve arithmetic live in
+# dev-deps so the SHIPPED binary's ed25519-dalek stays hazmat-free until Phase 1
+# actually wires derivation into src/. Same exact version as the [dependencies]
+# pin; features union only in test/dev builds. curve25519-dalek is already in the
+# tree transitively (via ed25519-dalek) — this just makes it a direct test dep.
+ed25519-dalek = { version = "=3.0.0-pre.5", features = ["hazmat", "digest"] }
+curve25519-dalek = "=5.0.0-pre.5"
+bytes = "1"
 # Plan 02 Task 2's tests/identity_passphrase_argv_rejected.rs uses these to spawn
 # the compiled binary and assert exit code + stderr substring. Declared here (not in
 # Plan 02) because Cargo.toml is owned by Plan 01. Both crates are MIT/Apache-2.0 —

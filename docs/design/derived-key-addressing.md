@@ -1,11 +1,13 @@
 # Design: Derived-key packet addressing (lift the one-record-per-key ceiling)
 
-> **Status: DESIGN / pre-implementation — FEASIBILITY SPIKE PASSED.** Not shipped.
-> The throwaway spike (§14) ran green offline and was reverted (it added the
-> `ed25519-dalek` `hazmat`+`digest` features, a `curve25519-dalek` dep, and a
-> `bytes` dev-dep — Phase 1 reintroduces these properly). Nothing lands in
-> production until the schema (§8) is signed off and Phase 1 begins. Touches
-> signed bytes and key derivation.
+> **Status: DESIGN / pre-implementation — FEASIBILITY SPIKE PASSED + COMMITTED.**
+> Not shipped. The spike (§14) is committed as two `#[ignore]`'d tests in
+> `tests/derived_key_spike.rs` (reproducible via `cargo test --test
+> derived_key_spike -- --ignored`), carrying **byte-exact golden vectors**. Its
+> crypto deps (`ed25519-dalek` `hazmat`+`digest`, `curve25519-dalek`, `bytes`)
+> are **test-only dev-deps**, so the shipped binary stays hazmat-free until Phase 1
+> wires derivation into `src/`. Nothing lands in production until the schema (§8)
+> is signed off and Phase 1 begins. Touches signed bytes and key derivation.
 
 ## 1. Problem
 
@@ -185,9 +187,16 @@ this redesign is precisely where mock drift re-opens that class.
 ## 10. Golden vectors (the pubky_auth treatment)
 
 Commit fixtures + a byte-for-byte test for:
-1. **Derivation:** `(parent_pub, share_ref) → t, A'` and `(a, t) → a', A'`, with
-   fixed inputs. Assert `A' == A + t·G` both ways (public and secret derivation
-   agree).
+1. **Derivation — BYTE-EXACT hex vectors, not just properties.** A property
+   assertion (`A' == A + t·G`) does not catch an upstream behavioral drift in the
+   pre-release curve/hash stack that produces a *different-but-self-consistent*
+   derived key. Pin the concrete outputs as hex literals for fixed inputs. The
+   committed spike already carries the first vector — `seed=[7;32]`,
+   `share_ref=[0x11;16]`, `DOMAIN="cipherpost/v2/derive-addr"`:
+   `t = 2185bc56…230b9005`, `A' = 5af3abc0…d72155f5`,
+   z32 `mm34zoy8y4cc7sh148ys5j61ag6hz4xkmq9h7874gmkpui3bkz4o`.
+   Phase 1 expands this into the `derive` module's fixture set (multiple
+   seeds/refs) and asserts public and secret derivation agree.
 2. **signable replication:** a pkarr-built packet's own signature verifies
    against our recomputed `signable(ts, v)` (proves byte-exact replication).
 3. **End-to-end:** hand-signed derived-key packet → `from_relay_payload` → Ok
@@ -249,9 +258,10 @@ A single `#[ignore]` test (mock, no network) that proves the seam end-to-end:
 Green spike ⇒ the approach is real and Phase 1 begins. Red ⇒ reassess (hand-rolled
 BEP44 publish, or push pkarr for a raw-scalar signing API upstream).
 
-### 14.1 Spike result — PASSED
+### 14.1 Spike result — PASSED (committed)
 
-Ran as two offline tests (no network), both green:
+Committed as two `#[ignore]`'d offline tests in `tests/derived_key_spike.rs`
+(dev-dep crypto, shipped binary unaffected), both green: 
 
 - **`signable_replication_matches_pkarr`** — built a normal packet with a random
   pkarr `Keypair`; pkarr's *own* signature verified against *our* recomputed

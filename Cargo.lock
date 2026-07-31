@@ -554,8 +554,10 @@ dependencies = [
  "assert_cmd",
  "base64 0.22.1",
  "bech32",
+ "bytes",
  "chrono",
  "clap",
+ "curve25519-dalek 5.0.0-pre.5",
  "dialoguer",
  "dirs",
  "ed25519-dalek 3.0.0-pre.5",
@@ -3244,6 +3246,9 @@ name = "signature"
 version = "3.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f1880df446116126965eeec169136b2e0251dba37c6223bcc819569550edea3"
+dependencies = [
+ "digest 0.11.0-rc.9",
+]
 
 [[package]]
 name = "simd-adler32"
