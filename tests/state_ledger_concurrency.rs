@@ -443,16 +443,31 @@ fn concurrent_receive_distinct_share_refs_does_not_serialize() {
         "share_ref b must have a ledger row"
     );
 
-    // Two distinct lock files at two distinct paths — per-share_ref
-    // granularity assertion.
+    // Per-share_ref granularity: distinct share_refs map to distinct lock
+    // PATHS (a global lock would collapse them to one). This path inequality
+    // is the load-bearing contract.
     let lp_a = lock_path(&uri_a.share_ref_hex);
     let lp_b = lock_path(&uri_b.share_ref_hex);
     assert_ne!(
         lp_a, lp_b,
         "lock_path() must return distinct paths for distinct share_refs"
     );
-    assert!(lp_a.exists(), "lock file for share a must exist: {lp_a:?}");
-    assert!(lp_b.exists(), "lock file for share b must exist: {lp_b:?}");
+
+    // Lock-file LIFECYCLE under the opportunistic GC (`prune_consumed_locks`,
+    // run at the top of every `run_receive`): receiving B prunes first, and by
+    // then share A is already consumed (its ledger row exists), so A's lock is
+    // swept. Thus lp_a is expected GONE here while lp_b — created by B's own
+    // receive and not yet swept by any later receive — persists. This asserts
+    // both that per-share_ref lock files are created AND that the directory
+    // stays bounded (dead locks don't accumulate forever).
+    assert!(
+        lp_b.exists(),
+        "most-recent receive (b) must leave its lock file: {lp_b:?}"
+    );
+    assert!(
+        !lp_a.exists(),
+        "share a's consumed lock must have been GC'd by b's receive: {lp_a:?}"
+    );
 
     // Silence dead-code on the imports that only test 1+2 use under this
     // simplified test 3 (Barrier/Mutex/thread are still imported for the

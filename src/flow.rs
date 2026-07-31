@@ -199,6 +199,56 @@ fn acquire_share_lock(share_ref_hex: &str) -> Result<fs::File, Error> {
     Ok(f)
 }
 
+/// Best-effort GC of per-`share_ref` lock files. Bounds the otherwise-unbounded
+/// `locks/` directory (one ~0-byte file per `share_ref`, which
+/// `acquire_share_lock` never removes).
+///
+/// **Only removes locks for CONSUMED share_refs** — those present in the ledger
+/// (accepted or burned; both are terminal). This is what makes the unlink
+/// race-safe: `check_already_consumed` short-circuits BOTH terminal states in
+/// the CLI Receive dispatch *before* `run_receive` (hence before
+/// `acquire_share_lock`) ever runs again, so a consumed share can never
+/// re-create or re-acquire its lock file. A concurrent first-time receiver of a
+/// *not-yet-consumed* share is absent from the consumed set, so its live lock is
+/// never touched; and since no process re-locks a consumed share, nothing
+/// re-creates a path we just unlinked. Every error is swallowed — GC must never
+/// fail a receive.
+///
+/// Returns the number of lock files removed (callers ignore it; exposed for
+/// tests).
+pub(crate) fn prune_consumed_locks() -> usize {
+    use std::collections::HashSet;
+    // Collect consumed share_refs from the ledger (any row → consumed).
+    let mut consumed: HashSet<String> = HashSet::new();
+    if let Ok(data) = fs::read_to_string(ledger_path()) {
+        for line in data.lines() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                if let Some(sr) = v.get("share_ref").and_then(|s| s.as_str()) {
+                    consumed.insert(sr.to_string());
+                }
+            }
+        }
+    }
+    if consumed.is_empty() {
+        return 0;
+    }
+    let mut removed = 0;
+    if let Ok(entries) = fs::read_dir(locks_dir()) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            // Lock files are named `<share_ref_hex>.lock`.
+            let Some(hex) = name.strip_suffix(".lock") else {
+                continue;
+            };
+            if consumed.contains(hex) && fs::remove_file(entry.path()).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    removed
+}
+
 /// Phase 8 Plan 03 (W5): cfg-gated re-export of path helpers for integration
 /// tests. Visible ONLY under `cfg(any(test, feature = "mock"))` so production
 /// builds do not expose internal layout in the public API surface. Plans 04
@@ -233,6 +283,12 @@ pub mod test_paths {
     /// layout via the same helper that `acquire_share_lock` uses.
     pub fn lock_path(share_ref_hex: &str) -> PathBuf {
         super::lock_path(share_ref_hex)
+    }
+
+    /// Lock-directory GC. Exposed so `tests/state_ledger.rs` can drive the
+    /// prune directly and assert only consumed-share locks are removed.
+    pub fn prune_consumed_locks() -> usize {
+        super::prune_consumed_locks()
     }
 }
 
@@ -659,6 +715,11 @@ pub fn run_receive(
     // Bound the guard's lifetime explicitly so it drops at the close of
     // the STEP-12 block; the explicit `drop(_share_lock)` after the burn /
     // non-burn ledger branch makes the release point unambiguous.
+    //
+    // Best-effort GC first: sweep dead lock files for already-consumed
+    // share_refs so `locks/` stays bounded. Never fails the receive; the
+    // current share_ref is not yet consumed, so it is never pruned here.
+    let _ = prune_consumed_locks();
     let _share_lock = acquire_share_lock(&uri.share_ref_hex)?;
 
     // STEP 1: sentinel-check (no network, no passphrase). Phase 8 Plan 03

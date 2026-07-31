@@ -22,7 +22,9 @@
 
 #![cfg(feature = "mock")]
 
-use cipherpost::flow::test_paths::{accepted_dir, ledger_path, sentinel_path};
+use cipherpost::flow::test_paths::{
+    accepted_dir, ledger_path, lock_path, prune_consumed_locks, sentinel_path,
+};
 use cipherpost::flow::{check_already_consumed, LedgerState};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -151,6 +153,43 @@ fn sentinel_without_matching_ledger_row_returns_accepted_unknown() {
         }
         other => panic!("sentinel without ledger row must be Accepted; got {other:?}"),
     }
+}
+
+/// Quick: `prune_consumed_locks` unlinks lock files ONLY for share_refs present
+/// in the ledger (consumed → will never re-lock), and leaves locks for
+/// unknown/in-flight share_refs untouched. Bounds the otherwise-unbounded
+/// `locks/` directory.
+#[test]
+#[serial]
+fn prune_removes_consumed_lock_files_only() {
+    let dir = TempDir::new().unwrap();
+    std::env::set_var("CIPHERPOST_HOME", dir.path());
+
+    let consumed = "aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbb";
+    let live = "ccccccccccccccccdddddddddddddddd"; // absent from the ledger
+
+    // Ledger holds a row for `consumed` only.
+    let row = format!(
+        r#"{{"accepted_at":"2026-04-25T13:11:42Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"k","sender":"pk","share_ref":"{consumed}"}}"#
+    );
+    std::fs::create_dir_all(accepted_dir()).unwrap();
+    std::fs::write(ledger_path(), format!("{row}\n")).unwrap();
+
+    // Create both lock files (locks_dir = the lock path's parent).
+    std::fs::create_dir_all(lock_path(consumed).parent().unwrap()).unwrap();
+    std::fs::write(lock_path(consumed), "").unwrap();
+    std::fs::write(lock_path(live), "").unwrap();
+
+    let removed = prune_consumed_locks();
+    assert_eq!(removed, 1, "exactly the consumed-share lock is removed");
+    assert!(
+        !lock_path(consumed).exists(),
+        "consumed-share lock must be pruned"
+    );
+    assert!(
+        lock_path(live).exists(),
+        "unknown/in-flight lock must be left untouched"
+    );
 }
 
 #[test]
