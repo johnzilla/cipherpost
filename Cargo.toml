@@ -35,6 +35,13 @@ pkarr = { version = "5.0.3", default-features = false, features = ["dht"] }
 # HARD PIN: pkarr 5.0.3 depends on ^3.0.0-pre.1 and cargo won't auto-pick newer pre-releases without =.
 # Do NOT change until pkarr publishes on a stable ed25519-dalek 3.x.
 ed25519-dalek = "=3.0.0-pre.5"
+# Phase 1 of derived-key addressing (docs/design/derived-key-addressing.md): point
+# + scalar arithmetic for single-hop stealth derivation. Already in the tree via
+# ed25519-dalek; pinned to the exact same version. `zeroize` feature so secret
+# intermediate scalars can be wiped. NOTE: only the `derive` module uses this so
+# far and it is not yet wired into the flow — the hazmat SIGNING half stays a
+# test-only dev-dep until Phase 2 (transport).
+curve25519-dalek = { version = "=5.0.0-pre.5", features = ["zeroize"] }
 age = "0.11"
 argon2 = "0.5"
 hkdf = "0.12"
@@ -467,7 +474,6 @@ proptest = "1"
 # pin; features union only in test/dev builds. curve25519-dalek is already in the
 # tree transitively (via ed25519-dalek) — this just makes it a direct test dep.
 ed25519-dalek = { version = "=3.0.0-pre.5", features = ["hazmat", "digest"] }
-curve25519-dalek = "=5.0.0-pre.5"
 bytes = "1"
 # Plan 02 Task 2's tests/identity_passphrase_argv_rejected.rs uses these to spawn
 # the compiled binary and assert exit code + stderr substring. Declared here (not in

@@ -162,13 +162,17 @@ already prove "the holder of `recipient_pub`'s secret attested, bound to
 | `protocol_version` | **keep** | Versioning. |
 | `nonce` | **DROP** | Its stated job is anti-synthesis (not replay). A receipt is now under a per-`share_ref` key only the recipient's secret can sign; synthesis is impossible without that secret, and replay is the ledger's job. The 42 bytes no longer earn their place. |
 | `recipient_pubkey` | **DROP (from signed bytes)** | Redundant: it *is* the derivation input the verifier already holds, and it's the field that made the receipt a cleartext handoff-graph entry. `verify_receipt` takes it as context instead of reading it from the wire. |
-| `sender_pubkey` | **DROP — needs sign-off** | The strongest privacy/size win but the field carrying the recipient's *claim* of who they received from (D-RS-07 provenance). Under derived addressing the fetching sender already knows it's their share (they derived with their own `share_ref`), so it's redundant for their own verification. Dropping it removes the last cleartext graph edge from the receipt body. **Open decision** — the alternative is keep it for third-party-auditable provenance. |
+| `sender_pubkey` | **DROP (decided 2026-07-31)** | The strongest privacy/size win: it carried the recipient's *claim* of who they received from (D-RS-07 provenance), the last cleartext graph edge in the receipt body. Under derived addressing the fetching sender already knows it's their share (they derived `recipient_derived` with their own `share_ref`), so it is redundant for their own verification; third-party-auditable provenance is deliberately given up in favor of graph privacy. |
 
-**Proposed minimal signed receipt:**
+**Final signed receipt (decided):**
 `{ accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref }`
 plus the outer packet signature; `recipient_pub` supplied to `verify_receipt` as
-context. This is the point to settle **before** the redesign touches signed
-bytes (regenerating `receipt_signable.bin` + the SPEC §8 vector once, not twice).
+context (the caller derived `recipient_derived` from it, so it always has it).
+Both `nonce` and both pubkeys are gone. Provenance now rests entirely on the
+composition **"receipt found at `derive(recipient_pub, share_ref)` + BEP44 sig
+valid under that derived key"** — the derived location binds recipient + share_ref,
+and only the recipient's master secret can sign there. Regenerate
+`receipt_signable.bin` + the SPEC §8 vector **once** at Phase 4.
 
 ## 9. Mock fidelity (must land day one)
 
@@ -220,7 +224,7 @@ behind a feature/flag during rollout so v1.1 stays buildable for comparison.
   5.0.0-pre.5`. Mitigation: exact pins, golden vectors, self-verify-after-sign.
 - **R3 — from_relay_payload is the only seam.** If a future pkarr removes it,
   we'd need a hand-rolled BEP44 publish. Low near-term risk; note it.
-- **Q1 — drop `sender_pubkey`?** (§8) The one schema decision left open.
+- **Q1 — drop `sender_pubkey`? RESOLVED (2026-07-31): drop it** (§8). Schema settled.
 - **Q2 — inner receipt signature.** The outer BEP44 sig now authenticates the
   packet; is the inner Ed25519 receipt signature still worth keeping for
   standalone (relay-independent) receipt verifiability? Default: **keep** (cheap,
@@ -228,9 +232,13 @@ behind a feature/flag during rollout so v1.1 stays buildable for comparison.
 
 ## 13. Phased plan (each phase self-contained, tests green)
 
-0. **Feasibility spike (throwaway)** — §14. Gate for everything below.
+0. **Feasibility spike (throwaway)** — §14. Gate for everything below. **DONE** (committed, §14.1).
 1. **`derive` module + golden vectors** — pure key math, no transport. Public and
-   secret derivation, self-verify, fixtures (§10.1).
+   secret derivation, self-verify, fixtures (§10.1). **DONE** — `src/derive.rs`
+   (`derive_public`, `derive_signer`, `DerivedSigner`), 4 unit tests incl. the
+   byte-exact golden vector and public/secret-agreement across seeds/refs.
+   `curve25519-dalek` is now a real dep; the hazmat SIGNING half stays test-only
+   until Phase 2.
 2. **Transport: publish/resolve under derived keys** — the `from_relay_payload` +
    hazmat signing path behind the trait; `signable` replication test (§10.2);
    **mock updated in the same phase** (§9).

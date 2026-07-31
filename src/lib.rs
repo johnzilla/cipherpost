@@ -9,6 +9,7 @@
 pub mod blobstore;
 pub mod cli;
 pub mod crypto;
+pub mod derive;
 pub mod error;
 pub mod flow;
 pub mod identity;
