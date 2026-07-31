@@ -240,7 +240,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::Receive {
             share,
             output,
-            dht_timeout: _,
+            dht_timeout,
             armor,
             passphrase,
             passphrase_file,
@@ -306,12 +306,12 @@ fn dispatch(cli: Cli) -> Result<()> {
                     if std::env::var("CIPHERPOST_USE_MOCK_TRANSPORT").is_ok() {
                         Box::new(cipherpost::transport::MockTransport::new())
                     } else {
-                        Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                        Box::new(build_dht_transport(dht_timeout)?)
                     }
                 }
                 #[cfg(not(feature = "mock"))]
                 {
-                    Box::new(cipherpost::transport::DhtTransport::with_default_timeout()?)
+                    Box::new(build_dht_transport(dht_timeout)?)
                 }
             };
 
@@ -452,14 +452,41 @@ fn dispatch(cli: Cli) -> Result<()> {
     }
 }
 
+/// Build the DHT transport, honoring an optional `--dht-timeout <secs>` override
+/// (`None` → `DEFAULT_DHT_TIMEOUT`). A zero timeout is rejected: it would make
+/// every resolve fail instantly, which is never what the user means.
+fn build_dht_transport(
+    dht_timeout: Option<u64>,
+) -> Result<cipherpost::transport::DhtTransport, cipherpost::Error> {
+    match dht_timeout {
+        Some(0) => Err(cipherpost::Error::Config(
+            "--dht-timeout must be at least 1 second".to_string(),
+        )),
+        Some(secs) => {
+            cipherpost::transport::DhtTransport::new(std::time::Duration::from_secs(secs))
+        }
+        None => cipherpost::transport::DhtTransport::with_default_timeout(),
+    }
+}
+
 /// Build the production `HomeserverBlobStore` for the large-payload commands.
-/// Homeserver URL comes from `CIPHERPOST_HS` (defaults to the project test box).
+/// The homeserver URL is REQUIRED via `CIPHERPOST_HS` — there is no default.
+/// Large-payload ciphertext blobs are stored on a homeserver you control; the
+/// tool never silently uploads to a host you didn't choose.
 #[cfg(feature = "large-payload")]
 fn build_homeserver_blobstore(
     seed_bytes: &[u8; 32],
 ) -> Result<cipherpost::blobstore::HomeserverBlobStore, cipherpost::Error> {
-    let url = std::env::var("CIPHERPOST_HS")
-        .unwrap_or_else(|_| "https://hs.trustedgelabs.com".to_string());
+    let url = std::env::var("CIPHERPOST_HS").map_err(|_| {
+        cipherpost::Error::Config(
+            "CIPHERPOST_HS is required for large-payload operations. Set it to the \
+             pubky homeserver you control, e.g. \
+             CIPHERPOST_HS=https://hs.example.com. There is no default homeserver: \
+             large-payload blobs are stored on a host you choose, never uploaded \
+             to a third-party box on your behalf."
+                .to_string(),
+        )
+    })?;
     cipherpost::blobstore::HomeserverBlobStore::new(
         url,
         pkarr::Keypair::from_secret_key(seed_bytes),

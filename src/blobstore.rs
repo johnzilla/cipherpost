@@ -81,7 +81,7 @@ pub struct HomeserverBlobStore {
 }
 
 impl HomeserverBlobStore {
-    /// Target `base_url` (e.g. "https://hs.trustedgelabs.com"), authenticating as
+    /// Target `base_url` (e.g. "https://hs.example.com"), authenticating as
     /// `keypair`. The native-TLS provider is selected EXPLICITLY: ureq defaults to
     /// rustls, which we do not compile (no ring/aws-lc), so the default would
     /// fail at runtime.
