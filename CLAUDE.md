@@ -86,7 +86,7 @@ These are hard constraints from the PRD, not suggestions. Reject approaches that
 
 Breaking any of these requires a protocol version bump. Don't touch without understanding why:
 
-- Canonical JSON = **RFC 8785 (JCS) via `serde_canonical_json`** (shipped as 1.0.0 — API-compatible with the planned 0.2). `serde_json` alone is **not** canonical. Fixtures: `tests/fixtures/outer_record_signable.bin` (192 B), `tests/fixtures/receipt_signable.bin` (424 B). Property tests enforce byte-for-byte determinism.
+- Canonical JSON = **RFC 8785 (JCS) via `serde_canonical_json`** (shipped as 1.0.0 — API-compatible with the planned 0.2). `serde_json` alone is **not** canonical. Fixtures: `tests/fixtures/outer_record_signable.bin` (192 B), `tests/fixtures/receipt_signable.bin` (389 B — was 424 B before `purpose` was removed from the receipt in 1.2.0-alpha for DHT-cleartext privacy; regenerate via `phase3_receipt_canonical_form --ignored regenerate_fixture` and re-run `gen_spec_test_vectors` for the SPEC §8 sig). Property tests enforce byte-for-byte determinism.
 - HKDF info strings = **`cipherpost/v1/<context>`**. Never empty, never `None`. An enumeration test walks every HKDF call-site and asserts the prefix. Phase 8 added `cipherpost/v1/pin` to the enumeration; the PIN-derived 32-byte X25519 scalar is wrapped into an `age::x25519::Identity` for nested encryption — `chacha20poly1305 only via age` invariant unchanged.
 - Argon2id params live in the **identity file header (PHC string)** — never hardcoded in code.
 - `chacha20poly1305` usage only via `age` — no direct calls allowed.

@@ -53,11 +53,20 @@ in later sections presupposes that everything in this section holds.
 - **The Mainline DHT** — neither its confidentiality nor its integrity. DHT nodes can see every
   published packet; they can fail to deliver any packet; they can collude to hide packets from
   specific requesters. See §3.
-- **The wire** — SignedPacket contents are visible to every DHT participant. All ciphertext is
-  inside `OuterRecord.blob` which is age-encrypted; all metadata (`purpose`, `material`, etc.)
+- **The wire (share)** — SignedPacket contents are visible to every DHT participant. All ciphertext is
+  inside `OuterRecord.blob` which is age-encrypted; all *share* metadata (`purpose`, `material`, etc.)
   is inside the encrypted blob. Only `pubkey`, `recipient`, `share_ref`, `created_at`,
   `ttl_seconds`, `signature`, and `protocol_version` leak to the DHT observer (SPEC.md#3-wire-format,
   specifically §3.3 OuterRecord).
+- **Published receipts leak handoff metadata in cleartext (weaker than the share above).** A
+  receipt is a SEPARATE DHT record under the *recipient's* key, published signed-but-**not-encrypted**.
+  Unlike the share, it exposes `sender_pubkey`, `recipient_pubkey`, `share_ref`, `accepted_at`, and
+  the hashes to any DHT observer — a signed, timestamped, non-repudiable record that *a* handoff
+  happened, between which two keys, and when. The share's descriptive `purpose` is deliberately
+  **not** in the receipt (removed 1.2.0-alpha — it would have leaked the *nature* of each handoff;
+  it stays bound via `cleartext_hash` without exposure — see SPEC §D-RS-01). The remaining
+  sender↔recipient↔time graph is **inherent** to a public signed receipt and is not hidden: do not
+  accept shares (which publishes a receipt) under an identity whose handoff graph must stay private.
 - **The sender's claims about the material** — `purpose` is sender-attested (SPEC.md#31-envelope,
   D-WIRE-05). See §4.
 - **Third-party purpose verification** — no party other than the sender attests to the purpose.
@@ -422,9 +431,11 @@ on the wire alone — only post-decrypt + inner-verify reveals the flag.
   local-state-only caveat BEFORE the user commits to send; the receive-time
   `[BURN — you will only see this once]` banner marker (D-P8-08) prepends the
   acceptance banner above the Purpose line. The user is informed twice.
-- **Receipt attestation preserved.** A receipt IS published on the first successful
-  burn-receive (BURN-04). The sender sees a single `receipts --from <z32>` entry — burn
-  does NOT suppress attestation.
+- **Receipt attestation preserved (cross-identity).** Burn does NOT suppress attestation:
+  a cross-identity burn-receive publishes a receipt on the recipient's key, and the sender
+  sees a single `receipts --from <z32>` entry. **Self-shares publish no receipt** (D-SEQ-06
+  revised — a self-receipt is self-attestation and would collide with your outgoing share in
+  the one per-key packet), so a self burn-receive leaves zero receipts.
 
 **Threats NOT covered:**
 
@@ -478,13 +489,13 @@ header for historical context.
 
 **Test references:**
 
-- `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7` — BURN-09 + receipt-count==1 (BURN-04)
+- `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7` — BURN-09 + self-share receipt-count==0 (D-SEQ-06 revised)
 - `tests/state_ledger.rs::v1_0_ledger_row_without_state_field_deserializes_as_accepted` — schema migration safety
 - `tests/state_ledger.rs::explicit_state_burned_deserializes_as_burned` — burn row recognition
 - `tests/state_ledger.rs::sentinel_without_matching_ledger_row_returns_accepted_unknown` — orphan-sentinel conservative classification (T-08-17)
 - `tests/pin_burn_compose.rs::typed_z32_declined_on_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — declined-z32 safety
 - `tests/pin_burn_compose.rs::wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — wrong-PIN safety on compose
-- `tests/pin_burn_compose.rs::generic_burn_publishes_one_receipt`, `x509_burn_publishes_one_receipt`, `pgp_burn_publishes_one_receipt`, `ssh_burn_publishes_one_receipt` — receipt-count cross-cutting (4 typed-material variants)
+- `tests/pin_burn_compose.rs::generic_burn_self_share_publishes_no_receipt`, `x509_…`, `pgp_…`, `ssh_burn_self_share_publishes_no_receipt` — self-share receipt-count==0 cross-cutting (4 typed-material variants; D-SEQ-06 revised)
 - `tests/pin_burn_compose.rs::generic_burn_second_receive_exit_7`, `x509_burn_second_receive_exit_7`, `pgp_burn_second_receive_exit_7`, `ssh_burn_second_receive_exit_7` — second-receive cross-cutting (4 typed-material variants)
 
 **Cross-references:**

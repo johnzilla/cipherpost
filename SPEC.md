@@ -384,11 +384,20 @@ no field is secret. Senders verify receipts using only public information.
 | `cleartext_hash` | String | lowercase hex, 64 chars | `SHA-256(JCS(Envelope))` — the decrypted canonical bytes | D-RS-04 |
 | `nonce` | String | 32 lowercase hex chars | 128-bit random (OsRng) | D-RS-03 |
 | `protocol_version` | u16 | JSON integer | Always `1` | D-07 |
-| `purpose` | String | UTF-8, control chars already stripped at send | Verbatim copy of `Envelope.purpose` | D-RS-01, D-WIRE-05 |
 | `recipient_pubkey` | String | z-base-32, 52 chars | Recipient Ed25519/PKARR public key | D-RS-01, D-RS-07 |
 | `sender_pubkey` | String | z-base-32, 52 chars | Sender's PKARR public key (from `OuterRecord.pubkey`) | D-RS-01 |
 | `share_ref` | String | 32 lowercase hex chars | Same `share_ref` as the originating OuterRecord | D-RS-01, D-06 |
 | `signature` | String | base64-STANDARD | Ed25519 by recipient over JCS(`ReceiptSignable`) | D-RS-05, D-RS-07 |
+
+**No `purpose` field (changed 1.2.0-alpha).** Earlier receipts carried a verbatim
+copy of `Envelope.purpose`. Because the receipt is published in **cleartext** on the
+public DHT, that leaked a signed, timestamped, descriptive social graph of secret
+handoffs — contradicting the envelope's encrypted-metadata guarantee. `purpose` is
+removed; it remains **bound but not exposed** via `cleartext_hash` = SHA-256(JCS(Envelope)),
+so a sender holding the original envelope can still verify a receipt corresponds to their
+exact purpose. **Residual exposure (unavoidable for a public signed receipt):** a receipt
+still reveals `sender_pubkey`, `recipient_pubkey`, `share_ref`, and `accepted_at` in
+cleartext — i.e. *that* a handoff occurred, between whom, and when (see THREAT-MODEL §Receipt privacy).
 
 **Signable projection:** `ReceiptSignable` = `Receipt` minus `signature`. Same sign/verify
 discipline as `OuterRecordSignable` (D-RS-07).
@@ -1294,30 +1303,38 @@ B1KQKUwXEHBLlXNekjU23LM+hkwz2w1XGjYg/X27tZSbX9opQozRgxKoVaAFbxmvfP2+HbOssOJ4Dblp
   "cleartext_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "nonce": "0123456789abcdef0123456789abcdef",
   "protocol_version": 1,
-  "purpose": "canonical form fixture",
   "recipient_pubkey": "rcpt-placeholder-z32",
   "sender_pubkey": "sender-placeholder-z32",
   "share_ref": "0123456789abcdef0123456789abcdef"
 }
 ```
 
-**Canonical bytes (RFC 8785 JCS, 424 bytes):**
+> **No `purpose` field (changed in 1.2.0-alpha).** A receipt is published in
+> cleartext on the public DHT; a descriptive `purpose` would leak a signed,
+> timestamped social graph of secret handoffs, contradicting the envelope's
+> encrypted-metadata guarantee. The purpose is still *bound* — `cleartext_hash`
+> is SHA-256(JCS(Envelope)) and the Envelope carries `purpose` — so a sender who
+> holds the original envelope can verify the receipt matches. Receipts are
+> ephemeral (TTL-bounded), so this is not a `PROTOCOL_VERSION` bump; the envelope
+> and outer-record wire formats are unchanged.
+
+**Canonical bytes (RFC 8785 JCS, 389 bytes):**
 
 ```
-7b2261636365707465645f6174223a313730303030303030302c22636970686572746578745f68617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22636c656172746578745f68617368223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226e6f6e6365223a223031323334353637383961626364656630313233343536373839616263646566222c2270726f746f636f6c5f76657273696f6e223a312c22707572706f7365223a2263616e6f6e6963616c20666f726d2066697874757265222c22726563697069656e745f7075626b6579223a22726370742d706c616365686f6c6465722d7a3332222c2273656e6465725f7075626b6579223a2273656e6465722d706c616365686f6c6465722d7a3332222c2273686172655f726566223a223031323334353637383961626364656630313233343536373839616263646566227d
+7b2261636365707465645f6174223a313730303030303030302c22636970686572746578745f68617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22636c656172746578745f68617368223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226e6f6e6365223a223031323334353637383961626364656630313233343536373839616263646566222c2270726f746f636f6c5f76657273696f6e223a312c22726563697069656e745f7075626b6579223a22726370742d706c616365686f6c6465722d7a3332222c2273656e6465725f7075626b6579223a2273656e6465722d706c616365686f6c6465722d7a3332222c2273686172655f726566223a223031323334353637383961626364656630313233343536373839616263646566227d
 ```
 
 **Fixture file:** `tests/fixtures/receipt_signable.bin` (byte-compare to verify).
 
 **To reproduce:**
 1. Serialize the pretty-printed JSON above through any RFC 8785 JCS implementation.
-   The resulting bytes MUST equal the hex above (424 bytes).
+   The resulting bytes MUST equal the hex above (389 bytes).
 2. Ed25519-sign those bytes with the same `[0u8; 32]` seed.
 3. The signature MUST match the base64 below.
 
 **Signature (base64-STANDARD):**
 ```
-L8UWu/lYccsfB3pwZD6hoPu39ZWuNYt0/SRqDtI+xMpL7Z91Lof8vnFjFY2WtlQDDlZOH4H0srwf4LlmT6w7Aw==
+9IZz05Q7TOTeKFF72g7KD1S6DReVK7R4GbFJ6UGUSioo2QtjiarMIcrSttghzr2KAdYYniyAo0o1vG3ATtYuCQ==
 ```
 
 ### 8.3 Sanity check (implementer script)
