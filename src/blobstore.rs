@@ -32,9 +32,16 @@ pub trait BlobStore {
 
 use crate::pubky_auth;
 use std::cell::RefCell;
+use std::time::Duration;
 use ureq::tls::{TlsConfig, TlsProvider};
 use ureq::Agent;
 use zeroize::Zeroizing;
+
+/// Timeout for the connection + headers phases of every homeserver request
+/// (parity with the 30s DHT request timeout). A down/unreachable/hung homeserver
+/// fails fast instead of hanging `send-large`/`receive-large` indefinitely.
+/// Body-transfer phases are intentionally NOT capped — see `with_timeout`.
+const DEFAULT_HOMESERVER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Defensive cap on a single blob download. The homeserver enforces a 100 MB
 /// per-request ceiling on writes; this guards the read side independently.
@@ -83,6 +90,26 @@ impl HomeserverBlobStore {
     /// bearer credentials — they must never traverse cleartext HTTP). `http://`
     /// is allowed only for loopback hosts, for a local `pubky-testnet`.
     pub fn new(base_url: impl Into<String>, keypair: pkarr::Keypair) -> Result<Self, Error> {
+        Self::with_timeout(base_url, keypair, DEFAULT_HOMESERVER_TIMEOUT)
+    }
+
+    /// Like [`new`](Self::new) but with an explicit per-phase timeout. Exposed so
+    /// tests can drive a short timeout against a black-hole listener; production
+    /// callers use [`new`](Self::new) (30s, parity with the DHT).
+    ///
+    /// The timeout bounds the DNS-resolve, connect, request-send, and
+    /// response-headers phases — a down/unreachable/hung homeserver fails within
+    /// `timeout` instead of hanging forever. The **body-transfer** phases
+    /// (`timeout_send_body` / `timeout_recv_body`) are deliberately left UNSET:
+    /// a large-payload PUT/GET streams blobs up to the homeserver's size limit
+    /// and can legitimately run long over a slow link, so a fixed body cap would
+    /// break real transfers. Small auth requests (signup/session) complete their
+    /// bodies well within the header timeout, so they are fully bounded.
+    pub fn with_timeout(
+        base_url: impl Into<String>,
+        keypair: pkarr::Keypair,
+        timeout: Duration,
+    ) -> Result<Self, Error> {
         let base_url = base_url.into().trim_end_matches('/').to_string();
         let is_https = base_url.starts_with("https://");
         let is_loopback_http = base_url.starts_with("http://127.0.0.1")
@@ -100,6 +127,12 @@ impl HomeserverBlobStore {
         let config = Agent::config_builder()
             .tls_config(tls)
             .http_status_as_error(false) // inspect 4xx/5xx ourselves
+            // Bound everything up to (and including) receiving the response
+            // headers; leave body transfer uncapped (see doc comment).
+            .timeout_resolve(Some(timeout))
+            .timeout_connect(Some(timeout))
+            .timeout_send_request(Some(timeout))
+            .timeout_recv_response(Some(timeout))
             .build();
         let z32 = keypair.public_key().to_z32();
         Ok(Self {
@@ -313,6 +346,40 @@ mod tests {
         // loopback http allowed for a local pubky-testnet
         assert!(HomeserverBlobStore::new("http://127.0.0.1:6286", kp()).is_ok());
         assert!(HomeserverBlobStore::new("http://localhost:6286", kp()).is_ok());
+    }
+
+    /// Regression: a hung homeserver must fail fast, not hang `receive-large`
+    /// forever. We bind a listener we NEVER accept from — the TCP handshake
+    /// completes into the kernel backlog (so `connect()` succeeds) but the
+    /// "server" never reads the request or writes a response, modelling a stalled
+    /// homeserver. With a short header timeout the GET must return an error
+    /// promptly instead of blocking on the (unset) OS-level socket timeout.
+    #[test]
+    fn stalled_homeserver_times_out_instead_of_hanging() {
+        use std::net::TcpListener;
+        use std::time::Instant;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().unwrap().port();
+        // `listener` stays in scope (port bound) but we never call `.accept()`.
+
+        let kp = pkarr::Keypair::from_secret_key(&[9u8; 32]);
+        let store = HomeserverBlobStore::with_timeout(
+            format!("http://127.0.0.1:{port}"),
+            kp,
+            Duration::from_millis(500),
+        )
+        .expect("loopback http is allowed");
+
+        let start = Instant::now();
+        let res = store.get("pub/cipherpost/anything");
+        let elapsed = start.elapsed();
+
+        assert!(res.is_err(), "a hung homeserver must error, not succeed");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "must time out fast (bounded by the response-headers timeout), took {elapsed:?}"
+        );
     }
 
     #[test]
