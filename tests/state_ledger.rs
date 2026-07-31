@@ -90,6 +90,50 @@ fn explicit_state_burned_deserializes_as_burned() {
     }
 }
 
+/// Regression: burn is MONOTONIC and ORDER-INDEPENDENT. A burned row plus a
+/// step-13 receipt row (state absent → Accepted) must read Burned regardless of
+/// which comes first. `check_already_consumed` scans ALL matching rows with
+/// "burned" dominating, so a later Accepted-flavored receipt row can never
+/// silently downgrade a burned share (the old first-match-wins read only worked
+/// because the burned row is written before the receipt row — a fragile
+/// order-dependency the docstrings even claimed was "last-match-wins").
+#[test]
+#[serial]
+fn burned_dominates_receipt_row_regardless_of_order() {
+    let share_ref = "abcdefabcdefabcdefabcdefabcdefab";
+    let burned = format!(
+        r#"{{"accepted_at":"2026-04-25T15:00:00Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"x","sender":"pk","share_ref":"{share_ref}","state":"burned"}}"#
+    );
+    // step-13 receipt row: no `state` field (→ Accepted), with receipt_published_at.
+    let receipt = format!(
+        r#"{{"accepted_at":"2026-04-25T15:00:01Z","ciphertext_hash":"a","cleartext_hash":"b","purpose":"x","receipt_published_at":"2026-04-25T15:00:01Z","sender":"pk","share_ref":"{share_ref}"}}"#
+    );
+
+    // (1) burned then receipt — the natural write order.
+    let dir1 = TempDir::new().unwrap();
+    write_ledger(&dir1, &format!("{burned}\n{receipt}\n"));
+    touch_sentinel(&dir1, share_ref);
+    assert!(
+        matches!(
+            check_already_consumed(share_ref),
+            LedgerState::Burned { .. }
+        ),
+        "burned-then-receipt must read Burned"
+    );
+
+    // (2) receipt then burned — reversed. Must STILL be Burned (order-independent).
+    let dir2 = TempDir::new().unwrap();
+    write_ledger(&dir2, &format!("{receipt}\n{burned}\n"));
+    touch_sentinel(&dir2, share_ref);
+    assert!(
+        matches!(
+            check_already_consumed(share_ref),
+            LedgerState::Burned { .. }
+        ),
+        "receipt-then-burned must STILL read Burned (burned dominates)"
+    );
+}
+
 #[test]
 #[serial]
 fn sentinel_without_matching_ledger_row_returns_accepted_unknown() {

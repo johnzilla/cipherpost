@@ -23,8 +23,10 @@ use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, SendMode, DEFAULT_TTL_SECONDS,
 };
+use cipherpost::payload::{Envelope, Material};
+use cipherpost::record::{OuterRecord, OuterRecordSignable};
 use cipherpost::transport::{MockTransport, Transport};
-use cipherpost::{Error, ShareUri};
+use cipherpost::{Error, ShareUri, PROTOCOL_VERSION};
 use secrecy::SecretBox;
 use serial_test::serial;
 use tempfile::TempDir;
@@ -293,5 +295,123 @@ fn pin_required_share_with_no_pin_at_receive() {
     assert_eq!(
         receipt_count, 0,
         "no-PIN-at-receive must NOT publish a receipt; got {receipt_count} receipts for share_ref"
+    );
+}
+
+/// SPEC D-RS-04 regression: a PIN share's receipt `ciphertext_hash` must be
+/// `SHA-256(base64-decoded blob)` — which for a PIN share INCLUDES the 32-byte
+/// salt prefix — NOT `SHA-256(salt-stripped outer_ct)`. Otherwise a third party
+/// verifying the receipt against the published DHT blob won't match.
+///
+/// A PIN share exceeds the 1000-byte wire budget so it cannot be published via
+/// `run_send`; we build a valid PIN record and INJECT it (bypassing the budget)
+/// to exercise the receive→receipt path that computes the hash.
+#[test]
+#[serial]
+fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let dir = TempDir::new().unwrap();
+    let (id, kp) = setup_identity_in(&dir);
+    let z32 = kp.public_key().to_z32();
+    let transport = MockTransport::new();
+
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    // Build the PIN envelope + JCS, then nest exactly as run_send: inner age to
+    // the PIN-derived recipient, outer age to the identity recipient.
+    let envelope = Envelope {
+        burn_after_read: false,
+        created_at,
+        material: Material::generic_secret(b"pin-secret".to_vec()),
+        protocol_version: PROTOCOL_VERSION,
+        purpose: "pin recv hash".to_string(),
+    };
+    let jcs = envelope.to_jcs_bytes().unwrap();
+
+    let salt = [7u8; 32];
+    let pin_secret = SecretBox::new(Box::new("validpin1".to_string()));
+    let pin_key = cipherpost::pin::pin_derive_key(&pin_secret, &salt).unwrap();
+    let pin_id = cipherpost::crypto::identity_from_x25519_bytes(&pin_key).unwrap();
+    let inner_ct = cipherpost::crypto::age_encrypt(&jcs, &pin_id.to_public()).unwrap();
+
+    let x_pub = cipherpost::crypto::ed25519_to_x25519_public(&id.public_key_bytes()).unwrap();
+    let recipient = cipherpost::crypto::recipient_from_x25519_bytes(&x_pub).unwrap();
+    let outer_ct = cipherpost::crypto::age_encrypt(&inner_ct, &recipient).unwrap();
+
+    // Wire blob = base64(salt || outer_ct); share_ref over the salt-stripped ct.
+    let mut blob_bytes = Vec::new();
+    blob_bytes.extend_from_slice(&salt);
+    blob_bytes.extend_from_slice(&outer_ct);
+    let blob = base64::engine::general_purpose::STANDARD.encode(&blob_bytes);
+    let share_ref = cipherpost::record::share_ref_from_bytes(&outer_ct, created_at);
+
+    let signable = OuterRecordSignable {
+        blob: blob.clone(),
+        created_at,
+        pin_required: true,
+        protocol_version: PROTOCOL_VERSION,
+        pubkey: z32.clone(),
+        recipient: None,
+        share_ref: share_ref.clone(),
+        ttl_seconds: DEFAULT_TTL_SECONDS,
+    };
+    let signature = cipherpost::record::sign_record(&signable, &kp).unwrap();
+    let record = OuterRecord {
+        blob: blob.clone(),
+        created_at,
+        pin_required: true,
+        protocol_version: PROTOCOL_VERSION,
+        pubkey: z32.clone(),
+        recipient: None,
+        share_ref: share_ref.clone(),
+        signature,
+        ttl_seconds: DEFAULT_TTL_SECONDS,
+    };
+
+    // Inject (bypass the wire-budget publish) and receive with the correct PIN.
+    transport.inject_outer_record_for_test(&kp, &record);
+    std::env::set_var("CIPHERPOST_TEST_PIN", "validpin1");
+    let uri = ShareUri::parse(&ShareUri::format(&z32, &share_ref)).unwrap();
+    let mut sink = OutputSink::InMemory(Vec::new());
+    run_receive(
+        &id,
+        &transport,
+        &kp,
+        &uri,
+        &mut sink,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .expect("PIN receive should succeed on the injected record");
+    std::env::remove_var("CIPHERPOST_TEST_PIN");
+
+    // Fetch the published receipt and check its ciphertext_hash.
+    let receipts = transport
+        .resolve_all_cprcpt(&z32)
+        .expect("a receipt was published");
+    let receipt: serde_json::Value = serde_json::from_str(&receipts[0]).unwrap();
+    let got = receipt
+        .get("ciphertext_hash")
+        .and_then(|s| s.as_str())
+        .unwrap();
+
+    let expect_full = format!("{:x}", Sha256::digest(&blob_bytes)); // SPEC D-RS-04
+    let salt_stripped = format!("{:x}", Sha256::digest(&outer_ct)); // the pre-fix bug
+    assert_ne!(
+        expect_full, salt_stripped,
+        "sanity: the salt prefix must actually change the hash"
+    );
+    assert_eq!(
+        got, expect_full,
+        "receipt ciphertext_hash must be SHA-256(full decoded blob incl. salt) per SPEC D-RS-04"
+    );
+    assert_ne!(
+        got, salt_stripped,
+        "receipt ciphertext_hash must NOT be the salt-stripped value (the pre-fix bug)"
     );
 }

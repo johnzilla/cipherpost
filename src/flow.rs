@@ -277,7 +277,14 @@ pub fn check_already_consumed(share_ref_hex: &str) -> LedgerState {
     if !sentinel_path(share_ref_hex).exists() {
         return LedgerState::None;
     }
-    // Scan accepted.jsonl for the matching share_ref.
+    // Scan ALL matching rows. Burn is MONOTONIC: a single `state: "burned"` row
+    // makes the share Burned regardless of row order — a later receipt row
+    // (step 13, state absent → Accepted) must NEVER downgrade it. This is
+    // deliberately order-INDEPENDENT: burn correctness does not rest on the
+    // burned row being appended before the receipt row. (T-08-17 still holds —
+    // unknown/absent `state` maps CONSERVATIVELY to Accepted; only an explicit
+    // "burned" yields Burned.)
+    let mut first_accepted_at: Option<String> = None;
     if let Ok(data) = fs::read_to_string(ledger_path()) {
         for line in data.lines() {
             if !line.contains(share_ref_hex) {
@@ -291,23 +298,27 @@ pub fn check_already_consumed(share_ref_hex: &str) -> LedgerState {
                         .and_then(|s| s.as_str())
                         .unwrap_or("<unknown>")
                         .to_string();
-                    let state_str = v.get("state").and_then(|s| s.as_str());
-                    return match state_str {
-                        Some("burned") => LedgerState::Burned { burned_at: ts },
-                        // None (v1.0 rows; serde default) OR Some("accepted")
-                        // both map to the v1.0 idempotent-success path. Unknown
-                        // state values are treated CONSERVATIVELY as Accepted —
-                        // never silently classify Accepted as Burned (T-08-17).
-                        _ => LedgerState::Accepted { accepted_at: ts },
-                    };
+                    match v.get("state").and_then(|s| s.as_str()) {
+                        // Burned dominates — return on the FIRST burned row seen;
+                        // no Accepted row can override it.
+                        Some("burned") => return LedgerState::Burned { burned_at: ts },
+                        // None (v1.0 / receipt rows) | Some("accepted") | unknown
+                        // → Accepted candidate. Keep scanning in case a later row
+                        // is burned; remember the FIRST accepted timestamp.
+                        _ => {
+                            first_accepted_at.get_or_insert(ts);
+                        }
+                    }
                 }
             }
         }
     }
-    // Sentinel present but no ledger line → sentinel still wins; Accepted with
-    // a synthetic timestamp so the caller's idempotent-success path runs.
+    // No burned row seen. Return the first Accepted row's timestamp, or — sentinel
+    // present but no matching ledger line — a synthetic Accepted so the caller's
+    // idempotent-success path runs.
     LedgerState::Accepted {
-        accepted_at: "<unknown; sentinel exists but ledger missing>".to_string(),
+        accepted_at: first_accepted_at
+            .unwrap_or_else(|| "<unknown; sentinel exists but ledger missing>".to_string()),
     }
 }
 
@@ -704,6 +715,19 @@ pub fn run_receive(
     let blob_bytes = base64::engine::general_purpose::STANDARD
         .decode(&record.blob)
         .map_err(|_| Error::SignatureCanonicalMismatch)?;
+
+    // SPEC D-RS-04: `ciphertext_hash = SHA-256(base64-decoded blob bytes)`. Hash
+    // the FULL decoded blob here — for PIN shares that INCLUDES the 32-byte salt
+    // prefix, which is exactly what a third party verifies against the published
+    // DHT blob. The PIN dispatch below strips the salt into `ciphertext` for
+    // decryption; hashing that salt-stripped value (as the code used to) drifts
+    // from the published blob. This is the SINGLE source of truth for both the
+    // receipt (step 13) and the ledger row (step 12) — Pitfall #4.
+    let ciphertext_hash = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(&blob_bytes))
+    };
+
     let seed = identity.signing_seed();
     let x25519_secret = crypto::ed25519_to_x25519_secret(&seed);
     let age_id = crypto::identity_from_x25519_bytes(&x25519_secret)?;
@@ -765,6 +789,14 @@ pub fn run_receive(
         crypto::age_decrypt(&inner_ct, pin_id)?
     } else {
         crypto::age_decrypt(&ciphertext, &age_id)?
+    };
+
+    // SPEC D-RS-04: `cleartext_hash = SHA-256(JCS(Envelope))` — the decrypted
+    // canonical bytes. Single source of truth for step 12 (ledger) + step 13
+    // (receipt); unaffected by the PIN salt (it hashes the decrypted plaintext).
+    let cleartext_hash = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(&jcs_plain))
     };
 
     // STEP 7: parse decrypted bytes as JCS → Envelope (parse fail =
@@ -909,16 +941,16 @@ pub fn run_receive(
             &record.share_ref,
             &record.pubkey,
             &envelope.purpose,
-            &ciphertext,
-            &jcs_plain,
+            &ciphertext_hash,
+            &cleartext_hash,
         )?;
     } else {
         append_ledger_entry(
             &record.share_ref,
             &record.pubkey,
             &envelope.purpose,
-            &ciphertext,
-            &jcs_plain,
+            &ciphertext_hash,
+            &cleartext_hash,
         )?;
     }
 
@@ -930,11 +962,11 @@ pub fn run_receive(
 
     // STEP 13: publish_receipt — best-effort, warn+degrade on failure (D-SEQ-01, D-SEQ-02).
     //
-    // Pitfall #4 note: we recompute sha256(ciphertext) and sha256(jcs_plain) here.
-    // Sha256 is deterministic over the same input bytes, so the Receipt's hash fields
-    // are byte-identical to the row step 12 wrote. Both sources commit to the same
-    // byte slices (ciphertext = the age-encrypted blob; jcs_plain = the JCS-canonical
-    // Envelope bytes decrypted at step 6).
+    // Pitfall #4: the Receipt reuses the SAME `ciphertext_hash` / `cleartext_hash`
+    // computed once above and written by step 12's ledger row — one source of
+    // truth, no recompute (so the ledger row and the published Receipt can never
+    // disagree). `ciphertext_hash` is SHA-256 of the full decoded blob per
+    // SPEC D-RS-04 (includes the PIN salt); `cleartext_hash` is SHA-256(JCS).
     //
     // Step 13 does NOT skip on self-mode (D-SEQ-06: sender_pubkey == recipient_pubkey
     // is a valid Receipt state — personal audit log).
@@ -948,9 +980,6 @@ pub fn run_receive(
     // complete. Only the final warn is user-visible; the specific failure
     // class is still surfaced via user_message(&e).
     let publish_outcome: Result<(), Error> = (|| {
-        use sha2::{Digest, Sha256};
-        let ciphertext_hash = format!("{:x}", Sha256::digest(&ciphertext));
-        let cleartext_hash = format!("{:x}", Sha256::digest(&jcs_plain));
         let accepted_at_unix = now_unix_seconds()?;
         let recipient_z32 = keypair.public_key().to_z32();
 
@@ -984,7 +1013,8 @@ pub fn run_receive(
         transport.publish_receipt(keypair, &record.share_ref, &receipt_json)?;
 
         // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
-        // check_already_consumed linear-scan handles 2-rows-per-share (last-wins).
+        // This receipt row has state:None; check_already_consumed scans ALL rows
+        // with "burned" dominating, so it never downgrades a burned share.
         // The receipt is already on the DHT — a ledger failure here is still
         // non-fatal, and falls under the same warn+degrade path.
         let iso = iso8601_utc_now()?;
@@ -1320,18 +1350,15 @@ fn append_ledger_entry(
     share_ref: &str,
     sender_z32: &str,
     purpose: &str,
-    ciphertext: &[u8],
-    jcs_plain: &[u8],
+    ciphertext_hash: &str,
+    cleartext_hash: &str,
 ) -> Result<(), Error> {
     ensure_state_dirs()?;
-    use sha2::{Digest, Sha256};
-    let ch = format!("{:x}", Sha256::digest(ciphertext));
-    let ph = format!("{:x}", Sha256::digest(jcs_plain));
     let accepted_at = iso8601_utc_now()?;
     let entry = LedgerEntry {
         accepted_at: &accepted_at,
-        ciphertext_hash: ch,
-        cleartext_hash: ph,
+        ciphertext_hash: ciphertext_hash.to_string(),
+        cleartext_hash: cleartext_hash.to_string(),
         purpose,
         receipt_published_at: None, // step 12 writes null; step 13 appends a success row
         sender: sender_z32,
@@ -1381,18 +1408,15 @@ fn append_ledger_entry_with_state(
     share_ref: &str,
     sender_z32: &str,
     purpose: &str,
-    ciphertext: &[u8],
-    jcs_plain: &[u8],
+    ciphertext_hash: &str,
+    cleartext_hash: &str,
 ) -> Result<(), Error> {
     ensure_state_dirs()?;
-    use sha2::{Digest, Sha256};
-    let ch = format!("{:x}", Sha256::digest(ciphertext));
-    let ph = format!("{:x}", Sha256::digest(jcs_plain));
     let accepted_at = iso8601_utc_now()?;
     let entry = LedgerEntry {
         accepted_at: &accepted_at,
-        ciphertext_hash: ch,
-        cleartext_hash: ph,
+        ciphertext_hash: ciphertext_hash.to_string(),
+        cleartext_hash: cleartext_hash.to_string(),
         purpose,
         receipt_published_at: None,
         sender: sender_z32,
@@ -1422,12 +1446,14 @@ fn append_ledger_entry_with_state(
 
 /// D-SEQ-05: append a second ledger row with `receipt_published_at: Some(iso)`
 /// after a successful Plan-03 step-13 publish_receipt. Append-only; the earlier
-/// row (from step 12, with receipt_published_at: None) stays in the file.
-/// `check_already_consumed` linear-scan already returns last-match-wins.
+/// row (from step 12) stays in the file. This row carries `state: None`;
+/// `check_already_consumed` scans ALL matching rows with "burned" dominating, so
+/// this later Accepted-flavored row never downgrades a burned share (it does NOT
+/// depend on scan order — see check_already_consumed).
 ///
-/// Pitfall #4: ciphertext_hash / cleartext_hash are passed IN (pre-computed at
-/// step 12) rather than recomputed here — two hashing call-sites = two sources
-/// of truth; the receipt field values must match what step 12 wrote.
+/// Pitfall #4: ciphertext_hash / cleartext_hash are passed IN (computed once in
+/// run_receive) rather than recomputed here — one source of truth; the receipt
+/// field values are byte-identical to the row step 12 wrote.
 fn append_ledger_entry_with_receipt(
     share_ref: &str,
     sender_z32: &str,

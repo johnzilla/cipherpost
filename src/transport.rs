@@ -421,6 +421,19 @@ mod mock {
                 .unwrap_or_default()
         }
 
+        /// Test-only: store an `OuterRecord` under `_cipherpost` WITHOUT the
+        /// 1000-byte publish size check, so tests can exercise the receive path
+        /// for records that legitimately exceed the DHT wire budget (e.g. a
+        /// PIN-protected share, whose nested-age + salt prefix `publish` refuses).
+        pub fn inject_outer_record_for_test(&self, kp: &pkarr::Keypair, record: &OuterRecord) {
+            let rdata = serde_json::to_string(record).expect("serialize OuterRecord");
+            let z32 = kp.public_key().to_z32();
+            let mut store = self.store.lock().unwrap();
+            let entry = store.entry(z32).or_default();
+            entry.records.retain(|(label, _)| label != DHT_LABEL_OUTER);
+            entry.records.push((DHT_LABEL_OUTER.to_string(), rdata));
+        }
+
         /// Phase 9 D-P9-A3: lock → read seq → drop lock → build merged set →
         /// re-lock → cas-check → bump-and-write OR signal CasConflict.
         /// Pitfall #28 invariant: the lock is RELEASED between the seq read
