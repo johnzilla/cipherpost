@@ -200,3 +200,57 @@ fn accrued_receipt_does_not_block_self_send() {
         "self-share was published",
     );
 }
+
+/// Parent-binding: an attacker replays A's validly-signed record under B's derived
+/// key and hands a victim a URI claiming B as the sender. run_receive must REFUSE
+/// (ShareRefMismatch) BEFORE decrypt/acceptance — the record's own pubkey (A) does
+/// not match the URI's parent (B), even though the derived location + inner sig are
+/// internally valid.
+#[test]
+#[serial]
+fn parent_z32_mismatch_rejected_before_decrypt() {
+    let dir_a = TempDir::new().unwrap();
+    let (id_a, kp_a) = deterministic_identity_at(dir_a.path(), [0xA1; 32]);
+    let dir_b = TempDir::new().unwrap();
+    let (id_b, kp_b) = deterministic_identity_at(dir_b.path(), [0xB1; 32]);
+    let a_pub = kp_a.public_key().to_bytes();
+    let b_pub = kp_b.public_key().to_bytes();
+    let b_z32 = kp_b.public_key().to_z32();
+    let transport = MockTransport::new();
+
+    // A self-sends a valid share; grab A's validly-signed record from its key.
+    std::env::set_var("CIPHERPOST_HOME", dir_a.path());
+    let uri_a = send_share(&id_a, &transport, &kp_a, SendMode::SelfMode, b"a secret");
+    let a_key = cipherpost::derive::derive_public(&a_pub, &uri_a.share_ref_hex).unwrap();
+    let rdata = transport
+        .resolve_derived(&a_key, cipherpost::DHT_LABEL_OUTER)
+        .unwrap()
+        .unwrap();
+
+    // Attacker replays it under B's derived key + forges a URI claiming B is sender.
+    let b_key = cipherpost::derive::derive_public(&b_pub, &uri_a.share_ref_hex).unwrap();
+    transport.inject_derived_record_for_test(&b_key, cipherpost::DHT_LABEL_OUTER, &rdata);
+    let forged =
+        ShareUri::parse(&format!("cipherpost://{}/{}", b_z32, uri_a.share_ref_hex)).unwrap();
+
+    std::env::set_var("CIPHERPOST_HOME", dir_b.path());
+    let mut sink = OutputSink::InMemory(Vec::new());
+    let err = run_receive(
+        &id_b,
+        &transport,
+        &kp_b,
+        &forged,
+        &mut sink,
+        &AutoConfirmPrompter,
+        false,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, cipherpost::Error::ShareRefMismatch),
+        "record.pubkey (A) != uri.sender_z32 (B) must reject; got {err:?}",
+    );
+    match sink {
+        OutputSink::InMemory(buf) => assert!(buf.is_empty(), "no material written on refusal"),
+        _ => panic!("InMemory sink expected"),
+    }
+}

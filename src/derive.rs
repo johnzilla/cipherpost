@@ -46,7 +46,11 @@ const DERIVE_PREFIX_DOMAIN: &[u8] = b"cipherpost/v2/derive-prefix";
 /// decode here means no call site can accidentally derive over the ASCII-hex bytes
 /// instead of the 128-bit value (which would silently produce wrong addresses).
 fn decode_share_ref(share_ref_hex: &str) -> Result<[u8; 16], Error> {
-    if share_ref_hex.len() != 32 || !share_ref_hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+    // Strictly lowercase hex — matches ShareUri::parse and the frozen v2 contract.
+    // (Uppercase would decode to identical bytes, but strictness at boundaries is
+    // this project's style, and the contract text says lowercase.)
+    let is_lower_hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    if share_ref_hex.len() != 32 || !share_ref_hex.bytes().all(is_lower_hex) {
         return Err(Error::Config(
             "share_ref must be 32 lowercase-hex chars".into(),
         ));
@@ -248,6 +252,26 @@ mod tests {
             }
         }
         panic!("expected to find a non-decompressable encoding to test");
+    }
+
+    /// The share_ref decode gate (frozen v2 contract): exactly 32 lowercase-hex
+    /// chars. Length, non-hex, and UPPERCASE are all rejected.
+    #[test]
+    fn decode_share_ref_rejects_malformed() {
+        let parent = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32])
+            .verifying_key()
+            .to_bytes();
+        // Valid: 32 lowercase hex.
+        assert!(derive_public(&parent, "0123456789abcdef0123456789abcdef").is_ok());
+        // Too short / too long.
+        assert!(derive_public(&parent, "abcd").is_err());
+        assert!(derive_public(&parent, &"a".repeat(33)).is_err());
+        // Non-hex character (32 chars, but 'z').
+        assert!(derive_public(&parent, "zz23456789abcdef0123456789abcdef").is_err());
+        // Uppercase rejected (lowercase-only contract).
+        assert!(derive_public(&parent, "0123456789ABCDEF0123456789abcdef").is_err());
+        // Same must hold for the secret side.
+        assert!(derive_signer(&[7u8; 32], "0123456789ABCDEF0123456789abcdef").is_err());
     }
 
     /// The derived nonce prefix depends on the SECRET master prefix + share_ref —
