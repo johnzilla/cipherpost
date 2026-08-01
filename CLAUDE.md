@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-**v1.1 (full PRD v1) shipped 2026-04-26; repo is now at crate `1.2.0-alpha.1` with (a) v2 derived-key addressing — `PROTOCOL_VERSION = 2`, each share/receipt under its own key `derive(parent_pub, share_ref)` (SPEC.md §3.8) — and (b) an experimental, off-by-default `large-payload` feature.** (v1.0 walking skeleton shipped 2026-04-22.) **v2 is a clean break from v1.1:** the 1→2 bump changed every record's signed bytes and retired the "v1.0 byte-identity" lock-in; the derived-key redesign lifted the one-record-per-key packet-budget ceiling and re-enabled self-receipts. The repo is a single Rust crate (`cipherpost`) that builds a CLI binary. MIT-licensed. No shared `cipherpost-core` crate — that was considered and explicitly rejected at project kickoff (cclink is mothballed, no second consumer exists to justify the split).
+**v1.1 (full PRD v1) shipped 2026-04-26; repo is now at crate `2.0.0-alpha.1` with (a) v2 derived-key addressing — `PROTOCOL_VERSION = 2`, each share/receipt under its own key `derive(parent_pub, share_ref)` (SPEC.md §3.8) — and (b) an experimental, off-by-default `large-payload` feature.** (v1.0 walking skeleton shipped 2026-04-22.) **v2 is a clean break from v1.1:** the 1→2 bump changed every record's signed bytes and retired the "v1.0 byte-identity" lock-in; the derived-key redesign lifted the one-record-per-key packet-budget ceiling and re-enabled self-receipts. The repo is a single Rust crate (`cipherpost`) that builds a CLI binary. MIT-licensed. No shared `cipherpost-core` crate — that was considered and explicitly rejected at project kickoff (cclink is mothballed, no second consumer exists to justify the split).
 
 Build / test / lint commands:
 
@@ -77,12 +77,12 @@ These are hard constraints from the PRD, not suggestions. Reject approaches that
 - CAS-protected receipt publication (single-retry merge-republish) — *superseded in v2 by single-writer derived-key receipts; now legacy, see below*
 - Real-DHT cross-identity release-acceptance test (`tests/real_dht_e2e.rs`; manual + tag-gated, never per-commit CI)
 
-**Shipped in v2 (derived-key addressing; `PROTOCOL_VERSION = 2`, crate `1.2.0-alpha.1`):**
+**Shipped in v2 (derived-key addressing; `PROTOCOL_VERSION = 2`, crate `2.0.0-alpha.1`):**
 - Each share and each receipt published under its own key `derive(parent_pub, share_ref)` — single-hop stealth blinding, `DERIVE_DOMAIN = "cipherpost/v2/derive-addr"`, hashing the RAW 16 bytes of the `share_ref` (SPEC.md §3.8; `src/derive.rs`, `src/transport.rs::build_derived_signed_packet`). Lifts the v1.1 one-record-per-key packet-budget ceiling: many outstanding shares/receipts per identity.
 - Slim receipt schema `{accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref, signature}` — dropped `nonce` + both pubkeys; `verify_receipt(receipt, recipient_pub_z32)` takes the recipient pubkey as context. `receipts` now REQUIRES `--share-ref` (per-share, non-enumerable).
 - Self-receipts RE-ENABLED (D-SEQ-06); the receipt no longer collides with the sender's outgoing share.
 
-**Shipped in v2-alpha (experimental, off-by-default `large-payload` feature; crate `1.2.0-alpha.1`):**
+**Shipped in v2-alpha (experimental, off-by-default `large-payload` feature; crate `2.0.0-alpha.1`):**
 - `send-large --self` / `receive-large` — manifest-on-DHT + ciphertext blob on a self-hosted pubky homeserver (`CIPHERPOST_HS` required, no default). `--self` only; large-payload receipts not wired.
 - Hardening since v1.1: `Error::PacketBudgetExceeded` (single oversized record on the send path), receipt `purpose` removed from the DHT (privacy), `CIPHERPOST_HS` required, `--dht-timeout` wired, homeserver-client timeouts, opportunistic lock-dir GC. (The v2-alpha "self-receipts skipped" stopgap was superseded when derived-key addressing re-enabled them.)
 

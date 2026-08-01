@@ -242,6 +242,9 @@ fn build_derived_signed_packet(
 // path this is unreachable — `build_derived_signed_packet` validates the same key
 // first and fails with `Config` — so publish stays `Config` on both impls.
 // (In practice every derived key is a valid curve point, so neither fires.)
+// Only the mock keys its store by z32; the DHT impl uses `pkarr::PublicKey`
+// directly, so this helper is mock-only (cfg-gated to keep release builds clean).
+#[cfg(any(test, feature = "mock"))]
 fn derived_z32(derived_pub: &[u8; 32]) -> Result<String, Error> {
     Ok(pkarr::PublicKey::try_from(derived_pub)
         .map_err(|_| Error::NotFound)?

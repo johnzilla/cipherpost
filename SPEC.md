@@ -1,6 +1,6 @@
 # Cipherpost Protocol Specification
 
-> **Status: DRAFT — current through v2 derived-key addressing (`PROTOCOL_VERSION = 2`, crate `1.2.0-alpha`), which supersedes the v1.1 Real v1 wire format (shipped 2026-04-26). Also covers the experimental, off-by-default `large-payload` feature (see §Pitfall #22).**
+> **Status: DRAFT — current through v2 derived-key addressing (`PROTOCOL_VERSION = 2`, crate `2.0.0-alpha.1`), which supersedes the v1.1 Real v1 wire format (shipped 2026-04-26). Also covers the experimental, off-by-default `large-payload` feature (see §Pitfall #22).**
 >
 > This document describes the protocol as shipped through v1.0 Walking Skeleton (Phases 1–4)
 > and v1.1 Real v1 (Phases 5–9) — all four `Material` variants, `--pin` / `--burn` encryption
@@ -415,7 +415,7 @@ and the per-record `nonce` are dropped too (the derived key already makes each
 receipt's DHT address unique). This slim schema and the `PROTOCOL_VERSION` 1→2 bump
 ship together in v2.
 
-**No `purpose` field (changed 1.2.0-alpha).** Earlier receipts carried a verbatim
+**No `purpose` field (changed 2.0.0-alpha).** Earlier receipts carried a verbatim
 copy of `Envelope.purpose`. Because the receipt is published in **cleartext** on the
 public DHT, that leaked a signed, timestamped, descriptive social graph of secret
 handoffs — contradicting the envelope's encrypted-metadata guarantee. `purpose` is
@@ -1457,12 +1457,12 @@ ZDOIAeAdUdH3kom7W33HEwwe0crFJRk0YCQXUzFIj9qHazFPy+ywWquEIaKHiH/J/q+BJBxMP+5C5l9q
 > CONTEXT — an argument to `verify_receipt(receipt, recipient_pub_z32)` — not a wire
 > field. The sender pubkey and the per-record `nonce` are likewise dropped (the
 > derived key already makes each receipt's DHT address unique). `purpose` remains
-> absent (removed 1.2.0-alpha): a receipt is published in cleartext on the public
+> absent (removed 2.0.0-alpha): a receipt is published in cleartext on the public
 > DHT, and a descriptive `purpose` would leak a signed, timestamped social graph of
 > secret handoffs. The purpose is still *bound* — `cleartext_hash` is
 > SHA-256(JCS(Envelope)) and the Envelope carries `purpose` — so a sender who holds
 > the original envelope can verify the receipt matches. This slim schema and the
-> `PROTOCOL_VERSION` 1→2 bump ship together in v2 (crate 1.2.0-alpha): every
+> `PROTOCOL_VERSION` 1→2 bump ship together in v2 (crate 2.0.0-alpha.1): every
 > previously issued share and receipt is invalidated.
 
 **Canonical bytes (RFC 8785 JCS, 263 bytes):**

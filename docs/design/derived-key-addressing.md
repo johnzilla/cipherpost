@@ -1,7 +1,7 @@
 # Design: Derived-key packet addressing (lift the one-record-per-key ceiling)
 
 > **Status: IMPLEMENTED — shipped through Phase 3c (`PROTOCOL_VERSION = 2`, crate
-> `1.2.0-alpha.1`); the v1.1 parent-key transport surface was removed in commit
+> `2.0.0-alpha.1`); the v1.1 parent-key transport surface was removed in commit
 > `8be2567`.** All phases in §13 are DONE. This doc is the design reference for the
 > v2 wire format, but where it and the repo could drift, **code + tests are the
 > source of truth** — `src/derive.rs`, `src/transport.rs::build_derived_signed_packet`,

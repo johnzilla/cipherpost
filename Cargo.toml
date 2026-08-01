@@ -1,6 +1,6 @@
 [package]
 name = "cipherpost"
-version = "1.2.0-alpha.1"
+version = "2.0.0-alpha.1"
 edition = "2021"
 license = "MIT"
 description = "Self-sovereign, serverless, accountless CLI for cryptographic-material handoff over Mainline DHT via PKARR."

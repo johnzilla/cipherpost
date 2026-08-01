@@ -1,6 +1,6 @@
 # Security Policy
 
-> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26); repo is now at crate `1.2.0-alpha.1` with the experimental, off-by-default v2-alpha large-payload feature**
+> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26); repo is now at crate `2.0.0-alpha.1` with the experimental, off-by-default v2-alpha large-payload feature**
 >
 > This document describes the security policy as shipped through v1.0 Walking Skeleton
 > (Phases 1–4) and v1.1 Real v1 (Phases 5–9). The disclosure channel below was live-tested

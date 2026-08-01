@@ -1,6 +1,6 @@
 # Cipherpost Threat Model
 
-> **Status: DRAFT — current through v2 derived-key addressing (`PROTOCOL_VERSION = 2`, crate `1.2.0-alpha`), which supersedes the v1.1 Real v1 wire format (shipped 2026-04-26). Also covers the experimental, off-by-default `large-payload` feature (§10 / §10.1).**
+> **Status: DRAFT — current through v2 derived-key addressing (`PROTOCOL_VERSION = 2`, crate `2.0.0-alpha.1`), which supersedes the v1.1 Real v1 wire format (shipped 2026-04-26). Also covers the experimental, off-by-default `large-payload` feature (§10 / §10.1).**
 >
 > This document describes the threat model as shipped through v1.0 Walking Skeleton
 > (Phases 1–4), v1.1 Real v1 (Phases 5–9, including §6.5 PIN mode and §6.6 Burn mode), and the
@@ -73,7 +73,7 @@ in later sections presupposes that everything in this section holds.
     link the derived key back to the recipient's identity, so a recipient's receipt keys are no
     longer discoverable by watching their identity key (contrast v1.1, where all `_cprcpt-*`
     receipts sat under the recipient's own key and were enumerable). The `purpose` remains
-    **absent** (removed 1.2.0-alpha; stays bound via `cleartext_hash` without exposure — SPEC
+    **absent** (removed 2.0.0-alpha; stays bound via `cleartext_hash` without exposure — SPEC
     §D-RS-01 / §3.4).
   - **Residual: a party holding both `recipient_pub` and `share_ref` can locate and read it.** The
     sender (who chose the recipient and created the `share_ref`) — or anyone given the share URI —
