@@ -1,14 +1,17 @@
 # Cipherpost Threat Model
 
-> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26), plus experimental v2-alpha large-payload additions (crate `1.2.0-alpha.1`; see §10 / §10.1)**
+> **Status: DRAFT — current through v2 derived-key addressing (`PROTOCOL_VERSION = 2`, crate `1.2.0-alpha`), which supersedes the v1.1 Real v1 wire format (shipped 2026-04-26). Also covers the experimental, off-by-default `large-payload` feature (§10 / §10.1).**
 >
 > This document describes the threat model as shipped through v1.0 Walking Skeleton
-> (Phases 1–4) and v1.1 Real v1 (Phases 5–9), including §6.5 (PIN mode) and §6.6 (Burn mode)
-> introduced in v1.1 Phase 8.
+> (Phases 1–4), v1.1 Real v1 (Phases 5–9, including §6.5 PIN mode and §6.6 Burn mode), and the
+> **v2 derived-key addressing redesign** — each share and each receipt is now published under
+> its own key `derive(parent_pub, share_ref)` (SPEC.md §3.8), which changes the receipt-privacy
+> analysis (§1, §7): receipts are no longer enumerable from a recipient's public identity, the
+> concurrent-publish race is eliminated, and the per-key packet-budget ceiling is lifted.
 > Wire-format decisions documented here are **stable** — changes require a protocol version bump.
-> Editorial polish across the full v1.x scope continues.
+> Editorial polish continues.
 
-**Protocol version covered:** `cipherpost/v1`
+**Protocol version covered:** `cipherpost/v2` (`PROTOCOL_VERSION = 2`)
 **Companion documents:** [`SPEC.md`](./SPEC.md) (protocol specification), [`SECURITY.md`](./SECURITY.md) (vulnerability disclosure policy).
 
 ## Table of Contents
@@ -58,15 +61,26 @@ in later sections presupposes that everything in this section holds.
   is inside the encrypted blob. Only `pubkey`, `recipient`, `share_ref`, `created_at`,
   `ttl_seconds`, `signature`, and `protocol_version` leak to the DHT observer (SPEC.md#3-wire-format,
   specifically §3.3 OuterRecord).
-- **Published receipts leak handoff metadata in cleartext (weaker than the share above).** A
-  receipt is a SEPARATE DHT record under the *recipient's* key, published signed-but-**not-encrypted**.
-  Unlike the share, it exposes `sender_pubkey`, `recipient_pubkey`, `share_ref`, `accepted_at`, and
-  the hashes to any DHT observer — a signed, timestamped, non-repudiable record that *a* handoff
-  happened, between which two keys, and when. The share's descriptive `purpose` is deliberately
-  **not** in the receipt (removed 1.2.0-alpha — it would have leaked the *nature* of each handoff;
-  it stays bound via `cleartext_hash` without exposure — see SPEC §D-RS-01). The remaining
-  sender↔recipient↔time graph is **inherent** to a public signed receipt and is not hidden: do not
-  accept shares (which publishes a receipt) under an identity whose handoff graph must stay private.
+- **Published receipts are signed-but-not-encrypted, but v2 shrinks what they expose.** A receipt
+  is a SEPARATE DHT record published signed-but-**not-encrypted**. In v2 it is published under the
+  recipient's **derived key** `derive(recipient_pub, share_ref)` (SPEC.md §3.8), not under the
+  recipient's bare identity key, and its slim schema is `{accepted_at, ciphertext_hash,
+  cleartext_hash, protocol_version, share_ref, signature}` — **neither pubkey is a field anymore**
+  (both `sender_pubkey` and `recipient_pubkey` were dropped in v2), and there is no `nonce`. Two
+  consequences for the handoff graph:
+  - **Not enumerable from a public identity (v2 privacy win).** Because the receipt lives at a
+    key blinded by `share_ref`, a passive DHT observer who does not know the `share_ref` cannot
+    link the derived key back to the recipient's identity, so a recipient's receipt keys are no
+    longer discoverable by watching their identity key (contrast v1.1, where all `_cprcpt-*`
+    receipts sat under the recipient's own key and were enumerable). The `purpose` remains
+    **absent** (removed 1.2.0-alpha; stays bound via `cleartext_hash` without exposure — SPEC
+    §D-RS-01 / §3.4).
+  - **Residual: a party holding both `recipient_pub` and `share_ref` can locate and read it.** The
+    sender (who chose the recipient and created the `share_ref`) — or anyone given the share URI —
+    can derive the key, fetch the receipt, and learn *that* a handoff was accepted and *when* (the
+    hashes bind it to the exact blob/envelope). This is the inherent, reduced residual of a public
+    signed receipt: still don't accept shares under an identity whose *acknowledged-a-handoff-at-time-T*
+    fact must stay hidden from a counterparty who already holds the URL.
 - **The sender's claims about the material** — `purpose` is sender-attested (SPEC.md#31-envelope,
   D-WIRE-05). See §4.
 - **Third-party purpose verification** — no party other than the sender attests to the purpose.
@@ -146,7 +160,7 @@ SignedPacket from a week ago. Bob interprets this as "share not found" (exit cod
 **Residual risk:** A sufficiently resourced Sybil attacker can make a target share appear
 "not found" for an extended window, effectively censoring the handoff. Cipherpost treats this
 as a liveness failure, not a security failure; the material is not disclosed, but the handoff
-stalls. No mitigation in cipherpost/v1 addresses a determined Sybil who can outrun honest
+stalls. No mitigation in cipherpost addresses a determined Sybil who can outrun honest
 DHT nodes' re-publication cycles.
 
 ### 3.2 Eclipse
@@ -199,8 +213,9 @@ monitoring script runs `cipherpost receive <old_uri>`.
   (both saw `LedgerState::None`), both decrypt + emit plaintext, and both append ledger
   rows. `run_receive` now acquires `flock` on `~/.cipherpost/state/locks/<share_ref>.lock`
   immediately after URI parse and holds it through the sentinel + ledger row write
-  (released before receipt publish — that path's CAS contract handles concurrent receipts
-  on its own). The lock is per-`share_ref` so distinct shares don't serialize, and is
+  (released before receipt publish — in v2 each receipt has its own single-writer derived key
+  `derive(recipient_pub, share_ref)`, so concurrent receipts of different shares never contend
+  and no CAS is needed; SPEC.md §3.8). The lock is per-`share_ref` so distinct shares don't serialize, and is
   local-filesystem only (cross-host coordination remains out of scope per §8 and
   D-STATE-01). Regression coverage: `tests/state_ledger_concurrency.rs`.
 - TTL check is enforced against the inner-signed `created_at + ttl_seconds`. An old record
@@ -431,11 +446,12 @@ on the wire alone — only post-decrypt + inner-verify reveals the flag.
   local-state-only caveat BEFORE the user commits to send; the receive-time
   `[BURN — you will only see this once]` banner marker (D-P8-08) prepends the
   acceptance banner above the Purpose line. The user is informed twice.
-- **Receipt attestation preserved (cross-identity).** Burn does NOT suppress attestation:
-  a cross-identity burn-receive publishes a receipt on the recipient's key, and the sender
-  sees a single `receipts --from <z32>` entry. **Self-shares publish no receipt** (D-SEQ-06
-  revised — a self-receipt is self-attestation and would collide with your outgoing share in
-  the one per-key packet), so a self burn-receive leaves zero receipts.
+- **Receipt attestation preserved.** Burn does NOT suppress attestation: a burn-receive
+  publishes a receipt, and the sender sees a single `receipts --from <z32> --share-ref <ref>`
+  entry. In v2 this includes **self-shares** (D-SEQ-06 RE-ENABLED): the receipt lives under its
+  own derived key `derive(recipient_pub, share_ref)` (SPEC.md §3.8) and cannot collide with the
+  recipient's outgoing share, so a self burn-receive now leaves a normal personal audit receipt
+  (the v1.1 self-skip existed only to avoid the shared-parent-packet collision, which is gone).
 
 **Threats NOT covered:**
 
@@ -468,8 +484,10 @@ on the wire alone — only post-decrypt + inner-verify reveals the flag.
 Receiver A (~/.cipherpost-A/) — receives burn share, marks state=burned
 Receiver B (~/.cipherpost-B/) — fresh ledger, receives same share, succeeds
                                 — marks state=burned in ITS OWN ledger
-Both receivers see the plaintext. Both publish a receipt. Sender sees TWO
-receipts (one per receiver). The DHT ciphertext remains queryable until TTL.
+Both receivers see the plaintext. Both publish a receipt — but to the SAME
+derived key derive(recipient_pub, share_ref) (same identity, same share_ref),
+so it is last-writer-wins: the sender sees ONE receipt, not two. The DHT
+ciphertext remains queryable until TTL.
 ```
 
 This is a UX affordance, not a cryptographic destruction primitive. **Burn ≠
@@ -489,13 +507,13 @@ header for historical context.
 
 **Test references:**
 
-- `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7` — BURN-09 + self-share receipt-count==0 (D-SEQ-06 revised)
+- `tests/burn_roundtrip.rs::burn_share_first_receive_succeeds_second_returns_exit_7` — BURN-09 + self-share publishes exactly one receipt (D-SEQ-06 re-enabled in v2)
 - `tests/state_ledger.rs::v1_0_ledger_row_without_state_field_deserializes_as_accepted` — schema migration safety
 - `tests/state_ledger.rs::explicit_state_burned_deserializes_as_burned` — burn row recognition
 - `tests/state_ledger.rs::sentinel_without_matching_ledger_row_returns_accepted_unknown` — orphan-sentinel conservative classification (T-08-17)
 - `tests/pin_burn_compose.rs::typed_z32_declined_on_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — declined-z32 safety
 - `tests/pin_burn_compose.rs::wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receivable` — wrong-PIN safety on compose
-- `tests/pin_burn_compose.rs::generic_burn_self_share_publishes_no_receipt`, `x509_…`, `pgp_…`, `ssh_burn_self_share_publishes_no_receipt` — self-share receipt-count==0 cross-cutting (4 typed-material variants; D-SEQ-06 revised)
+- `tests/pin_burn_compose.rs::generic_burn_self_share_publishes_one_receipt`, `x509_…`, `pgp_…`, `ssh_burn_self_share_publishes_one_receipt` — self-share publishes exactly one receipt cross-cutting (4 typed-material variants; D-SEQ-06 re-enabled in v2)
 - `tests/pin_burn_compose.rs::generic_burn_second_receive_exit_7`, `x509_burn_second_receive_exit_7`, `pgp_burn_second_receive_exit_7`, `ssh_burn_second_receive_exit_7` — second-receive cross-cutting (4 typed-material variants)
 
 **Cross-references:**
@@ -508,63 +526,60 @@ header for historical context.
 
 ## 7. Receipt-Replay / Race Adversary
 
-**Capabilities:** The adversary replays a harvested receipt, or races legitimate concurrent
-publications, or tampers with a stored receipt on the recipient's PKARR key before the sender
-fetches it.
+**Capabilities:** The adversary replays a harvested receipt, or tampers with a stored receipt
+before the sender fetches it. (The v1.1 "races legitimate concurrent publications" capability is
+**eliminated in v2** — see example B.)
 
-**Worked example A (replay):** Mallory observes a live receipt TXT record under Bob's PKARR
-key at label `_cprcpt-<abc...>` (D-06). Days later, Mallory injects the same TXT record back
-into the DHT (possible if Mallory runs DHT nodes). Alice runs `cipherpost receipts --from
-<b-z32>` and sees the replayed receipt. Unlike share replay, a replayed receipt is still
-validly signed by Bob — the signature does not expire.
+**Worked example A (replay):** Mallory observes a live receipt record at Bob's **derived key**
+`derive(bob_pub, share_ref)`, label `_cprcpt` (SPEC.md §3.8). Days later, Mallory injects the
+same record back into the DHT (possible if Mallory runs DHT nodes). Alice runs
+`cipherpost receipts --from <b-z32> --share-ref <ref>` and fetches the replayed receipt. Unlike
+share replay, a replayed receipt is still validly signed by Bob — the signature does not expire.
 
-**Worked example B (race):** Bob accepts two shares from different senders at nearly the same
-time. Both `publish_receipt` calls race: each resolves Bob's current SignedPacket, builds a
-new one with their new receipt, and publishes. Whichever wins the publish drops the other's
-receipt — a classic lost-update race. D-MRG-02 explicitly documents this as known-but-not-
-mitigated.
+**Worked example B (race) — ELIMINATED in v2.** In v1.1 two receipts under Bob shared his single
+parent-key packet (label `_cprcpt-<ref>`), so two near-simultaneous `publish_receipt` calls
+raced resolve-merge-republish and one could drop the other (a lost-update race, D-MRG-02). In v2
+each receipt is published under its **own** derived key `derive(bob_pub, share_ref)` — and since
+`share_ref = sha256(blob ‖ created_at)[..16]`, two distinct shares always yield distinct keys.
+Distinct single-writer keys never contend, so the lost-update race cannot occur; there is no
+merge and no CAS on the v2 receipt path.
 
-**Worked example C (receipt tamper):** Mallory flips a byte in a stored receipt TXT record
-in the DHT (possible if running a malicious DHT node + successfully racing the recipient's
-re-publication). Alice's `cipherpost receipts` fetches the mutated record and attempts to
-verify it.
+**Worked example C (receipt tamper):** Mallory flips a byte in the stored receipt record at Bob's
+derived key (possible if running a malicious DHT node + racing Bob's republication). Alice's
+`cipherpost receipts` fetches the mutated record and attempts to verify it.
 
 **Mitigations:**
-- `verify_receipt` uses `verify_strict` + round-trip-reserialize guard (canonicalization-
-  bypass defense). A tampered-byte receipt fails both Ed25519 verification and the JCS
-  re-serialize equality check; `Error::SignatureInner` (D-16 unified) is surfaced, the
-  specific receipt is skipped, and the rest of the listing continues. [D-RS-07, D-OUT-03]
-- `cipherpost receipts` counts and displays `fetched N receipt(s); M valid, K malformed,
-  L invalid-signature`; exit 0 if any receipt verifies; exit 3 if all present receipts fail
-  signature verification; exit 1 if only malformed; exit 5 if no receipts under `_cprcpt-`.
-  The warn-and-skip contract means one tampered receipt doesn't poison the entire listing.
-  [D-OUT-03, D-OUT-04, SPEC.md#5-flows]
-- Replay is contextually detectable because the Receipt's `accepted_at` field and `nonce`
-  (128-bit random, D-RS-03) make honest duplicates highly unlikely to collide; a re-published
-  receipt with identical `accepted_at` and `nonce` IS the same receipt. Multiple receipts for
-  the same `share_ref` from the same recipient public key are a policy signal to the sender
-  (unusual) but not a hard failure — the sender may inspect via `--share-ref <ref>`
-  audit-detail view. [D-RS-03, D-OUT-02, SPEC.md#34-receipt]
-- Concurrent-publish race (example B) is documented, not mitigated in code. Per the PITFALLS
-  traffic estimate (1–100 shares/week/user), concurrent receipts under the same identity are
-  vanishingly rare in skeleton use. Future `cipherpost republish-receipt` command (deferred
-  to v1.0+) would allow the sender to ask the recipient to retry. [D-MRG-02, D-SEQ-02]
+- `verify_receipt` uses `verify_strict` + round-trip-reserialize guard (canonicalization-bypass
+  defense), with the recipient pubkey supplied as **context** (v2: not read from the wire). A
+  tampered-byte receipt fails both Ed25519 verification and the JCS re-serialize equality check;
+  `Error::SignatureInner` (D-16 unified, exit 3) is surfaced. [D-RS-07]
+- `cipherpost receipts` in v2 fetches exactly one receipt at the requested `--share-ref`
+  (required) from `derive(recipient_pub, share_ref)`: exit 0 if it verifies, exit 3 if the
+  signature is invalid, exit 1 if the JSON is malformed, exit 5 (`NotFound`) if no record is at
+  that derived key. Defense-in-depth: the receipt's own `share_ref` must equal the requested one.
+  [D-OUT-03, SPEC.md §5.3]
+- Replay is inert. A replayed receipt is byte-identical to the genuine one (same `accepted_at`,
+  same signature), so it re-asserts a *true* attestation Bob really made — replay cannot fabricate
+  a handoff that did not happen. The v2 receipt has no `nonce` (dropped): the single-writer derived
+  key already makes each receipt's DHT address unique, and anti-synthesis rests on the fact that
+  only Bob's secret can sign at `derive(bob_pub, share_ref)`. Replay-detection-by-nonce is no
+  longer needed or present. [SPEC.md §3.4]
 - Publish failure on the recipient side is degraded to a stderr warning + exit 0 (material
-  delivered successfully; receipt loss is sender-visible degradation only). The recipient's
-  local ledger stays at `receipt_published_at: null`, recording the state for future retry.
+  delivered successfully; receipt loss is sender-visible degradation only). The recipient's local
+  ledger stays at `receipt_published_at: null`, recording the state for future retry.
   [D-SEQ-02, D-SEQ-04, D-STATE-01]
 
-**Residual risk:** The concurrent-publish race (example B) means that under genuinely
-concurrent acceptance on the same recipient's machine, one receipt may be lost from the DHT
-even though the recipient's local ledger records both acceptances. At skeleton scale this is
-rare enough to defer; if telemetry shows otherwise, the mitigation is a per-identity
-publish-lock or an optimistic-concurrency retry loop (tracked in 03-CONTEXT.md deferred).
+**Residual risk:** A validly-signed receipt can be re-injected at its derived key by anyone who
+harvested it (and knows the `share_ref`), and its signature never expires — but this only
+re-presents a true attestation, so it has no adversarial impact beyond the inherent
+handoff-graph exposure of §1. The v1.1 concurrent-publish lost-update race is gone (per-share
+derived keys), so there is no receipt-loss residual from concurrency.
 
 ## 8. Out of Scope Adversaries
 
 This threat model does **not** cover the following adversary classes. Defense against these
 is either provided by other layers (OS, hardware, cryptographic primitives' own security
-proofs) or is an explicit non-goal of cipherpost/v1.
+proofs) or is an explicit non-goal of cipherpost.
 
 - **Cryptographically-relevant quantum adversary.** Ed25519, X25519, ChaCha20-Poly1305, and
   SHA-256 are all pre-quantum primitives. A sufficiently large quantum computer breaks all
@@ -583,7 +598,7 @@ proofs) or is an explicit non-goal of cipherpost/v1.
   at upgrade time, subscribe to RustSec advisories. [SCAF-03, SCAF-04]
 - **Destruction attestation.** PRD lists destruction attestation as a v1.1 feature; not
   shipped in the skeleton. A compromised recipient who lies about having destroyed material
-  cannot be detected by cipherpost/v1.
+  cannot be detected by cipherpost.
 - **Long-term storage security** of the material after delivery. Once material leaves
   cipherpost's decrypt buffer, its lifecycle is the recipient's responsibility. Cipherpost is
   not a vault.
@@ -594,10 +609,13 @@ proofs) or is an explicit non-goal of cipherpost/v1.
 - **Timing side-channel attacks on `ed25519-dalek`, `age`, or Argon2id.** Cipherpost assumes
   the underlying crates are constant-time where necessary; independent verification is
   out of scope for this threat model. [CRYPTO-01]
-- **Receipt rotation / garbage collection under wire-budget pressure.** If a recipient
-  accumulates enough receipts under one identity to exceed the ~1000-byte SignedPacket
-  budget, `publish_receipt` surfaces `Error::WireBudgetExceeded`. Automatic pruning /
-  rotation is a v1.0+ operational feature. [D-MRG-06, D-ERR-01]
+- **Receipt accumulation under wire-budget pressure — LIFTED in v2.** In v1.1 all of a
+  recipient's receipts shared one ~1000-byte parent-key packet, so accumulation eventually
+  surfaced `Error::PacketBudgetExceeded` and needed rotation/GC. In v2 each receipt has its own
+  derived key `derive(recipient_pub, share_ref)` with its own packet (a single ~263–400 B
+  receipt is far under the per-packet budget), so a recipient can hold unboundedly many receipts
+  without contention. Records still age out at their DNS TTL; no rotation feature is needed.
+  (SPEC.md §3.8) [D-MRG-06]
 
 ## 9. Lineage
 

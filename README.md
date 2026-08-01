@@ -16,8 +16,8 @@ Cipherpost is a self-sovereign, serverless, accountless CLI for cryptographic-ma
     - `--pin` second-factor encryption (Argon2id+HKDF→X25519→age, no direct chacha20poly1305 calls)
     - `--burn` single-consumption mode with emit-before-mark state ledger
     - non-interactive automation via `--passphrase-file` / `--passphrase-fd`
-    - CAS-protected concurrent receipt publication with retry-and-merge contract
     - still unimplemented (deferred past v1.1): TUI wizard, non-interactive PIN input (`--pin-file`/`--pin-fd`), destruction attestation — the post-v1.1 effort went into experimental [large-payload support](#large-payloads-v2-experimental) instead
+- **v2 derived-key addressing (`PROTOCOL_VERSION = 2`).** Each share and each receipt is published under its own key `derive(parent_pub, share_ref)` (SPEC.md §3.8), rather than a shared label on the parent identity key. This lifts the v1.1 one-outstanding-share/receipt-per-key ceiling (a key held ~one record), makes receipts non-enumerable from a public identity, re-enables self-share receipts, and removes the receipt-publish CAS/merge machinery (single-writer keys). A clean break: v2 invalidates v1.1 shares/receipts.
 
 ## Quick start
 
@@ -74,12 +74,12 @@ Repeat runs on an already-accepted share report the prior acceptance timestamp a
 ### Verify receipts for shares you sent
 
 ```bash
-cipherpost receipts --from <recipient-z32>
+# v2: --share-ref is REQUIRED (receipts are addressed per-share, not enumerable)
 cipherpost receipts --from <recipient-z32> --share-ref <32-hex>
-cipherpost receipts --from <recipient-z32> --json
+cipherpost receipts --from <recipient-z32> --share-ref <32-hex> --json
 ```
 
-Fetches the recipient's PKARR packet, filters TXT records by the `_cprcpt-` prefix, verifies each receipt's Ed25519 signature, and renders a structured summary (or a 10-field audit-detail view when filtering by `--share-ref`).
+Derives the receipt's key `derive(recipient_pub, share_ref)` (SPEC.md §3.8), fetches the single receipt at that key, and verifies its Ed25519 signature (the recipient pubkey is supplied as verify context). Because receipts are addressed per-share, `--share-ref` is required — omitting it is an error; a recipient's receipts are not enumerable from their identity key (a v2 privacy property).
 
 ## Large payloads (v2, experimental)
 
@@ -146,7 +146,7 @@ DHT, sees only ciphertext, and a mismatched hash aborts receive with exit 3.
 - **Dual signatures verified before any decrypt.** Every share carries an outer PKARR-packet signature (SignedPacket) and an inner Ed25519 signature over canonical JSON (RFC 8785 / JCS). Tampering at either layer aborts `cipherpost receive` with exit 3 **before** age-decrypt runs, and no envelope field (including `purpose`) is displayed prior to that check.
 - **Explicit acceptance required.** The receiver is shown a full-fingerprint acceptance screen with the sender-attested purpose and must type the sender's z-base-32 pubkey to continue. Declining returns exit 7 with no material written.
 - **Tamper-zero-receipts.** A receipt is published to the DHT only after outer verify + inner verify + typed-z32 acceptance all succeed. Any byte-flip between outer verify and acceptance causes zero receipts to be published (integration-tested).
-- **Receipts are public — and reveal a handoff graph, but not its purpose.** A receipt is published *signed but not encrypted* under the recipient's key, so any DHT observer can see that a handoff occurred, between which two keys, and when (`sender_pubkey`, `recipient_pubkey`, `share_ref`, `accepted_at`). The share's descriptive **`purpose` is deliberately not in the receipt** (it would leak the *nature* of each handoff in cleartext, contradicting the envelope's encrypted metadata); it stays cryptographically bound via `cleartext_hash`. The residual sender↔recipient↔time graph is inherent to a public signed receipt — don't accept shares under an identity whose handoff graph must stay private. See [`THREAT-MODEL.md`](./THREAT-MODEL.md).
+- **Receipts are public but v2 shrinks what they expose.** A receipt is published *signed but not encrypted*, in v2 under the recipient's **derived key** `derive(recipient_pub, share_ref)` (SPEC.md §3.8). Its slim v2 schema is `{accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref, signature}` — **neither pubkey is a field** (both were dropped in v2) and there is no `nonce`. Because the key is blinded by `share_ref`, a passive observer who doesn't know the `share_ref` **cannot enumerate** a recipient's receipts from their identity key (a v2 privacy win over v1.1's `_cprcpt-*` records). The descriptive **`purpose` is deliberately not in the receipt** (it stays bound via `cleartext_hash`). Residual: a party holding both the recipient pubkey **and** the `share_ref` (the sender, or anyone with the URI) can locate and read the receipt — learning *that* a handoff was accepted and *when*. See [`THREAT-MODEL.md`](./THREAT-MODEL.md).
 - **Passphrase contract is non-interactive-first.** `CIPHERPOST_PASSPHRASE` env var, `--passphrase-file <path>` (mode 0600/0400), or `--passphrase-fd <fd>`. Argv-inline `--passphrase <value>` is rejected — it would leak via `ps`.
 - **Signature-failure errors are indistinguishable by design.** All outer/inner/canonical-mismatch verification failures share one identical user-facing message and exit 3 (defense against distinguishable-oracle attacks — see `THREAT-MODEL.md`).
 
@@ -173,7 +173,7 @@ Full taxonomy in [SPEC.md § Exit Codes](./SPEC.md#6-exit-codes).
 - [`SECURITY.md`](./SECURITY.md) — Vulnerability disclosure policy (GitHub Security Advisory, 90-day embargo)
 - [`cipherpost-prd.md`](./cipherpost-prd.md) — Original product requirements document
 
-All three protocol documents are kept current, including the v2-alpha large-payload additions (`SPEC.md` §Pitfall #22, `THREAT-MODEL.md` §10/§10.1). The v1 wire format is unchanged — v1.0 fixtures byte-identical; v1.1 pin/burn fields preserve v1.0 byte-shape via `is_false` skip-serializing-if; the v2 `Material::LargePayload` variant is additive.
+All three protocol documents are kept current, including v2 derived-key addressing (`SPEC.md` §3.8, §3.4, §8.4; `THREAT-MODEL.md` §1/§7) and the experimental `large-payload` additions (`SPEC.md` §Pitfall #22, `THREAT-MODEL.md` §10/§10.1). **v2 is a clean break from v1.1** — `PROTOCOL_VERSION` 1→2 changes every record's signed bytes and invalidates v1.1 shares/receipts; the "v1.0 byte-identity" lock-in is retired for v2. The `is_false` skip-serializing-if elision for pin/burn fields is preserved (those flags stay byte-absent when false), but v2 records are no longer byte-identical to v1.0.
 
 ## Architecture lineage
 
@@ -187,7 +187,7 @@ Cipherpost is a fork-and-diverge from mothballed [`cclink`](https://github.com/j
 - **`receive` acceptance is interactive-only.** Passphrase (and every other input) can be scripted, but the fingerprint-acceptance step — type the sender's z-base-32 pubkey to unlock decrypt — requires an interactive TTY on stdin + stderr, and there is no `--yes`/bypass flag. So *fully unattended* receive (a cron job or CI step with no human present) is **not** supported in v1: the accept step is deliberately human-in-the-loop so a person verifies the sender out-of-band before any plaintext is written. See [FAQ.md](FAQ.md).
 - **Non-interactive PIN input deferred.** PIN is intentionally a human-in-the-loop second factor. `--pin-file` / `--pin-fd` remain deferred, pending a concrete automation use case.
 - **Destruction attestation not implemented.** Originally scoped for PRD v1.1; deferred when v1.1 filled with PRD-closure scope, and still unimplemented. `--burn` is local-state-only (DHT ciphertext survives until TTL).
-- **One outstanding record per identity (packet budget).** PKARR gives each key a single ~1000-byte packet shared by every record under it. Real records are large (a share ~650 B, a receipt ~570 B), so any two exceed the budget — a key effectively holds one at a time. Consequently, if you have *received* a share (which publishes a receipt on your key), your next *send* can fail with `PacketBudgetExceeded` until that receipt ages out, and a recipient holds at most one outstanding receipt. Self-backup is unaffected: `send --self → receive` deliberately publishes no receipt. See [FAQ.md](FAQ.md) ("one outstanding receipt per identity"); a future per-`share_ref`/derived-key protocol change will lift the ceiling.
+- **One outstanding record per identity (packet budget) — LIFTED in v2.** In v1.1, PKARR's single ~1000-byte-per-key packet meant a key held effectively one large record: receiving a share (which published a receipt on your key) could make your next *send* fail with `PacketBudgetExceeded`, a recipient held at most one receipt, and self-shares skipped receipts to avoid colliding with the outgoing share. **v2 derived-key addressing removes this**: each share and each receipt is published under its own key `derive(parent_pub, share_ref)` (SPEC.md §3.8), so a key never shares a packet — a sender can have many outstanding shares, a recipient many receipts, and self-shares now publish a normal receipt. (The [FAQ.md](FAQ.md) "one outstanding receipt per identity" entry predates v2 and is superseded by this.)
 - **No identity import.** `cipherpost identity generate` is the only path; importing existing Ed25519 / SSH / age keys (`cipherpost identity import`) is planned for a future release.
 
 ## License
