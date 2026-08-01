@@ -167,16 +167,19 @@ pub enum Command {
     },
 
     /// Fetch signed receipts for shares you sent (phase 3)
-    #[command(long_about = "List and verify signed receipts.\n\nEXAMPLES:\n  \
-              cipherpost receipts --from <recipient-z32>\n  \
+    #[command(long_about = "Fetch and verify the signed receipt for one share.\n\n\
+              --share-ref is REQUIRED: receipts are addressed per-share at a key\n\
+              derived from (recipient pubkey, share_ref) and are not enumerable.\n\n\
+              EXAMPLES:\n  \
               cipherpost receipts --from <recipient-z32> --share-ref <32-hex>\n  \
-              cipherpost receipts --from <recipient-z32> --json")]
+              cipherpost receipts --from <recipient-z32> --share-ref <32-hex> --json")]
     Receipts {
         /// Recipient pubkey (z-base-32) to query
         #[arg(long)]
         from: String,
 
-        /// Filter by share_ref (32-char hex)
+        /// Receipt share_ref (32-char hex; required — v2 receipts are addressed
+        /// per-share, not enumerable). From the share URI you sent.
         #[arg(long)]
         share_ref: Option<String>,
 

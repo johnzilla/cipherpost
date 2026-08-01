@@ -2,12 +2,17 @@
 //! `docs/design/derived-key-addressing.md`.
 //!
 //! Single-hop stealth (Monero-subaddress-shape) derivation of a per-`share_ref`
-//! Ed25519 key from a parent identity key. This module is **pure key math**: it
-//! computes the derived key on both sides but does NOT sign or touch the wire
-//! (that is Phase 2). It is not yet wired into the send/receive flow (Phase 3).
+//! Ed25519 key from a parent identity key. Pure key math: it computes the derived
+//! key on both sides; signing is in `transport.rs` and the flow wires it in.
+//!
+//! **Canonical derivation input.** The API takes the `share_ref` as its 32-char
+//! lowercase-hex string (exactly as it appears in the URI) and decodes it to the
+//! raw 16-byte value INTERNALLY (`decode_share_ref`). The hash below is over those
+//! raw 16 bytes. Centralizing the decode means no call site can accidentally hash
+//! the ASCII-hex bytes and produce wrong (valid-signing but unresolvable) addresses.
 //!
 //! ```text
-//! t   = reduce_mod_ℓ( SHA-512( DERIVE_DOMAIN ‖ parent_pub ‖ share_ref ) )
+//! t   = reduce_mod_ℓ( SHA-512( DERIVE_DOMAIN ‖ parent_pub ‖ raw16(share_ref) ) )
 //! A'  = A + t·G          // public derivation — needs only the PUBLIC parent key
 //! a'  = a + t (mod ℓ)    // secret derivation — needs the parent seed
 //! ```
@@ -36,9 +41,27 @@ const DERIVE_DOMAIN: &[u8] = b"cipherpost/v2/derive-addr";
 /// Domain separation for the derived signing nonce prefix.
 const DERIVE_PREFIX_DOMAIN: &[u8] = b"cipherpost/v2/derive-prefix";
 
-/// The public address tweak `t = reduce_mod_ℓ(SHA-512(DOMAIN ‖ parent_pub ‖ share_ref))`.
-/// Public — depends only on public inputs.
-fn tweak(parent_pub: &[u8; 32], share_ref: &[u8]) -> Scalar {
+/// Decode the 32-char lowercase-hex `share_ref` (as it appears in the URI) into
+/// the raw 16-byte value that IS the canonical derivation input. Centralizing the
+/// decode here means no call site can accidentally derive over the ASCII-hex bytes
+/// instead of the 128-bit value (which would silently produce wrong addresses).
+fn decode_share_ref(share_ref_hex: &str) -> Result<[u8; 16], Error> {
+    if share_ref_hex.len() != 32 || !share_ref_hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(Error::Config(
+            "share_ref must be 32 lowercase-hex chars".into(),
+        ));
+    }
+    let mut out = [0u8; 16];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&share_ref_hex[i * 2..i * 2 + 2], 16)
+            .map_err(|_| Error::Config("share_ref is not valid hex".into()))?;
+    }
+    Ok(out)
+}
+
+/// The public address tweak `t = reduce_mod_ℓ(SHA-512(DOMAIN ‖ parent_pub ‖ share_ref))`,
+/// where `share_ref` is the raw 16-byte value. Public — depends only on public inputs.
+fn tweak(parent_pub: &[u8; 32], share_ref: &[u8; 16]) -> Scalar {
     let mut h = Sha512::new();
     h.update(DERIVE_DOMAIN);
     h.update(parent_pub);
@@ -88,19 +111,22 @@ impl DerivedSigner {
 /// The counterparty (recipient of a share, or sender fetching a receipt) uses
 /// this — no secret, no index. Errors if `parent_pub` is not a valid Edwards
 /// point.
-pub fn derive_public(parent_pub: &[u8; 32], share_ref: &[u8]) -> Result<[u8; 32], Error> {
+pub fn derive_public(parent_pub: &[u8; 32], share_ref_hex: &str) -> Result<[u8; 32], Error> {
+    let raw = decode_share_ref(share_ref_hex)?;
     let parent_point = CompressedEdwardsY(*parent_pub)
         .decompress()
         .ok_or_else(|| Error::Config("derive_public: parent key is not a valid point".into()))?;
-    let t = tweak(parent_pub, share_ref);
+    let t = tweak(parent_pub, &raw);
     let derived = parent_point + ED25519_BASEPOINT_TABLE * &t;
     Ok(derived.compress().to_bytes())
 }
 
 /// SECRET derivation: the full signing material for `(parent_seed, share_ref)`.
-/// Only the parent-secret holder can call this. Infallible (any 32-byte seed is a
-/// valid Ed25519 seed; `A' = a'·G` is always a valid point).
-pub fn derive_signer(parent_seed: &[u8; 32], share_ref: &[u8]) -> DerivedSigner {
+/// Only the parent-secret holder can call this. Errors only if `share_ref_hex` is
+/// not 32 lowercase-hex chars (the key math itself is infallible — any 32-byte
+/// seed is a valid Ed25519 seed and `A' = a'·G` is always a valid point).
+pub fn derive_signer(parent_seed: &[u8; 32], share_ref_hex: &str) -> Result<DerivedSigner, Error> {
+    let raw = decode_share_ref(share_ref_hex)?;
     // Parent expanded key: a = clamped scalar, master_prefix = nonce half.
     let sk = ed25519_dalek::SigningKey::from_bytes(parent_seed);
     let parent_pub = sk.verifying_key().to_bytes();
@@ -113,7 +139,7 @@ pub fn derive_signer(parent_seed: &[u8; 32], share_ref: &[u8]) -> DerivedSigner 
     let mut master_prefix = Zeroizing::new([0u8; 32]);
     master_prefix.copy_from_slice(&expanded[32..64]);
 
-    let t = tweak(&parent_pub, share_ref);
+    let t = tweak(&parent_pub, &raw);
     let mut a_prime = a + t;
     let public = (ED25519_BASEPOINT_TABLE * &a_prime).compress().to_bytes();
     let scalar = Zeroizing::new(a_prime.to_bytes());
@@ -124,16 +150,16 @@ pub fn derive_signer(parent_seed: &[u8; 32], share_ref: &[u8]) -> DerivedSigner 
     let mut ph = Sha512::new();
     ph.update(DERIVE_PREFIX_DOMAIN);
     ph.update(master_prefix.as_slice());
-    ph.update(share_ref);
+    ph.update(raw);
     let ph_out = ph.finalize();
     let mut prefix = Zeroizing::new([0u8; 32]);
     prefix.copy_from_slice(&ph_out[..32]);
 
-    DerivedSigner {
+    Ok(DerivedSigner {
         scalar,
         prefix,
         public,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -152,8 +178,9 @@ mod tests {
         for seed_byte in [0u8, 7, 0x5a, 0xff] {
             for ref_byte in [0x00u8, 0x11, 0xab] {
                 let seed = [seed_byte; 32];
-                let share_ref = [ref_byte; 16];
-                let signer = derive_signer(&seed, &share_ref);
+                // share_ref is the 32-char lowercase-hex form (as in the URI).
+                let share_ref = hex(&[ref_byte; 16]);
+                let signer = derive_signer(&seed, &share_ref).unwrap();
                 let parent_pub = ed25519_dalek::SigningKey::from_bytes(&seed)
                     .verifying_key()
                     .to_bytes();
@@ -173,18 +200,20 @@ mod tests {
     #[test]
     fn golden_vector_seed7_ref11() {
         let seed = [7u8; 32];
-        let share_ref = [0x11u8; 16];
+        // Hex form of [0x11; 16] — decodes back to the raw 16 bytes, so the pinned
+        // values below are unchanged by the hex-input API.
+        let share_ref = "11111111111111111111111111111111";
         let parent_pub = ed25519_dalek::SigningKey::from_bytes(&seed)
             .verifying_key()
             .to_bytes();
-        let a_prime_pub = derive_public(&parent_pub, &share_ref).unwrap();
+        let a_prime_pub = derive_public(&parent_pub, share_ref).unwrap();
         assert_eq!(
             hex(&a_prime_pub),
             "5af3abc0070698cedb92d1c16da7d2c1bdcbe9ea5bbfce9fba32d4d9d72155f5",
             "golden A' drift",
         );
         // Secret side produces the same public key + a deterministic scalar/prefix.
-        let signer = derive_signer(&seed, &share_ref);
+        let signer = derive_signer(&seed, share_ref).unwrap();
         assert_eq!(
             signer.public(),
             a_prime_pub,
@@ -212,7 +241,7 @@ mod tests {
             bad[0] = n;
             if CompressedEdwardsY(bad).decompress().is_none() {
                 assert!(
-                    derive_public(&bad, &[0u8; 16]).is_err(),
+                    derive_public(&bad, "00000000000000000000000000000000").is_err(),
                     "off-curve parent must yield Err",
                 );
                 return;
@@ -226,8 +255,8 @@ mod tests {
     #[test]
     fn distinct_share_refs_give_distinct_prefixes() {
         let seed = [3u8; 32];
-        let p1 = derive_signer(&seed, &[0x01u8; 16]);
-        let p2 = derive_signer(&seed, &[0x02u8; 16]);
+        let p1 = derive_signer(&seed, &hex(&[0x01u8; 16])).unwrap();
+        let p2 = derive_signer(&seed, &hex(&[0x02u8; 16])).unwrap();
         assert_ne!(p1.prefix(), p2.prefix());
         assert_ne!(p1.public(), p2.public());
         assert_ne!(p1.scalar_bytes(), p2.scalar_bytes());

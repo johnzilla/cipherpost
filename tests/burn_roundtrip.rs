@@ -47,7 +47,7 @@ fn count_receipts_for_share_ref(
     let recipient_pub = pkarr::PublicKey::try_from(recipient_z32)
         .expect("valid recipient z32")
         .to_bytes();
-    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex.as_bytes())
+    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex)
         .expect("derive receipt key");
     match transport.resolve_derived(&derived, cipherpost::DHT_LABEL_RECEIPT) {
         Ok(Some(_)) => 1,

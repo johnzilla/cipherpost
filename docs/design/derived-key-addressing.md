@@ -73,6 +73,12 @@ a'  = a + t   (mod ℓ)                                               // derived
 ```
 
 - `DOMAIN` = a fixed domain-separation string, e.g. `b"cipherpost/v2/derive-addr"`.
+- **`share_ref` in the hash is the RAW 16 bytes** — the 128-bit value decoded from
+  its 32-char lowercase-hex URI form. The `derive` API takes the hex string and
+  decodes it internally (`decode_share_ref`), so callers pass exactly what's in the
+  URI and cannot accidentally hash the ASCII-hex bytes (which would produce
+  valid-signing but unresolvable — silent-`NotFound` — addresses). **Frozen v2 wire
+  contract:** a re-implementation MUST hash the raw 16 bytes, not the hex string.
 - `t` is derived by hashing **public** inputs → anyone can compute `A'`
   (the no-index property). `t` is public.
 - `a'` is computable only by the parent-secret holder (needs `a`, which comes

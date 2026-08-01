@@ -109,7 +109,7 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
     let b_pub = pkarr::PublicKey::try_from(b_z32.as_str())
         .unwrap()
         .to_bytes();
-    let derived = cipherpost::derive::derive_public(&b_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let derived = cipherpost::derive::derive_public(&b_pub, &uri.share_ref_hex).unwrap();
     let receipt_json = {
         use cipherpost::transport::Transport;
         transport
@@ -148,8 +148,7 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
     let a_pub = pkarr::PublicKey::try_from(a_z32.as_str())
         .unwrap()
         .to_bytes();
-    let a_share_key =
-        cipherpost::derive::derive_public(&a_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let a_share_key = cipherpost::derive::derive_public(&a_pub, &uri.share_ref_hex).unwrap();
     let outer_rdata = {
         use cipherpost::transport::Transport;
         transport

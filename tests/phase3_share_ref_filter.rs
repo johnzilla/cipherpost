@@ -121,7 +121,7 @@ fn recipient_holds_multiple_receipts_one_per_share_ref() {
     // A's own outgoing shares also coexist, each at its own derived key.
     let a_pub = kp_a.public_key().to_bytes();
     for uri in &uris {
-        let key = cipherpost::derive::derive_public(&a_pub, uri.share_ref_hex.as_bytes()).unwrap();
+        let key = cipherpost::derive::derive_public(&a_pub, &uri.share_ref_hex).unwrap();
         assert!(
             transport
                 .resolve_derived(&key, cipherpost::DHT_LABEL_OUTER)

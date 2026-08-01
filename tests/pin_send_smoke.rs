@@ -170,8 +170,7 @@ fn pin_none_send_preserves_v1_blob_shape() {
     let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
         .unwrap()
         .to_bytes();
-    let derived =
-        cipherpost::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let derived = cipherpost::derive::derive_public(&sender_pub, &uri.share_ref_hex).unwrap();
     let rdata = transport
         .resolve_derived(&derived, cipherpost::DHT_LABEL_OUTER)
         .unwrap()

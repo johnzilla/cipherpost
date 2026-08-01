@@ -618,7 +618,7 @@ pub fn run_send(
                 //     (v2): the share gets its OWN one-record packet — no shared
                 //     budget, no merge, no CAS. The recipient derives the same key
                 //     from sender_pub + share_ref (both in the URI).
-                let signer = crate::derive::derive_signer(&sender_seed, share_ref.as_bytes());
+                let signer = crate::derive::derive_signer(&sender_seed, &share_ref)?;
                 let rdata =
                     serde_json::to_string(&record).map_err(|e| Error::Transport(Box::new(e)))?;
                 match transport.publish_derived(&signer, DHT_LABEL_OUTER, &rdata) {
@@ -778,7 +778,7 @@ pub fn run_receive(
     let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
         .map_err(|_| Error::NotFound)?
         .to_bytes();
-    let derived = crate::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes())?;
+    let derived = crate::derive::derive_public(&sender_pub, &uri.share_ref_hex)?;
     let rdata = transport
         .resolve_derived(&derived, DHT_LABEL_OUTER)?
         .ok_or(Error::NotFound)?;
@@ -786,8 +786,13 @@ pub fn run_receive(
         serde_json::from_str(&rdata).map_err(|_| Error::SignatureCanonicalMismatch)?;
     crate::record::verify_record(&record)?;
 
-    // STEP 4: URI/record share_ref match (D-URI-02)
-    if record.share_ref != uri.share_ref_hex {
+    // STEP 4: URI/record share_ref match (D-URI-02) + parent-binding. The derived
+    // location already proves the URI parent's secret holder published here, but a
+    // record's OWN pubkey/share_ref must also match the URI — else a URI could
+    // carry the attacker's z32 while replaying someone else's validly-signed record
+    // inside the attacker's derived packet (the banner would show the replayed
+    // sender). Refuse rather than leave it to the user to notice.
+    if record.share_ref != uri.share_ref_hex || record.pubkey != uri.sender_z32 {
         return Err(Error::ShareRefMismatch);
     }
 
@@ -1115,7 +1120,7 @@ pub fn run_receive(
         // v2: publish the receipt under derive(recipient_pub, share_ref) — its
         // OWN packet. The recipient IS this identity, so derive from its seed.
         let recipient_seed: [u8; 32] = *identity.signing_seed();
-        let signer = crate::derive::derive_signer(&recipient_seed, record.share_ref.as_bytes());
+        let signer = crate::derive::derive_signer(&recipient_seed, &record.share_ref)?;
         transport.publish_derived(&signer, crate::DHT_LABEL_RECEIPT, &receipt_json)?;
 
         // D-SEQ-05: append a second ledger row with receipt_published_at: Some(iso).
@@ -1175,7 +1180,7 @@ pub fn run_receipts(
     let recipient_pub = pkarr::PublicKey::try_from(from_z32)
         .map_err(|_| Error::NotFound)?
         .to_bytes();
-    let derived = crate::derive::derive_public(&recipient_pub, share_ref.as_bytes())?;
+    let derived = crate::derive::derive_public(&recipient_pub, share_ref)?;
     let raw = transport
         .resolve_derived(&derived, crate::DHT_LABEL_RECEIPT)?
         .ok_or(Error::NotFound)?;
@@ -1797,7 +1802,7 @@ mod large {
                 Ok(()) => {
                     // v2: manifest publishes under derive(sender_pub, share_ref).
                     let seed: [u8; 32] = *identity.signing_seed();
-                    let signer = crate::derive::derive_signer(&seed, share_ref.as_bytes());
+                    let signer = crate::derive::derive_signer(&seed, &share_ref)?;
                     let rdata = serde_json::to_string(&record)
                         .map_err(|e| Error::Transport(Box::new(e)))?;
                     match transport.publish_derived(&signer, DHT_LABEL_OUTER, &rdata) {
@@ -1843,14 +1848,14 @@ mod large {
         let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
             .map_err(|_| Error::NotFound)?
             .to_bytes();
-        let derived = crate::derive::derive_public(&sender_pub, uri.share_ref_hex.as_bytes())?;
+        let derived = crate::derive::derive_public(&sender_pub, &uri.share_ref_hex)?;
         let rdata = transport
             .resolve_derived(&derived, DHT_LABEL_OUTER)?
             .ok_or(Error::NotFound)?;
         let record: crate::record::OuterRecord =
             serde_json::from_str(&rdata).map_err(|_| Error::SignatureCanonicalMismatch)?;
         crate::record::verify_record(&record)?;
-        if record.share_ref != uri.share_ref_hex {
+        if record.share_ref != uri.share_ref_hex || record.pubkey != uri.sender_z32 {
             return Err(Error::ShareRefMismatch);
         }
         let now = now_unix_seconds()?;

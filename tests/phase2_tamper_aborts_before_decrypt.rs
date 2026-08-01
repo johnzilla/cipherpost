@@ -51,11 +51,8 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
     // src/transport.rs). The bad record lands in the store; the next
     // run_receive's transport.resolve() call will fail inner-sig verify.
     // v2: the share is at its derived key derive(sender_pub, share_ref).
-    let derived = cipherpost::derive::derive_public(
-        &kp.public_key().to_bytes(),
-        uri.share_ref_hex.as_bytes(),
-    )
-    .unwrap();
+    let derived =
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), &uri.share_ref_hex).unwrap();
     let good_rdata = {
         transport
             .resolve_derived(&derived, cipherpost::DHT_LABEL_OUTER)

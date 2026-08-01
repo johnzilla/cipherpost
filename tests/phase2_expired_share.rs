@@ -56,8 +56,7 @@ fn expired_share_aborts_with_error_expired_exit_2() {
     let transport = MockTransport::new();
     // v2: the share lives under its derived key; inject there so run_receive finds it.
     let derived =
-        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
-            .unwrap();
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), &share_ref).unwrap();
     let rdata = serde_json::to_string(&record).unwrap();
     transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &rdata);
 

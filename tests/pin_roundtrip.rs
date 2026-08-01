@@ -243,8 +243,7 @@ fn pin_required_share_with_no_pin_at_receive() {
     // v2: inject the (over-budget) PIN share at its derived key so run_receive
     // finds it (bypassing publish_derived's budget check).
     let derived =
-        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
-            .unwrap();
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), &share_ref).unwrap();
     let rdata = serde_json::to_string(&record).unwrap();
     transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &rdata);
 
@@ -387,8 +386,7 @@ fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
     // share_ref); receive as this identity (recipient) with the correct PIN. sender
     // != recipient, so step 13 publishes a receipt at derive(recipient_pub, share_ref).
     let derived_share =
-        cipherpost::derive::derive_public(&kp_s.public_key().to_bytes(), share_ref.as_bytes())
-            .unwrap();
+        cipherpost::derive::derive_public(&kp_s.public_key().to_bytes(), &share_ref).unwrap();
     let share_rdata = serde_json::to_string(&record).unwrap();
     transport.inject_derived_record_for_test(
         &derived_share,
@@ -412,8 +410,7 @@ fn pin_share_receipt_ciphertext_hash_covers_full_blob_incl_salt() {
 
     // Fetch the published receipt (at derive(recipient_pub, share_ref)) + check hash.
     let derived_receipt =
-        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
-            .unwrap();
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), &share_ref).unwrap();
     let receipt_json = transport
         .resolve_derived(&derived_receipt, cipherpost::DHT_LABEL_RECEIPT)
         .unwrap()

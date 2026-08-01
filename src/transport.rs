@@ -819,6 +819,11 @@ mod derived_tests {
             .to_bytes()
     }
 
+    // A 32-char lowercase-hex share_ref made of a single repeated byte.
+    fn ref_hex(b: u8) -> String {
+        (0..16).map(|_| format!("{b:02x}")).collect()
+    }
+
     /// R1 guard (design §10.2 / §12): pkarr's OWN signature over a builder-made
     /// packet must verify against transport's `bep44_signable()` — i.e. our
     /// replication of pkarr's PRIVATE BEP44 encoder is byte-exact. NON-ignored:
@@ -850,9 +855,9 @@ mod derived_tests {
     fn derived_publish_resolve_roundtrip() {
         let transport = MockTransport::new();
         let seed = [9u8; 32];
-        let share_ref = [0x22u8; 16];
+        let share_ref = ref_hex(0x22);
 
-        let signer = derive_signer(&seed, &share_ref);
+        let signer = derive_signer(&seed, &share_ref).unwrap();
         transport
             .publish_derived(&signer, LABEL, "derived-payload")
             .expect("publish under derived key");
@@ -869,7 +874,7 @@ mod derived_tests {
         );
 
         // A never-published key resolves to None (not an error).
-        let unused = derive_public(&parent_pub(&seed), &[0x33u8; 16]).unwrap();
+        let unused = derive_public(&parent_pub(&seed), &ref_hex(0x33)).unwrap();
         assert_eq!(transport.resolve_derived(&unused, LABEL).unwrap(), None);
     }
 
@@ -880,13 +885,13 @@ mod derived_tests {
         let transport = MockTransport::new();
         let seed = [4u8; 32];
         transport
-            .publish_derived(&derive_signer(&seed, &[0x01u8; 16]), LABEL, "one")
+            .publish_derived(&derive_signer(&seed, &ref_hex(0x01)).unwrap(), LABEL, "one")
             .unwrap();
         transport
-            .publish_derived(&derive_signer(&seed, &[0x02u8; 16]), LABEL, "two")
+            .publish_derived(&derive_signer(&seed, &ref_hex(0x02)).unwrap(), LABEL, "two")
             .unwrap();
-        let k1 = derive_public(&parent_pub(&seed), &[0x01u8; 16]).unwrap();
-        let k2 = derive_public(&parent_pub(&seed), &[0x02u8; 16]).unwrap();
+        let k1 = derive_public(&parent_pub(&seed), &ref_hex(0x01)).unwrap();
+        let k2 = derive_public(&parent_pub(&seed), &ref_hex(0x02)).unwrap();
         assert_eq!(
             transport.resolve_derived(&k1, LABEL).unwrap().as_deref(),
             Some("one")
@@ -902,7 +907,7 @@ mod derived_tests {
     #[test]
     fn oversized_derived_record_rejected() {
         let transport = MockTransport::new();
-        let signer = derive_signer(&[1u8; 32], &[0u8; 16]);
+        let signer = derive_signer(&[1u8; 32], &ref_hex(0x00)).unwrap();
         let err = transport
             .publish_derived(&signer, LABEL, &"x".repeat(1100))
             .unwrap_err();

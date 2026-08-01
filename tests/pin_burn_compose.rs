@@ -78,7 +78,7 @@ fn count_receipts_for_share_ref(
     let recipient_pub = pkarr::PublicKey::try_from(recipient_z32)
         .expect("valid recipient z32")
         .to_bytes();
-    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex.as_bytes())
+    let derived = cipherpost::derive::derive_public(&recipient_pub, share_ref_hex)
         .expect("derive receipt key");
     match transport.resolve_derived(&derived, cipherpost::DHT_LABEL_RECEIPT) {
         Ok(Some(_)) => 1,
@@ -502,8 +502,7 @@ fn wrong_pin_on_pin_burn_share_does_not_mark_burned_and_share_remains_re_receiva
     };
     // v2: inject the (over-budget) PIN share at its derived key so run_receive finds it.
     let derived =
-        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), share_ref.as_bytes())
-            .unwrap();
+        cipherpost::derive::derive_public(&kp.public_key().to_bytes(), &share_ref).unwrap();
     let rdata = serde_json::to_string(&record).unwrap();
     transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &rdata);
 

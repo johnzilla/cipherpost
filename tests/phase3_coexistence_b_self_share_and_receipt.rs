@@ -117,10 +117,8 @@ fn self_share_and_cross_receipt_coexist_on_separate_derived_keys() {
     }
 
     // 4. No collision: B's self-share AND the receipt both exist, distinct keys.
-    let self_share_key =
-        cipherpost::derive::derive_public(&b_pub, b_self.share_ref_hex.as_bytes()).unwrap();
-    let receipt_key =
-        cipherpost::derive::derive_public(&b_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let self_share_key = cipherpost::derive::derive_public(&b_pub, &b_self.share_ref_hex).unwrap();
+    let receipt_key = cipherpost::derive::derive_public(&b_pub, &uri.share_ref_hex).unwrap();
     assert_ne!(self_share_key, receipt_key, "distinct derived keys");
     assert!(
         transport
@@ -174,8 +172,7 @@ fn accrued_receipt_does_not_block_self_send() {
         false,
     )
     .expect("B receive");
-    let receipt_key =
-        cipherpost::derive::derive_public(&b_pub, uri.share_ref_hex.as_bytes()).unwrap();
+    let receipt_key = cipherpost::derive::derive_public(&b_pub, &uri.share_ref_hex).unwrap();
     assert!(
         transport
             .resolve_derived(&receipt_key, cipherpost::DHT_LABEL_RECEIPT)
@@ -187,7 +184,7 @@ fn accrued_receipt_does_not_block_self_send() {
     // 2. B self-sends → SUCCEEDS (own derived key; no collision).
     let self_share = send_share(&id_b, &transport, &kp_b, SendMode::SelfMode, b"b self 1");
     let self_share_key =
-        cipherpost::derive::derive_public(&b_pub, self_share.share_ref_hex.as_bytes()).unwrap();
+        cipherpost::derive::derive_public(&b_pub, &self_share.share_ref_hex).unwrap();
     assert!(
         transport
             .resolve_derived(&receipt_key, cipherpost::DHT_LABEL_RECEIPT)
