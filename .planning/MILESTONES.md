@@ -72,3 +72,15 @@
 - **Full milestone audit**: see `milestones/v1.1-MILESTONE-AUDIT.md` (status `passed`, 67/67 requirements satisfied, no critical blockers).
 
 ---
+
+## v2.0-alpha Derived-Key Addressing (Shipped: 2026-08-01)
+
+**Wire break:** `PROTOCOL_VERSION` 1 → 2; crate `1.2.0-alpha.1` → `2.0.0-alpha.1` (semver major — v1.1 and v2 URIs are mutually NotFound because they derive different keys). Tracked ad hoc post-GSD (reviewer findings verified then fixed, atomic commits to `main`); git range `7f1fbcf` → `b6c1122`.
+
+**Summary:** Lifted the v1.1 one-record-per-key packet-budget ceiling by publishing every share and every receipt under its OWN key `derive(parent_pub, share_ref)` — single-hop stealth blinding (`t = reduce_mod_ℓ(SHA-512("cipherpost/v2/derive-addr" ‖ A ‖ raw16(share_ref)))`, `A' = A + t·G`; pkarr cannot sign under a blinded seed-only key, so packets are BEP44 hand-signed via `ed25519-dalek::hazmat::raw_sign`, self-verified, and assembled through the public `from_relay_payload`). Consequences now live: many outstanding shares per sender and many receipts per recipient; self-receipts re-enabled (D-SEQ-06); `cipherpost receipts` requires `--share-ref` because receipts are no longer enumerable from a public identity (a privacy win — the derived key is blinded by `share_ref`); slim receipt schema `{accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref, signature}` with `verify_receipt` taking the recipient pubkey as verify context (`nonce` + both pubkeys dropped). The v1.1 parent-key `Transport` surface (`publish`/`resolve`/`publish_receipt`/`resolve_all_cprcpt`) and its merge-republish + CAS + `seq` machinery were deleted (~765 LOC net removed); `tests/real_dht_e2e.rs` was ported to a derived-key round trip. Docs fully aligned to v2: SPEC (new §3.8 derivation + §8.4 byte-exact golden vector, §3.4 slim receipt), THREAT-MODEL (§1/§7 receipt-privacy rewrite + the now-eliminated concurrent-publish race), README, FAQ, SECURITY, and CLAUDE.md. Full suite green under `cargo nextest run --all-features`; `cargo fmt --check` + `cargo clippy --all-targets --all-features -- -D warnings` clean; CI green at HEAD.
+
+**Reference / proof:** `docs/design/derived-key-addressing.md` (status IMPLEMENTED, all phases DONE) with byte-exact golden vectors pinned in `src/derive.rs::golden_vector_seed7_ref11` and `tests/derived_key_spike.rs`; SPEC.md §3.8 / §8.4.
+
+**Pending at close:** the manual real-DHT v2 evidence run (`RELEASE-EVIDENCE-v2.0.0-alpha.1.md`) has NOT been produced yet — the `real_dht_e2e` harness is ported, compiling, and triple-gated, but the against-Mainline execution is a release-tag-time gate (see RELEASE-CHECKLIST.md §Manual real-DHT gate), and no `v2.0.0-alpha.1` tag has been cut. No `v2-MILESTONE-AUDIT.md` exists (GSD retired; this entry + the design doc are the close record).
+
+---

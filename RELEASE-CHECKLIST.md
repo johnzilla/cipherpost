@@ -28,20 +28,29 @@
 - [ ] `cargo audit` — no advisories OR documented exceptions in `deny.toml`
 - [ ] `cargo deny check` — clean
 - [ ] `cargo test` (no features) — all green
-- [ ] `cargo test --features mock` — all green (>=311 tests for v1.1; bumps with each milestone)
+- [ ] `cargo test --features mock` — all green
 - [ ] `cargo test --doc` — doctests green
 - [ ] `lychee --offline SPEC.md THREAT-MODEL.md SECURITY.md README.md CLAUDE.md RELEASE-CHECKLIST.md` — no broken links
 
 ## Wire-format byte-count regression guard
 
 These fixtures are JCS-canonical bytes — any drift is a protocol-version-bump
-event. Run `wc -c tests/fixtures/<name>.bin` for each:
+event. Under v2 all record/envelope fixtures encode `protocol_version: 2`. Run
+`wc -c tests/fixtures/<name>.bin` for each:
 
-- [ ] `tests/fixtures/outer_record_signable.bin` — **192 bytes** (Phase 1; OuterRecord)
-- [ ] `tests/fixtures/receipt_signable.bin` — **424 bytes** (Phase 3; Receipt)
-- [ ] `tests/fixtures/envelope_jcs_generic_secret.bin` — **119 bytes** (Phase 1/2; Envelope generic-secret)
-- [ ] `tests/fixtures/outer_record_pin_required_signable.bin` — **212 bytes** (Phase 8 Plan 02; OuterRecord with pin_required=true)
-- [ ] `tests/fixtures/envelope_burn_signable.bin` — **142 bytes** (Phase 8 Plan 04; Envelope with burn_after_read=true)
+- [ ] `tests/fixtures/outer_record_signable.bin` — **192 bytes** (OuterRecord)
+- [ ] `tests/fixtures/outer_record_pin_required_signable.bin` — **212 bytes** (OuterRecord, pin_required=true)
+- [ ] `tests/fixtures/receipt_signable.bin` — **263 bytes** (Receipt; v2 slim schema — was 389 B pre-v2)
+- [ ] `tests/fixtures/envelope_jcs_generic_secret.bin` — **119 bytes** (Envelope, generic-secret)
+- [ ] `tests/fixtures/envelope_burn_signable.bin` — **142 bytes** (Envelope, burn_after_read=true)
+- [ ] `tests/fixtures/material_x509_signable.bin` — **626 bytes** (Envelope, x509_cert)
+- [ ] `tests/fixtures/material_pgp_signable.bin` — **376 bytes** (Envelope, pgp_key)
+- [ ] `tests/fixtures/material_ssh_signable.bin` — **620 bytes** (Envelope, ssh_key)
+- [ ] SPEC §8 test-vector signatures still match the fixtures — run
+      `cargo test --features mock gen_spec_test_vectors -- --ignored --nocapture`
+      and confirm the printed `OUTER_SIG_B64` / `RECEIPT_SIG_B64` equal SPEC.md
+      §8.1 / §8.2 verbatim (if a fixture legitimately changed, regenerate the
+      fixture AND re-run this to refresh the SPEC §8 signatures together).
 
 ## Manual real-DHT gate (DHT-03/04/05)
 
@@ -65,8 +74,9 @@ Pitfall C).
       after the v1.1.0 evidence run, see RELEASE-EVIDENCE-v1.1.0.md.)
 - [ ] Test passes within 900s OR skips with the canonical UDP-unreachable
       message (skip is not a release blocker; rerun on a permissive network)
-- [ ] Output observation: round trip completes; receipt count == 1 under
-      bob's z32 (BURN-04 invariant)
+- [ ] Output observation: round trip completes; the receipt is resolvable at the
+      derived key `derive(bob_pub, share_ref)` under label `_cprcpt` (v2: one record
+      per derived key, so presence == the BURN-04 one-receipt invariant)
 - [ ] Capture the run output as `RELEASE-EVIDENCE-v<X.Y.Z>.md` next to
       `RELEASE-EVIDENCE-v1.1.0.md` for audience-facing release records
 
@@ -80,10 +90,15 @@ Pitfall C).
 - [ ] Verify `chacha20poly1305` does NOT appear as a direct dep:
       `cargo tree | grep -E "^chacha20poly1305" || echo "PASS: chacha20poly1305 only via age"`
 - [ ] HKDF info-enumeration test green:
-      `cargo test --features mock --test hkdf_info_enumeration` — every call-site uses
-      `cipherpost/v1/<context>` prefix (CLAUDE.md load-bearing)
+      `cargo test --features mock --test hkdf_info_enumeration` — every HKDF call-site
+      uses the `cipherpost/v1/<context>` prefix (CLAUDE.md load-bearing). NOTE: the v2
+      derived-key domains (`cipherpost/v2/derive-addr`, `cipherpost/v2/derive-prefix`)
+      are intentionally OUT of this enumeration — they are raw-SHA-512 domain-separation
+      tags for §3.8 key blinding, NOT HKDF info strings, so the `cipherpost/v1/` prefix
+      invariant does not (and must not) apply to them. A future release must not
+      "discover" them as an enumeration failure.
 - [ ] Debug-leak scan green:
-      `cargo test --features mock --test leak_scan` — no `format!("{:?}", x)` on key
+      `cargo test --features mock --test debug_leak_scan` — no `format!("{:?}", x)` on key
       bytes contains the seed material
 
 ## Release artifacts
