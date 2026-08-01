@@ -104,8 +104,10 @@ Pitfall C).
 ## Release artifacts
 
 - [ ] Create git tag `v<version>` on the release commit
-- [ ] Update MILESTONES.md with the milestone close summary (one paragraph
-      per milestone; cite VERIFICATION.md for the proof)
+- [ ] Update `MILESTONES.md` (repo root — the living per-release close log) with
+      the milestone close summary (one paragraph per milestone; cite the proof —
+      a `.planning/milestones/<ver>-MILESTONE-AUDIT.md`, or for post-GSD milestones
+      the design doc + `RELEASE-EVIDENCE-v<X.Y.Z>.md`)
 - [ ] Snapshot this file as `RELEASE-CHECKLIST-v<version>.md` (ticked) at
       the release commit. The template stays unticked at `RELEASE-CHECKLIST.md`.
 

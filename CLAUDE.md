@@ -128,3 +128,9 @@ as reference for the v1.0/v1.1 decisions they captured (some load-bearing lock-i
 still cite `research/PITFALLS.md`; those invariants are enforced in **code + tests**, which
 are the real source of truth). Current work is tracked ad hoc — reviewer findings verified
 then fixed, atomic commits straight to `main`.
+
+**Exception — `MILESTONES.md` is a LIVING doc at repo root** (moved out of `.planning/` so
+the frozen-archive rule doesn't contradict RELEASE-CHECKLIST.md's "update MILESTONES.md" gate).
+It is the per-release close log and IS appended at each release. Everything else under
+`.planning/` stays frozen; the older `.planning/*` docs still reference MILESTONES.md at its
+former path — those are historical and not maintained.

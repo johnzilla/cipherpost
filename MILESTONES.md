@@ -32,7 +32,7 @@
 - **Test advisory `GHSA-36x8-r67j-hcw6`** left in draft state as a permanent reproducibility record of the disclosure-channel round-trip.
 - **Local dev lychee** pinned to 0.21.0 (project rustc 1.85.1 limit); future rustc bump will allow 0.23.0+.
 - **Traceability-table bookkeeping** — 29 rows in the archived `REQUIREMENTS.md` retained "Pending" labels although body checkboxes are checked and phase VERIFICATION reports confirm implementation. Archive reflects the live state at close.
-- **Full milestone audit**: see `milestones/v1.0-MILESTONE-AUDIT.md` (status `tech_debt`, zero truly-unsatisfied requirements).
+- **Full milestone audit**: see `.planning/milestones/v1.0-MILESTONE-AUDIT.md` (status `tech_debt`, zero truly-unsatisfied requirements).
 
 ---
 
@@ -58,7 +58,7 @@
 
 4. **Real-DHT release-acceptance gate + CAS retry-and-merge contract (Phase 9)** — `tests/cas_racer.rs` Barrier-synced two-thread racer (DHT-01/02) asserts exactly one publisher wins on first attempt under contention, the loser retries-and-merges, both receipts persist in the final PKARR state — runs deterministically in CI. Single-retry-then-fail CAS contract on `Transport::publish_receipt` (D-P9-A1); retry lives inside the trait method (D-P9-A2); `DhtTransport` and `MockTransport` mirror identical structure. `tests/real_dht_e2e.rs` cross-identity round trip behind `#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` + `#[serial]` triple-gate; 7-step exp-backoff `[1u64, 2, 4, 8, 16, 32, 64]` with in-test 120s deadline; UDP pre-flight against `router.bittorrent.com:6881`. CI never enables the feature. `RELEASE-CHECKLIST.md` (91 lines, 29 checkboxes) documents the manual real-DHT invocation as the per-release gate (D-P9-D2 + Pitfall #29). `tests/wire_budget_compose_pin_burn_pgp.rs` DHT-07 wire-budget composite asserts pin+burn+2KB GenericSecret produces clean `Error::WireBudgetExceeded { encoded: 5123, budget: 1000 }` at send. CLAUDE.md +3 load-bearing lock-ins (CAS retry contract; pkarr defaults only — no `CIPHERPOST_DHT_BOOTSTRAP` env var; real-DHT triple-gate discipline).
 
-5. **Solo-builder hygiene held end-to-end** — Zero "Pending" rows survive into v1.1 archive. Inline phase-tag traceability (DOC-03) is canonical; phase VERIFICATION.md files are authoritative. v1.1 Coverage Summary table (67 reqs) cross-referenced against three independent sources (REQUIREMENTS inline tags + phase VERIFICATION `requirements_covered:` + SUMMARY `requirements_completed:` frontmatter). 3-source check produced zero unsatisfied, zero orphaned. Audit verdict: **PASSED** (`milestones/v1.1-MILESTONE-AUDIT.md`).
+5. **Solo-builder hygiene held end-to-end** — Zero "Pending" rows survive into v1.1 archive. Inline phase-tag traceability (DOC-03) is canonical; phase VERIFICATION.md files are authoritative. v1.1 Coverage Summary table (67 reqs) cross-referenced against three independent sources (REQUIREMENTS inline tags + phase VERIFICATION `requirements_covered:` + SUMMARY `requirements_completed:` frontmatter). 3-source check produced zero unsatisfied, zero orphaned. Audit verdict: **PASSED** (`.planning/milestones/v1.1-MILESTONE-AUDIT.md`).
 
 **Known deferred items at close:**
 
@@ -69,7 +69,7 @@
 - **Fixture-regen reproducibility across OpenSSL versions (Phase 6)** — documentation-promise (`tests/fixtures/x509_cert_fixture.reproduction.txt`); no automated test asserts non-drift. Accepted as deferred.
 - **Non-interactive PIN input (`--pin-file`/`--pin-fd`)** — explicitly deferred to v1.2+ per DEFER-PIN; PIN is intentionally human-in-the-loop second factor.
 - **Destruction attestation workflow** (originally PRD v1.1) — shifted to v1.2+ because v1.1 filled up with PRD-closure scope.
-- **Full milestone audit**: see `milestones/v1.1-MILESTONE-AUDIT.md` (status `passed`, 67/67 requirements satisfied, no critical blockers).
+- **Full milestone audit**: see `.planning/milestones/v1.1-MILESTONE-AUDIT.md` (status `passed`, 67/67 requirements satisfied, no critical blockers).
 
 ---
 
