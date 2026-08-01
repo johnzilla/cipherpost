@@ -82,12 +82,12 @@ out-of-scope list):
   liveness-only limitations in THREAT-MODEL.md §3)
 - The reporter's own operating system, terminal emulator, or keyboard (keyloggers, shoulder
   surfing)
-- Quantum cryptanalysis — cipherpost/v1 is pre-quantum; post-quantum migration is a v2+
+- Quantum cryptanalysis — cipherpost is pre-quantum; post-quantum migration is a future
   consideration
 - Third-party key stores (OS keychains, HSMs) — not integrated through v1.1
 - Destruction attestation — deferred to v1.2+ per [`PROJECT.md`](./.planning/PROJECT.md)
   (originally PRD v1.1, shifted because v1.1 filled with PRD-closure scope);
-  cipherpost/v1 has no such mechanism, so there is nothing to attack yet
+  cipherpost has no such mechanism, so there is nothing to attack yet
 
 ## Safe Harbor
 

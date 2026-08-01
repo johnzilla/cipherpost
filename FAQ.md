@@ -64,19 +64,17 @@ See [`SPEC.md` §Pitfall #22](./SPEC.md) and the roadmap in the README.
 
 <details>
 
-<summary>My send failed with "packet over budget" but my secret is tiny — why? (One outstanding receipt per identity)</summary>
+<summary>Can a key only hold one share/receipt at a time? (The v1.1 packet-budget ceiling — LIFTED in v2)</summary>
 
-PKARR gives each key **one** ~1000-byte packet, shared by *every* record published under it — your outgoing share **and** every signed receipt you accrue when you *receive* a share from someone else. Real records are big: a share is ~650 bytes and a receipt is ~570 bytes, so **any two of them exceed the 1000-byte budget**. In practice a key can hold about **one** record at a time.
+**No longer — v2 lifts this.** In **v1.1**, PKARR gave each key **one** ~1000-byte packet shared by *every* record under it — your outgoing share **and** every receipt you accrued when you received a share. Real records are big (a share ~650 B, a receipt ~570 B), so any two exceeded the budget and a key held about **one** record at a time. That produced the old "packet over budget" failure on a *send* right after you'd *received* something, a one-receipt cap per recipient, and a deliberate skip of self-share receipts (to avoid colliding with your outgoing share).
 
-The consequence: if you have **received** a share from someone (which publishes a receipt on your key), your next **send** can fail with `PacketBudgetExceeded` — "packet over budget … because of accumulated records under this key." This is **not** about your payload size (a tiny secret fails just the same); it's the accumulated receipt colliding with your outgoing share. Likewise, a recipient can hold at most **one** receipt — a second received share's receipt is dropped (logged, non-fatal).
+**v2 derived-key addressing removes the ceiling.** Each share and each receipt is now published under its **own** key `derive(parent_pub, share_ref)` (see [`SPEC.md` §3.8](./SPEC.md)), so nothing shares a packet:
 
-What this means in practice:
+- **A sender can have many outstanding shares** — a new send no longer overwrites or collides with a prior one.
+- **A recipient can hold many receipts** — one per share received; no "first receipt wins" cap.
+- **Self-shares now publish a normal receipt.** `send --self → receive` produces a personal audit receipt (fetch it with `receipts --from <your-z32> --share-ref <ref>`); it can't collide with your outgoing share because they live at different derived keys.
 
-- **Self-backup is unaffected.** `send --self → receive` deliberately does **not** publish a receipt (a receipt to yourself proves nothing), so repeated self-backup cycles never accumulate and never hit this.
-- **Cross-identity receiving is capped at one outstanding receipt.** If you receive from multiple senders, only the first receipt persists on your key until it expires.
-- **Workaround:** wait for the older share/receipt to age out of the DHT (it clears within hours — records aren't re-announced; see the DHT-persistence question), or use a separate identity for high-volume receiving.
-
-This is a known ceiling of the single-packet-per-key model. A future protocol change (per-`share_ref` / derived-key packets) will lift it.
+A *send* can still fail with `Error::WireBudgetExceeded` if a **single** record is too big for the ~1000-byte budget (realistic typed X.509/PGP/SSH material — see the max-payload question and the `large-payload` feature), but that is about one record's size, not accumulation across records.
 
 </details>
 
@@ -158,7 +156,7 @@ Simply copy `~/.cipherpost/secret_key` to a secure location (encrypted USB, pass
   
 <summary>Is Cipherpost production-ready?</summary>
 
-As of v1.1 (shipped 2026-04-26), the full PRD v1 scope ships: the core protocol, all four typed payload variants (`GenericSecret`, `X509Cert`, `PgpKey`, `SshKey`), `--pin` and `--burn` encryption modes, non-interactive automation, and CAS-protected receipt publication. 326 tests pass under `cargo nextest run --features mock` (338 under `--all-features`); the full PRD v1 requirement set is validated across v1.0 + v1.1.
+As of v1.1 (shipped 2026-04-26), the full PRD v1 scope ships: the core protocol, all four typed payload variants (`GenericSecret`, `X509Cert`, `PgpKey`, `SshKey`), `--pin` and `--burn` encryption modes, and non-interactive automation. The repo is now at crate `1.2.0-alpha` with **v2 derived-key addressing** (`PROTOCOL_VERSION = 2`), which publishes each share and receipt under its own key and lifts the v1.1 one-record-per-key ceiling (see the packet-budget question above). 335 tests pass under `cargo nextest run --features mock` (347 under `--all-features`); the full PRD v1 requirement set is validated across v1.0 + v1.1.
 
 Larger payloads shipped **experimentally** in v2-alpha (the off-by-default `large-payload` feature, `--self`-only — the crate is now `1.2.0-alpha.1`); full cross-identity large payloads, signed receipts for large pickup, key import, multiple identities, and destruction attestation remain deferred. The v1 core is suitable for careful use. The v1.1.0 cross-identity round trip has been validated against real Mainline DHT — both via a manual CLI demo and the automated regression test, both passing on the same network with no mocks involved. Evidence is checked in at [`RELEASE-EVIDENCE-v1.1.0.md`](./RELEASE-EVIDENCE-v1.1.0.md). Future releases automatically re-run the same gate via the tag-push workflow at [`.github/workflows/release-acceptance.yml`](./.github/workflows/release-acceptance.yml), so each public version publishes its own real-DHT evidence next to the tag.
 

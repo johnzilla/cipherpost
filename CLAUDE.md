@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-**v1.1 (full PRD v1) shipped 2026-04-26; repo is now at crate `1.2.0-alpha.1` with an experimental, off-by-default `large-payload` (v2-alpha) feature.** (v1.0 walking skeleton shipped 2026-04-22.) The repo is a single Rust crate (`cipherpost`) that builds a CLI binary. MIT-licensed. No shared `cipherpost-core` crate — that was considered and explicitly rejected at project kickoff (cclink is mothballed, no second consumer exists to justify the split).
+**v1.1 (full PRD v1) shipped 2026-04-26; repo is now at crate `1.2.0-alpha.1` with (a) v2 derived-key addressing — `PROTOCOL_VERSION = 2`, each share/receipt under its own key `derive(parent_pub, share_ref)` (SPEC.md §3.8) — and (b) an experimental, off-by-default `large-payload` feature.** (v1.0 walking skeleton shipped 2026-04-22.) **v2 is a clean break from v1.1:** the 1→2 bump changed every record's signed bytes and retired the "v1.0 byte-identity" lock-in; the derived-key redesign lifted the one-record-per-key packet-budget ceiling and re-enabled self-receipts. The repo is a single Rust crate (`cipherpost`) that builds a CLI binary. MIT-licensed. No shared `cipherpost-core` crate — that was considered and explicitly rejected at project kickoff (cclink is mothballed, no second consumer exists to justify the split).
 
 Build / test / lint commands:
 
 ```bash
 cargo build --release                  # release binary: ./target/release/cipherpost
 cargo test                             # unit + doc tests (no DHT-touching tests)
-cargo test --features mock             # + MockTransport integration tests (326 tests; 338 with --all-features)
+cargo test --features mock             # + MockTransport integration tests (335 tests; 347 with --all-features)
 cargo nextest run --all-features       # CI's runner (nextest); doctests run separately via `cargo test --doc`
 cargo fmt --check                      # CI-enforced
 cargo clippy -- -D warnings            # CI-enforced
@@ -42,7 +42,7 @@ The delta from cclink (v1.0 walking skeleton + v1.1 full PRD v1):
 
 1. Typed payload schema — `Envelope { protocol_version, created_at, ttl_seconds, purpose, material }`. All four `Material` variants — `GenericSecret`, `X509Cert`, `PgpKey`, `SshKey` — are implemented (typed variants shipped v1.1). A fifth, `LargePayload`, is behind the off-by-default `large-payload` feature (v2-alpha). Realistic typed inputs often exceed the 1000-byte wire budget and surface `WireBudgetExceeded` cleanly.
 2. Explicit acceptance step — recipient sees a full-fingerprint acceptance screen on stderr and must type the sender's z-base-32 pubkey to unlock decrypt.
-3. Signed receipt — recipient-signed `Receipt` published to the recipient's own PKARR key at DNS label `_cprcpt-<share_ref>` via resolve-merge-republish (coexists with outgoing shares, no clobber). Fetched + verified by the sender via `cipherpost receipts --from <z32>`.
+3. Signed receipt — recipient-signed `Receipt` published (v2) under the recipient's **derived key** `derive(recipient_pub, share_ref)` at fixed DNS label `_cprcpt`, a single-writer single-record packet (no merge, no CAS). Fetched + verified by the sender via `cipherpost receipts --from <z32> --share-ref <ref>` (v2: `--share-ref` REQUIRED — receipts are addressed per-share, not enumerable). The recipient pubkey is passed to `verify_receipt` as context, not read from the slim receipt. (v1.1 used `_cprcpt-<share_ref>` on the recipient's bare key via resolve-merge-republish; superseded by §3.8.)
 4. CLI surface focused on key/secret handoff (`send --self | --share`, `receive`, `receipts`, `identity generate/show`, `version`).
 
 **Repo layout (locked):** Fully independent, fork-and-diverge. No shared `cipherpost-core` crate — will only be extracted if a second consumer appears.
@@ -72,15 +72,19 @@ These are hard constraints from the PRD, not suggestions. Reject approaches that
 - `--pin` and `--burn` encryption modes
 - All four `Material` variants: `GenericSecret`, `X509Cert`, `PgpKey`, `SshKey` (realistic typed inputs may exceed the 1000-byte wire budget → clean `WireBudgetExceeded`)
 - Non-interactive passphrase automation (`CIPHERPOST_PASSPHRASE` / `--passphrase-file` / `--passphrase-fd`)
-- CAS-protected receipt publication (single-retry merge-republish)
+- CAS-protected receipt publication (single-retry merge-republish) — *superseded in v2 by single-writer derived-key receipts; now legacy, see below*
 - Real-DHT cross-identity release-acceptance test (`tests/real_dht_e2e.rs`; manual + tag-gated, never per-commit CI)
+
+**Shipped in v2 (derived-key addressing; `PROTOCOL_VERSION = 2`, crate `1.2.0-alpha.1`):**
+- Each share and each receipt published under its own key `derive(parent_pub, share_ref)` — single-hop stealth blinding, `DERIVE_DOMAIN = "cipherpost/v2/derive-addr"`, hashing the RAW 16 bytes of the `share_ref` (SPEC.md §3.8; `src/derive.rs`, `src/transport.rs::build_derived_signed_packet`). Lifts the v1.1 one-record-per-key packet-budget ceiling: many outstanding shares/receipts per identity.
+- Slim receipt schema `{accepted_at, ciphertext_hash, cleartext_hash, protocol_version, share_ref, signature}` — dropped `nonce` + both pubkeys; `verify_receipt(receipt, recipient_pub_z32)` takes the recipient pubkey as context. `receipts` now REQUIRES `--share-ref` (per-share, non-enumerable).
+- Self-receipts RE-ENABLED (D-SEQ-06); the receipt no longer collides with the sender's outgoing share.
 
 **Shipped in v2-alpha (experimental, off-by-default `large-payload` feature; crate `1.2.0-alpha.1`):**
 - `send-large --self` / `receive-large` — manifest-on-DHT + ciphertext blob on a self-hosted pubky homeserver (`CIPHERPOST_HS` required, no default). `--self` only; large-payload receipts not wired.
-- Hardening since v1.1: self-receipts skipped, `Error::PacketBudgetExceeded`, receipt `purpose` removed from the DHT (privacy), `CIPHERPOST_HS` required, `--dht-timeout` wired, homeserver-client timeouts, opportunistic lock-dir GC.
+- Hardening since v1.1: `Error::PacketBudgetExceeded` (single oversized record on the send path), receipt `purpose` removed from the DHT (privacy), `CIPHERPOST_HS` required, `--dht-timeout` wired, homeserver-client timeouts, opportunistic lock-dir GC. (The v2-alpha "self-receipts skipped" stopgap was superseded when derived-key addressing re-enabled them.)
 
 **Deferred:**
-- Structural receipt/packet redesign — per-`share_ref` / derived-key packets so a key isn't capped at ~one record (the packet-budget ceiling)
 - Cross-identity `--share` for large payloads; large-payload signed receipts
 - TUI wizard; exportable audit log for compliance evidence; destruction attestation workflow; multi-recipient broadcast shares; HSM sender-side generation; identity import
 
@@ -91,7 +95,7 @@ These are hard constraints from the PRD, not suggestions. Reject approaches that
 
 Breaking any of these requires a protocol version bump. Don't touch without understanding why:
 
-- Canonical JSON = **RFC 8785 (JCS) via `serde_canonical_json`** (shipped as 1.0.0 — API-compatible with the planned 0.2). `serde_json` alone is **not** canonical. Fixtures: `tests/fixtures/outer_record_signable.bin` (192 B), `tests/fixtures/receipt_signable.bin` (389 B — was 424 B before `purpose` was removed from the receipt in 1.2.0-alpha for DHT-cleartext privacy; regenerate via `phase3_receipt_canonical_form --ignored regenerate_fixture` and re-run `gen_spec_test_vectors` for the SPEC §8 sig). Property tests enforce byte-for-byte determinism.
+- Canonical JSON = **RFC 8785 (JCS) via `serde_canonical_json`** (shipped as 1.0.0 — API-compatible with the planned 0.2). `serde_json` alone is **not** canonical. Fixtures (all encode `protocol_version: 2` under v2): `tests/fixtures/outer_record_signable.bin` (192 B), `tests/fixtures/receipt_signable.bin` (**263 B** — v2 slim schema; was 389 B in v1.x after `purpose` removal, dropped further when `nonce` + both pubkeys were removed at v2). Regenerate the receipt fixture via `phase3_receipt_canonical_form --ignored regenerate_fixture` and re-run `gen_spec_test_vectors` for the SPEC §8 sigs; the `PROTOCOL_VERSION` 1→2 bump also regenerated the 5 Envelope fixtures + both outer-record fixtures (they carry the const). Property tests enforce byte-for-byte determinism.
 - HKDF info strings = **`cipherpost/v1/<context>`**. Never empty, never `None`. An enumeration test walks every HKDF call-site and asserts the prefix. Phase 8 added `cipherpost/v1/pin` to the enumeration; the PIN-derived 32-byte X25519 scalar is wrapped into an `age::x25519::Identity` for nested encryption — `chacha20poly1305 only via age` invariant unchanged.
 - Argon2id params live in the **identity file header (PHC string)** — never hardcoded in code.
 - `chacha20poly1305` usage only via `age` — no direct calls allowed.
@@ -108,7 +112,8 @@ Breaking any of these requires a protocol version bump. Don't touch without unde
 - `share_ref` = 128-bit; derived as `sha256(ciphertext || created_at_be).truncate(16)`. Hex-encoded on the wire.
 - Passphrase contract: argv-inline (`--passphrase <value>`) is rejected. Use `CIPHERPOST_PASSPHRASE` env, `--passphrase-file <path>` (mode 0600/0400), or `--passphrase-fd <fd>`.
 - `serial_test = "3"` + `#[serial]` on any test that mutates process env (`CIPHERPOST_HOME`, etc.) — nextest parallel runner will race otherwise.
-- Single-retry-then-fail CAS contract on `publish_receipt`. Both `MockTransport` and `DhtTransport` implement the contract; the retry loop lives **inside** the `Transport` trait method (caller never sees `CasConflict`). `MockTransport` models CAS via per-key `seq: u64` (matches `pkarr::Timestamp` semantics behaviorally). All three `pkarr::errors::ConcurrencyError` variants (`ConflictRisk`, `NotMostRecent`, `CasFailed`) are treated as the conflict signal. Final-conflict failures collapse into `Error::Transport` — **no public `Error::CasConflict` variant** (error-oracle hygiene; Pitfall #16). CAS-retry events log to stderr only when `CIPHERPOST_DEBUG=1` (default-silent). Tests: `tests/cas_racer.rs` exercises the trait-internal retry under Barrier-synced contention; do not relax `#[serial]`.
+- **v2 derived-key addressing (`PROTOCOL_VERSION = 2`).** `A' = A + t·G` where `t = reduce_mod_ℓ(SHA-512(DERIVE_DOMAIN ‖ A ‖ raw16(share_ref)))`, `DERIVE_DOMAIN = "cipherpost/v2/derive-addr"` (nonce-prefix domain `"cipherpost/v2/derive-prefix"`). **Frozen contract: hash the RAW 16 bytes decoded from the hex `share_ref`, never the 32 ASCII-hex chars** (hashing hex → valid-signing but unresolvable silent-`NotFound`). pkarr can't sign under a blinded seed-only key, so packets are hand-signed: BEP44 `signable(ts,v)` → `hazmat::raw_sign::<Sha512>({scalar: a', hash_prefix: prefix'}, .., &A')` → **self-verify** → `SignedPacket::from_relay_payload`. Inner Ed25519 sig is still by the parent IDENTITY key; only the outer BEP44 packet uses `A'`. Golden vector: `src/derive.rs::golden_vector_seed7_ref11` (seed `[7;32]`, ref `[0x11;16]` → `A' = 5af3abc0…155f5`); SPEC.md §3.8 + §8.4. Shared `src/derive.rs` code path for public + secret derivation (mock parity).
+- **CAS on `publish_receipt` is LEGACY under v2** (single-retry-then-fail merge-republish; `MockTransport` per-key `seq: u64`; all three `pkarr::errors::ConcurrencyError` variants → `Error::Transport`, no public `Error::CasConflict`; Pitfall #16). The v2 live flow uses `publish_derived` (single-writer, single-record, **no CAS**), so `Transport::publish` / `publish_receipt` / `resolve_all_cprcpt` + the merge/CAS/`seq` machinery are retained but **unused by the live flow, pending removal**; `tests/cas_racer.rs` still exercises the trait-internal retry (`#[serial]`). `tests/real_dht_e2e.rs` still validates v1.1 parent-key addressing and needs porting to a derived-key round trip.
 - No `CIPHERPOST_DHT_BOOTSTRAP` env var in v1.1 — pkarr defaults only (4 Mainline hosts: `router.bittorrent.com:6881`, `dht.transmissionbt.com:6881`, `dht.libtorrent.org:25401`, `relay.pkarr.org:6881`). `pkarr::ClientBuilder::bootstrap` exists (verified `pkarr-5.0.4/src/client/builder.rs:164`) but is intentionally NOT exercised; revisiting requires a v1.2+ milestone gate.
 - Real-DHT tests behind `#[cfg(feature = "real-dht-e2e")]` + `#[ignore]` + `#[serial]`; CI never runs `--features real-dht-e2e`. The test file is `tests/real_dht_e2e.rs` (single test, single file per Pitfall #29). Outer guard via `.config/nextest.toml` `slow-timeout = { period = "60s", terminate-after = 2 }` paired with an in-test `Instant::now() >= deadline` check at 120s. RELEASE-CHECKLIST.md manual invocation is the only gate (D-P9-D2). Stable cargo has no `--test-timeout` flag — use `cargo nextest run --features real-dht-e2e --run-ignored only --filter-expr 'test(real_dht_e2e)'`.
 
