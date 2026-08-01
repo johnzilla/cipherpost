@@ -1,16 +1,21 @@
 # Cipherpost Protocol Specification
 
-> **Status: DRAFT — current through v1.1 Real v1 (shipped 2026-04-26), plus experimental v2-alpha large-payload additions (crate `1.2.0-alpha.1`; see §Pitfall #22)**
+> **Status: DRAFT — current through v2 derived-key addressing (`PROTOCOL_VERSION = 2`, crate `1.2.0-alpha`), which supersedes the v1.1 Real v1 wire format (shipped 2026-04-26). Also covers the experimental, off-by-default `large-payload` feature (see §Pitfall #22).**
 >
 > This document describes the protocol as shipped through v1.0 Walking Skeleton (Phases 1–4)
-> and v1.1 Real v1 (Phases 5–9), covering all four `Material` variants, `--pin` / `--burn`
-> encryption modes, non-interactive automation, and CAS-protected receipt publication.
+> and v1.1 Real v1 (Phases 5–9) — all four `Material` variants, `--pin` / `--burn` encryption
+> modes, non-interactive automation — **and the v2 derived-key addressing redesign**, in which
+> each share and each receipt is published under its own key `derive(parent_pub, share_ref)`
+> rather than under a shared `_cipherpost` / `_cprcpt-<ref>` label on the parent key (§3.8).
 > Wire-format decisions documented here are **stable** — changes require a protocol version bump.
-> v1.0 fixtures remain byte-identical; v1.1 additive fields preserve v1.0 byte-shape via
-> `#[serde(skip_serializing_if = "is_false")]`. Editorial polish across the full v1.x scope
+> **v2 is a clean break from v1.1: the `PROTOCOL_VERSION` 1→2 bump invalidates every previously
+> issued share and receipt, and the "v1.0 byte-identity" lock-in is retired for v2** (records now
+> encode `protocol_version: 2`, changing their signed bytes). The `#[serde(skip_serializing_if =
+> "is_false")]` elision for `pin_required` / `burn_after_read` is preserved so those flags stay
+> byte-absent when false — but v2 records are no longer byte-identical to v1.0. Editorial polish
 > continues.
 
-**Protocol version:** `cipherpost/v1`
+**Protocol version:** `cipherpost/v2` (`PROTOCOL_VERSION = 2`)
 **License:** MIT (see `LICENSE`)
 
 ## Table of Contents
@@ -81,10 +86,17 @@ and provides attestation that the recipient accepted the specific share at a spe
   `pkarr (>= 5.0.0)`; see `Cargo.toml` for the exact pin in effect.
 - **sender-attested purpose** — the human-readable `purpose` string is signed by the sender
   but is NOT independently verified by any third party (D-WIRE-05, PITFALL #12).
-- **Share** — one published `OuterRecord` carrying an age-encrypted payload.
-- **share_ref** — 128-bit share identifier, 32-char lowercase hex (D-06, PAYL-05).
-- **Receipt** — signed attestation published by the recipient under their own PKARR key after
-  successful acceptance (D-RS-01..07).
+- **derived key (blinded key)** — a per-record key `A' = derive(parent_pub, share_ref)`
+  computed by single-hop stealth blinding (§3.8). v2 addresses each share under
+  `derive(sender_pub, share_ref)` and each receipt under `derive(recipient_pub, share_ref)`,
+  giving every record its own PKARR packet. The tweak is derived from public inputs, so the
+  counterparty derives the same key with no discovery index.
+- **Share** — one published `OuterRecord` carrying an age-encrypted payload (v2: published
+  under the sender's derived key `derive(sender_pub, share_ref)`).
+- **share_ref** — 128-bit share identifier, 32-char lowercase hex (D-06, PAYL-05). In v2 it is
+  also the per-record derivation input for §3.8 addressing.
+- **Receipt** — signed attestation published by the recipient after successful acceptance
+  (D-RS-01..07). v2: published under the recipient's derived key `derive(recipient_pub, share_ref)`.
 - **z-base-32** — the encoding used by PKARR for public keys. An Ed25519/PKARR public key
   encodes as exactly 52 z-base-32 characters.
 
@@ -124,14 +136,17 @@ ceiling surfaces `Error::WireBudgetExceeded` at publish time (§3.3, §3.4, §5.
 configuration is exposed in this milestone. Future milestones may revisit if private-
 testnet support is requested (see CLAUDE.md §Load-bearing lock-ins).
 
-**CAS contract on `publish_receipt` (Phase 9 lock-in):** `cas` semantics on
-`publish_receipt` are contractual: implementations MUST single-retry-then-fail on
-`pkarr::errors::ConcurrencyError` (`ConflictRisk` / `NotMostRecent` / `CasFailed` —
-all three are conflict-class signals per pkarr 5.0.4). Final-conflict failures
-surface via `Error::Transport` (no public `Error::CasConflict` variant — error-oracle
-hygiene per Pitfall #16). The retry loop lives inside the `Transport` trait method;
-callers see `Ok(())` or final `Err`. Divergence from this contract requires a
-`protocol_version` bump.
+**Receipt publication — no CAS in v2 (supersedes the v1.1 `publish_receipt` CAS
+contract):** Under v2 derived-key addressing (§3.8) each receipt is published under its
+own key `derive(recipient_pub, share_ref)`, which is written by a single writer and holds a
+single record. There is therefore **no resolve-merge-republish and no compare-and-swap** on
+the v2 receipt path — the concurrency that the v1.1 CAS contract guarded (multiple records
+merged under one parent packet) cannot arise. *(Historical: v1.1 published receipts under the
+recipient's parent key at `_cprcpt-<share_ref>` and required implementations to
+single-retry-then-fail on `pkarr::errors::ConcurrencyError` inside the `Transport` method,
+collapsing final conflicts into `Error::Transport` with no public `Error::CasConflict`
+variant per Pitfall #16. The legacy `publish_receipt` / `resolve_all_cprcpt` trait methods
+are retained but unused by the v2 flow.)*
 
 ### 3.1 Envelope
 
@@ -149,7 +164,7 @@ crypto; SignedPacket > wire budget aborts at publish time with `Error::WireBudge
 |-------|------|---------------|-------------|-----------------|
 | `created_at` | i64 | JSON integer | Unix seconds; MUST equal `OuterRecord.created_at` (single timestamp) | D-WIRE-02, PAYL-01 |
 | `material` | Material | tagged enum — see §3.2 | Typed cryptographic payload | D-WIRE-03, PAYL-02 |
-| `protocol_version` | u16 | JSON integer | Always `1` in cipherpost/v1 | D-07 |
+| `protocol_version` | u16 | JSON integer | Always `2` in cipherpost/v2 (was `1` in v1.x) | D-07 |
 | `purpose` | String | UTF-8, control chars stripped | Sender-attested description; NOT independently verified | D-WIRE-05, PAYL-04 |
 
 **Purpose normalization (D-WIRE-05):** Before JCS serialization, the `purpose` string has
@@ -340,17 +355,21 @@ the handoff before the typed-z32 prompt completes.
 
 ### 3.3 OuterRecord
 
-Published as a JSON TXT record under DNS label `_cipherpost` (D-05) on the sender's PKARR
-key. The TXT value is the JSON serialization of `OuterRecord`. Inner signature is Ed25519
-over JCS(`OuterRecordSignable`); outer signature is the PKARR SignedPacket signature handled
-by `pkarr::ClientBlocking`.
+Published as a JSON TXT record under DNS label `_cipherpost` (D-05) on the sender's **derived
+key** `derive(sender_pub, share_ref)` (§3.8) — not on the sender's bare identity key, as in
+v1.1. Each share thus gets its own PKARR packet, lifting the v1.1 one-outstanding-share-per-
+sender ceiling. The TXT value is the JSON serialization of `OuterRecord`. Inner signature is
+Ed25519 over JCS(`OuterRecordSignable`) by the sender's **identity** key (the derived key is
+used only for the outer BEP44 packet signature, §3.8); outer signature is the PKARR
+SignedPacket signature under the derived key. `OuterRecord.pubkey` remains the sender's real
+identity z32 (the recipient checks it against the URL's `<sender-z32>`, §4).
 
 | Field | Type | Wire encoding | Description | Source decision |
 |-------|------|---------------|-------------|-----------------|
 | `blob` | String | base64-STANDARD | age-encrypted JCS bytes of `Envelope` | D-WIRE-01, D-WIRE-04 |
 | `created_at` | i64 | JSON integer | Unix seconds, inner-signed; single TTL source | D-WIRE-02 |
-| `protocol_version` | u16 | JSON integer | Always `1` | D-07 |
-| `pubkey` | String | z-base-32, 52 chars | Sender Ed25519/PKARR public key | D-04, IDENT-05 |
+| `protocol_version` | u16 | JSON integer | Always `2` (was `1` in v1.x) | D-07 |
+| `pubkey` | String | z-base-32, 52 chars | Sender's **identity** Ed25519/PKARR public key (NOT the derived address; the recipient checks it against the URL) | D-04, IDENT-05 |
 | `recipient` | String OR JSON null | z-base-32 OR null | Recipient pubkey; null for `--self` sends | D-WIRE-04 |
 | `share_ref` | String | 32 lowercase hex chars | 128-bit share ID: `sha256(blob_bytes ‖ created_at_be_bytes)[..16]` | D-06, PAYL-05 |
 | `signature` | String | base64-STANDARD | Inner Ed25519 signature over JCS(`OuterRecordSignable`) | D-WIRE-03, SEND-04, D-16 |
@@ -421,27 +440,31 @@ which pkarr cannot sign directly from a seed-only keypair) and published as a si
 This lifts v1's packet-budget ceiling, where receipts shared the recipient's parent PKARR
 packet with outgoing shares and prior `_cprcpt-*` receipts and any two real records exceeded
 the ~1000-byte budget (the old `Error::PacketBudgetExceeded` merge path — D-MRG-01..06). DNS
-TTL on the receipt record = 300 seconds. (The parent-key merge-republish machinery still
-governs the legacy v1 `_cprcpt-<share_ref>` label; the v1↔v2 addressing migration across §3.5
-and §5.3 is finalized in the pending full SPEC pass.)
+TTL on the receipt record = 300 seconds. See §3.8 for the derivation and the v1.1→v2 addressing
+migration, §3.5 for label stability, and §5.3 for the sender-side fetch (now `--share-ref`-keyed).
 
 **Publish sequencing (D-SEQ-01):** The recipient publishes the receipt only AFTER local state
 commits (sentinel file + ledger line). Publish failure is degraded to a stderr warning with
 exit code 0 (D-SEQ-02) — the material was delivered safely; receipt loss is a sender-visible
-degradation. No auto-retry in cipherpost/v1 (D-SEQ-03).
+degradation. No auto-retry (D-SEQ-03).
 
 ### 3.5 DHT Label Stability
 
-The DNS TXT record labels used in the wire format are part of the protocol surface:
-- `_cipherpost` — published by senders carrying `OuterRecord` (§3.3)
-- `_cprcpt-<share_ref_hex>` — published by recipients carrying `Receipt` (§3.4)
+The DNS TXT record labels used in the wire format are part of the protocol surface. Under v2
+derived-key addressing (§3.8) each record lives under its own derived key, so the label no
+longer carries the `share_ref` (the KEY encodes it):
+- `_cipherpost` — carried by `OuterRecord` (§3.3), published under `derive(sender_pub, share_ref)`
+- `_cprcpt` — carried by `Receipt` (§3.4), published under `derive(recipient_pub, share_ref)`
+  (fixed label; **no `-<share_ref_hex>` suffix**, unlike v1.1)
 
-These label strings are part of the wire format. Renaming either — in whole or in part
-— requires a `protocol_version` bump and a migration section in this SPEC. They are
-not changed silently.
+These label strings are part of the wire format. Renaming either — in whole or in part —
+requires a `protocol_version` bump and a migration section in this SPEC. They are not changed
+silently. The v2 receipt label `_cprcpt` and the v1.1 legacy `_cprcpt-<share_ref_hex>` are
+distinct addressing schemes at different keys and do not interoperate (§3.8, migration §3.8).
 
-Code constants enforcing these labels are covered by a constant-match test
-(`tests/dht_label_constants.rs`) that fails if code and SPEC drift.
+Code constants enforcing these labels live in `src/lib.rs` (`DHT_LABEL_OUTER = "_cipherpost"`,
+`DHT_LABEL_RECEIPT = "_cprcpt"`, legacy `DHT_LABEL_RECEIPT_PREFIX = "_cprcpt-"`); a
+constant-match test (`tests/dht_label_constants.rs`) fails if code and SPEC drift.
 
 ### 3.6 PIN Crypto Stack (Phase 8 — D-P8-01..06)
 
@@ -449,9 +472,11 @@ PIN-protected shares (`OuterRecord.pin_required = true`) require BOTH the
 receiver's identity passphrase AND a PIN to decrypt. The PIN is a second factor
 layered via NESTED age encryption (CLAUDE.md `chacha20poly1305 only via age`
 invariant — no direct AEAD calls). Non-pin shares (`pin_required` absent or
-`false`) preserve the v1.0 wire shape byte-for-byte (the `pin_required` field
-is elided from JCS via `skip_serializing_if = is_false`; no protocol_version
-bump).
+`false`) keep the `pin_required` field **elided** from JCS via
+`skip_serializing_if = is_false`, so a non-pin v2 record's bytes differ from a
+pin v2 record's only by that field. (In v1.x this elision also preserved v1.0
+byte-identity; under v2 that lock-in is retired — every record now encodes
+`protocol_version: 2`, so v2 bytes are not byte-identical to v1.0 regardless.)
 
 **Architectural lineage:** Forks cclink's `pin_derive_key` shape verbatim;
 diverges on AEAD path (cclink uses raw `chacha20poly1305`; cipherpost wraps
@@ -549,8 +574,10 @@ packet over the share's DHT slot to revoke it). Two reasons:
 
 - `Envelope.burn_after_read: bool` — inner-signed, post-decrypt. DHT observers
   do NOT see this field (CLAUDE.md ciphertext-only-on-wire principle).
-- `#[serde(default, skip_serializing_if = "is_false")]` — non-burn shares
-  preserve v1.0 byte-identity (no `protocol_version` bump).
+- `#[serde(default, skip_serializing_if = "is_false")]` — `burn_after_read` is
+  elided from JCS when false, so a non-burn record's bytes differ from a burn
+  record's only by that field. (In v1.x this preserved v1.0 byte-identity; under
+  v2 that lock-in is retired — records encode `protocol_version: 2`.)
 - JCS alphabetic placement: FIRST (before `created_at` because `b` < `c`).
 - Pinned by `tests/fixtures/envelope_burn_signable.bin` (~142 B).
 
@@ -584,19 +611,21 @@ emit-then-mark dispatch at STEP 11/12 (Phase 8 Plan 04):
     - **Accepted flow (v1.0 unchanged):** `append_ledger_entry(...)`. The
       ledger row has no `state` field; deserializes via serde default to
       `state: None` and maps to `LedgerState::Accepted` on read.
-13. **Publish receipt — SKIPPED for self-shares (D-SEQ-06 revised), otherwise
-    unconditional.** When `sender_pubkey == recipient_pubkey` (a self-share) the
-    receipt is NOT published: it is self-attestation with no value, and publishing
-    it onto your own key would collide with your outgoing `_cipherpost` share in
-    the single ~1000-byte per-key packet (any two real records exceed the budget),
-    breaking the `send --self → receive → send --self` self-backup workflow. For
-    cross-identity shares the receipt is published unconditionally — burn does NOT
-    suppress attestation (there is no `if !envelope.burn_after_read` guard).
-    Receipt = delivery confirmation. Overflow of the recipient's merged packet
-    (e.g. a recipient already holding an outgoing share, or a second receipt)
-    surfaces `PacketBudgetExceeded` and is warn+degraded here (D-SEQ-02), so a
-    recipient holds at most one outstanding receipt. Asserted by
-    `tests/phase3_coexistence_b_self_share_and_receipt.rs` and
+13. **Publish receipt — unconditional in v2, including self-shares (D-SEQ-06
+    RE-ENABLED).** The receipt is published under its own derived key
+    `derive(recipient_pub, share_ref)` (§3.8), so it no longer collides with the
+    recipient's outgoing `_cipherpost` share or with any other receipt — the v1.1
+    reason for skipping self-shares (a single shared ~1000-byte parent packet) is
+    gone. A **self-share now yields a normal personal audit receipt**, and the
+    `send --self → receive → send --self` self-backup workflow is preserved because
+    the share and its receipt occupy different derived keys. Burn does NOT suppress
+    attestation (there is no `if !envelope.burn_after_read` guard) — receipt =
+    delivery confirmation. Because each receipt has its own single-record packet,
+    a recipient can hold **many** outstanding receipts (one per `share_ref`); the
+    v1.1 "at most one outstanding receipt" ceiling and its `PacketBudgetExceeded`
+    warn+degrade on the receipt path no longer apply. Publish remains best-effort:
+    any failure is warn+degraded to a stderr line with exit 0 (D-SEQ-02, §5.2 step
+    13). Asserted by `tests/phase3_coexistence_b_self_share_and_receipt.rs` and
     `tests/phase3_share_ref_filter.rs`.
 
 **Burn ≠ cryptographic destruction.** A second machine with a fresh
@@ -645,8 +674,10 @@ A share URI is a single copy-paste token that identifies where to resolve a shar
 cipherpost://<sender-z32>/<share_ref_hex>
 ```
 
-- `<sender-z32>` is the sender's PKARR public key in z-base-32 (52 chars) — matches
-  `OuterRecord.pubkey`.
+- `<sender-z32>` is the sender's **identity** PKARR public key in z-base-32 (52 chars) —
+  matches `OuterRecord.pubkey`. In v2 the receiver derives the resolution key
+  `derive(<sender-z32>, <share_ref_hex>)` (§3.8) from these two components; the URI itself is
+  unchanged from v1.1 (the derivation is a resolve-time computation, not a URI-format change).
 - `<share_ref_hex>` is the 32-char lowercase hex share_ref.
 - Total length ≈ 99 characters.
 
@@ -660,7 +691,7 @@ with `Error::InvalidShareUri` (D-URI-03). After resolving `OuterRecord`, the rec
 check that `url_share_ref == OuterRecord.share_ref`; mismatch yields `Error::ShareRefMismatch`
 (D-URI-02; exit code 1, distinct from signature failures exit 3 and NotFound exit 5).
 
-No query string or fragment parameters are defined in cipherpost/v1; unknown trailing
+No query string or fragment parameters are defined in cipherpost/v2; unknown trailing
 components MUST be treated as `Error::InvalidShareUri`. Future versions may extend the URI
 syntax under a bumped protocol version.
 
@@ -710,9 +741,14 @@ syntax under a bumped protocol version.
 7. Build `OuterRecordSignable { blob, created_at, protocol_version, pubkey, recipient, share_ref, ttl_seconds }`.
 8. JCS-serialize `OuterRecordSignable`; Ed25519-sign with the sender's identity key; base64-
    encode to produce `signature`. Assemble `OuterRecord` (D-WIRE-03, SEND-04).
-9. Build PKARR SignedPacket with TXT record under `_cipherpost` carrying the `OuterRecord` JSON.
-   Verify encoded SignedPacket size ≤ ~1000 bytes (BEP44 budget, SEND-05). Overflow = `Error::WireBudgetExceeded`.
-10. `Transport::publish(signed_packet)`. Print the share URI (`cipherpost://<z32>/<hex>`) to stdout (D-URI-01, SEND-01).
+9. Derive the sender's per-share key `A' = derive(sender_pub, share_ref)` (§3.8) and build a
+   PKARR SignedPacket with a single TXT record under `_cipherpost` carrying the `OuterRecord`
+   JSON, hand-signed under `A'` (BEP44, §3.8). Verify encoded SignedPacket size ≤ ~1000 bytes
+   (BEP44 budget, SEND-05). Overflow = `Error::WireBudgetExceeded`.
+10. `Transport::publish_derived(&derived_signer, "_cipherpost", &outer_record_json)` — publishes
+    under `A'`, not the sender's bare identity key. Print the share URI
+    (`cipherpost://<sender-identity-z32>/<hex>`) to stdout; the URI carries the sender's
+    **identity** z32, from which the recipient re-derives `A'` to resolve (D-URI-01, SEND-01).
 
 **CLI flags (cipherpost/v1.1):**
 - `--material <VALUE>` (default `generic-secret`) — selects the typed
@@ -793,8 +829,12 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    exclusive `flock` on `~/.cipherpost/state/locks/<url_share_ref>.lock` (file mode
    `0600`, directory mode `0700`). The lock spans steps 2–12 (idempotency check →
    resolve → verify → decrypt → accept → emit → sentinel + ledger row) and is
-   released BEFORE step 13's `publish_receipt` so the receipt path's existing CAS
-   contract handles concurrent receipt writes (D-P9-A1; `tests/cas_racer.rs`). The
+   released BEFORE step 13's receipt publish. In v2 the receipt is published under its own
+   derived key `derive(recipient_pub, share_ref)` (§3.8), a single-writer single-record packet
+   with **no CAS** — so concurrent receives of *different* shares never contend on the receipt
+   path, and a repeat receive of the *same* share short-circuits at step 2. (The v1.1 CAS
+   contract — `tests/cas_racer.rs`, D-P9-A1 — guarded the old shared-parent-packet receipt
+   writes and is legacy under v2; see §3 preamble.) The
    lock closes the same-host TOCTOU window where two concurrent `cipherpost receive`
    invocations on the same `share_ref` could both pass step 2's `check_already_consumed`,
    both decrypt + emit, and both append ledger rows. Lock granularity is per-`share_ref`,
@@ -819,8 +859,12 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    `share already consumed (burned at <timestamp>)`. v1.0 rows missing the `state`
    field deserialize via serde default to `LedgerState::Accepted` (T-08-17 conservative
    classification). See §3.7 for the receive-flow ordering and ledger schema details.
-3. `Transport::resolve(sender_z32)` — returns `OuterRecord` only after the outer PKARR
-   SignedPacket signature passes (verified inside `pkarr::ClientBlocking`). NotFound → exit 5.
+3. Derive the sender's per-share key `A' = derive(sender_pub, url_share_ref)` (§3.8) and
+   `Transport::resolve_derived(&A', "_cipherpost")` — returns `OuterRecord` only after the
+   outer PKARR SignedPacket signature under `A'` passes (verified inside `pkarr::ClientBlocking`
+   / on parse). Because `A'` is a deterministic function of `(sender_pub, share_ref)`, a valid
+   packet at `A'` cryptographically binds the record to that sender and that `share_ref`
+   (defense-in-depth alongside step 5's field check). NotFound → exit 5.
 4. Verify inner Ed25519 signature on `OuterRecord` via `verify_record` (round-trip-reserialize
    guard included). Any signature failure → unified message, exit 3 (D-16, RECV-01).
 5. Check `url_share_ref == OuterRecord.share_ref`; mismatch → `Error::ShareRefMismatch`, exit 1 (D-URI-02).
@@ -993,32 +1037,39 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
     ```
 12. Create sentinel `~/.cipherpost/state/accepted/<share_ref>` (mode 0600); append a ledger
     line to `~/.cipherpost/state/accepted.jsonl` (mode 0600) with `receipt_published_at: null` (D-STATE-01, D-SEQ-04).
-13. **Self-shares (`sender_pubkey == recipient_pubkey`): SKIP — no receipt (D-SEQ-06
-    revised, packet-budget fix).** Otherwise construct `Receipt`, sign with recipient's
-    Ed25519 key, call `Transport::publish_receipt`. On success: append a new ledger line
-    with `receipt_published_at: <ISO-8601 UTC>` (D-SEQ-04, D-SEQ-05). On failure (incl.
-    `PacketBudgetExceeded` when the recipient's key is already full): print `receipt publish
-    failed: <user_message>` to stderr, continue, exit 0 anyway (D-SEQ-02). No auto-retry (D-SEQ-03).
+13. **Publish receipt — unconditional in v2, self-shares included (D-SEQ-06 RE-ENABLED).**
+    Construct the slim `Receipt` (§3.4), sign with the recipient's identity Ed25519 key, derive
+    `derive(recipient_pub, share_ref)` (§3.8), and call
+    `Transport::publish_derived(&recipient_derived_signer, "_cprcpt", &receipt_json)`. Self-shares
+    are no longer skipped — the receipt has its own derived key and cannot collide with the
+    recipient's outgoing share (that was the v1.1 skip reason). On success: append a new ledger
+    line with `receipt_published_at: <ISO-8601 UTC>` (D-SEQ-04, D-SEQ-05). On any failure: print
+    `receipt publish failed: <user_message>` to stderr, continue, exit 0 anyway (D-SEQ-02). No
+    auto-retry (D-SEQ-03).
 
 **No payload field** (including `purpose`) is printed to stdout or stderr before step 9 begins
 (D-RECV-01). This is the "verify before reveal" invariant.
 
 ### 5.3 Receipts (sender-side fetch and verify)
 
-1. `cipherpost receipts --from <recipient-z32> [--share-ref <ref>] [--json]` (RCPT-02).
-2. `Transport::resolve_all_cprcpt(recipient_z32)` → iterator over all TXT records under
-   recipient's PKARR key with label prefix `_cprcpt-` (D-OUT-03).
-3. For each record: parse JSON → `Receipt`. Parse failure → increment `malformed_count`. Otherwise
-   `verify_receipt(&r)`. Signature-failure → increment `invalid_count`. Otherwise include.
-4. If `--share-ref <ref>` given, filter verified receipts to exact match after verification.
-5. Render on stdout (human table by default; `--json` emits JSON array on stdout — D-OUT-01);
-   progress `fetched N receipt(s); M valid, K malformed, L invalid-signature` on stderr
-   (omit zero-count categories — D-OUT-03).
-6. Exit codes (D-OUT-03):
-   - ≥1 valid: exit 0
-   - 0 valid + ≥1 invalid-signature: exit 3
-   - 0 valid + only malformed: exit 1
-   - 0 TXT records under `_cprcpt-`: exit 5
+1. `cipherpost receipts --from <recipient-z32> --share-ref <ref> [--json]` (RCPT-02). **In v2
+   `--share-ref` is REQUIRED**: receipts are addressed per-share at `derive(recipient_pub,
+   share_ref)` and are NOT enumerable without the `share_ref` (that unlinkability is a v2
+   privacy property — §3.8). Omitting `--share-ref` is an `Error::Config` (exit 1). The sender
+   always has the `share_ref` (they created it) and the recipient z32 (they chose it).
+2. Derive `A' = derive(recipient_pub, share_ref)` (§3.8) and
+   `Transport::resolve_derived(&A', "_cprcpt")` → the single receipt record (or NotFound).
+3. Parse JSON → `Receipt` (malformed → `Error::Config`). `verify_receipt(&receipt, from_z32)`
+   verifies the inner Ed25519 signature with the recipient z32 supplied as **context**
+   (signature-failure → exit 3). Defense-in-depth: `receipt.share_ref` must equal the requested
+   `share_ref`, else `Error::ShareRefMismatch`.
+4. Render on stdout (human single-receipt dump by default; `--json` emits a one-element JSON
+   array — D-OUT-01); progress `fetched 1 receipt; 1 valid` on stderr (D-OUT-03).
+5. Exit codes (D-OUT-03):
+   - receipt found + verifies: exit 0
+   - receipt found but signature invalid: exit 3
+   - no receipt at the derived key (`NotFound`): exit 5
+   - malformed receipt JSON: exit 1
 
 ## 6. Exit Codes
 
@@ -1372,8 +1423,11 @@ The primitives ported from cclink are reused without protocol-level modification
 `ed25519-dalek =3.0.0-pre.5` for all signature operations; `argon2 0.5` with parameters
 (64 MB memory, 3 iterations) stored in a PHC-format identity-file header; `hkdf 0.12` with
 SHA-256 for key derivation; `pkarr 5.0.3` for Mainline DHT rendezvous via SignedPacket.
-The crypto primitive stack MUST NOT be substituted; cipherpost/v1 takes cclink's v1.3.0
-crypto pins verbatim.
+The crypto primitive stack MUST NOT be substituted; cipherpost takes cclink's v1.3.0
+crypto pins verbatim. **v2 addition:** derived-key addressing (§3.8) adds `curve25519-dalek`
+for point/scalar arithmetic and uses `ed25519-dalek`'s `hazmat` raw-signing under blinded
+keys — an addressing-layer addition on top of the unchanged primitive stack; payload
+encryption and the identity/inner-signature paths are untouched.
 
 Cryptographic keys produced by cipherpost and keys produced by cclink are **not**
 interoperable despite sharing the primitive stack. All cipherpost HKDF call-sites use
@@ -1388,9 +1442,9 @@ The cipherpost delta from cclink lives purely at the payload and flow layer:
 2. **Explicit acceptance step** — §5.2 step 9; the recipient MUST paste the sender's full
    52-char z-base-32 pubkey to confirm (no `y`, no `--yes` flag). This prevents
    MFA-fatigue-style prompt bombing.
-3. **Signed receipt** — Receipt structure (§3.4) published under the recipient's PKARR key
-   at `_cprcpt-<share_ref_hex>`, resolve-merge-republish to preserve coexisting records
-   (TRANS-03).
+3. **Signed receipt** — Receipt structure (§3.4) published under the recipient's derived key
+   `derive(recipient_pub, share_ref)` at label `_cprcpt` (§3.8; v1.1 used
+   `_cprcpt-<share_ref_hex>` on the recipient's parent key with resolve-merge-republish).
 
 **Fork point:** cclink v1.3.0 (the last release before mothballing).
 
