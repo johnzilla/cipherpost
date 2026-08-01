@@ -17,13 +17,18 @@ version = 2
 # time and ships no code into the cipherpost binary. Pre-existing upstream drift,
 # unrelated to any cipherpost code path. Remove when `age`/`i18n-embed` drop it.
 #
-# (RUSTSEC-2026-0205 (scc unsound, via serial_test dev-dep) was removed 2026-08:
-# cargo-deny reported it as "advisory-not-detected — no crate matched", i.e. the
-# scc version in the tree no longer matches the advisory. If it re-triggers, deny
-# will fail and the ignore should be re-added with fresh rationale.)
+# RUSTSEC-2026-0205 (scc unsound): `scc::Array::insert` can double-free only IF the
+# element's compare fn panics mid-unwind since V is dropped before compare. scc comes
+# via `serial_test` (DEV-dep only — never in the shipped binary) which uses scc with
+# default non-panicking comparators; no code path in cipherpost supplies a custom
+# compare fn. Fixed in scc 3.8.4, but serial_test 4 (the only consumer upgrade path)
+# requires rustc 1.93.1 > MSRV 1.88. Re-added after the advisory range was extended
+# retroactively to cover scc 2.x (previously "no crate matched"). Remove when MSRV
+# reaches 1.93.1 and serial_test can bump to 4.
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2026-0173",
+    "RUSTSEC-2026-0205",
 ]
 # yanked = "deny" is default in v2
 # Note: pkarr 5.0.3 transitively pulls ed25519-dalek 3.0.0-pre.5 (pre-release).
