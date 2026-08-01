@@ -6,6 +6,7 @@
 //! T-01-03-01 mitigation.
 
 use cipherpost::record::OuterRecordSignable;
+use cipherpost::PROTOCOL_VERSION;
 use std::fs;
 
 const FIXTURE_PATH: &str = "tests/fixtures/outer_record_signable.bin";
@@ -15,10 +16,11 @@ fn fixture_signable() -> OuterRecordSignable {
         blob: "AAAA".into(),
         created_at: 1_700_000_000,
         // Phase 8 Plan 01: pin_required defaults to false; `is_false`
-        // skip_serializing_if elides this from JCS bytes — fixture stays
-        // 192 bytes byte-for-byte identical to v1.0.
+        // skip_serializing_if elides this from JCS bytes — the field order and
+        // shape stay identical to v1.0 (only protocol_version's value moved 1->2
+        // at v2; both are single ASCII digits, so the fixture is still 192 bytes).
         pin_required: false,
-        protocol_version: 1,
+        protocol_version: PROTOCOL_VERSION,
         pubkey: "pk-placeholder-z32".into(),
         recipient: Some("rcpt-placeholder-z32".into()),
         share_ref: "0123456789abcdef0123456789abcdef".into(),

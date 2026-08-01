@@ -14,6 +14,7 @@
 //! equality.
 
 use cipherpost::record::OuterRecordSignable;
+use cipherpost::PROTOCOL_VERSION;
 use serde_canonical_json::CanonicalFormatter;
 use std::fs;
 
@@ -24,7 +25,7 @@ fn signable() -> OuterRecordSignable {
         blob: "AAAA".into(),
         created_at: 1_700_000_000,
         pin_required: true,
-        protocol_version: 1,
+        protocol_version: PROTOCOL_VERSION,
         pubkey: "pk-placeholder-z32".into(),
         recipient: Some("rcpt-placeholder-z32".into()),
         share_ref: "0123456789abcdef0123456789abcdef".into(),
