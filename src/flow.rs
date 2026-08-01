@@ -1086,20 +1086,16 @@ pub fn run_receive(
     // specific failure class is still surfaced via user_message(&e).
     let publish_outcome: Result<(), Error> = (|| {
         let accepted_at_unix = now_unix_seconds()?;
-        let recipient_z32 = keypair.public_key().to_z32();
 
+        // v2 slim receipt: no nonce / recipient_pubkey / sender_pubkey. The derived
+        // location + the two signatures carry provenance; cleartext_hash binds the
+        // envelope (incl. purpose) without exposing it. envelope.purpose is still
+        // recorded in the LOCAL ledger below (private, not published).
         let signable = crate::receipt::ReceiptSignable {
             accepted_at: accepted_at_unix,
             ciphertext_hash: ciphertext_hash.clone(),
             cleartext_hash: cleartext_hash.clone(),
-            nonce: crate::receipt::nonce_hex(),
             protocol_version: crate::PROTOCOL_VERSION,
-            // purpose is deliberately NOT in the receipt — it would leak in
-            // cleartext on the DHT; cleartext_hash already binds it. (See
-            // crate::receipt::Receipt.) envelope.purpose is still recorded in
-            // the LOCAL ledger below (private, not published).
-            recipient_pubkey: recipient_z32.clone(),
-            sender_pubkey: record.pubkey.clone(),
             share_ref: record.share_ref.clone(),
         };
         let signature = crate::receipt::sign_receipt(&signable, keypair)?;
@@ -1107,10 +1103,7 @@ pub fn run_receive(
             accepted_at: signable.accepted_at,
             ciphertext_hash: signable.ciphertext_hash.clone(),
             cleartext_hash: signable.cleartext_hash.clone(),
-            nonce: signable.nonce.clone(),
             protocol_version: signable.protocol_version,
-            recipient_pubkey: signable.recipient_pubkey.clone(),
-            sender_pubkey: signable.sender_pubkey.clone(),
             share_ref: signable.share_ref.clone(),
             signature,
         };
@@ -1188,7 +1181,8 @@ pub fn run_receipts(
     let receipt: crate::receipt::Receipt =
         serde_json::from_str(&raw).map_err(|_| Error::Config("receipt malformed".into()))?;
     // Inner Ed25519 sig check (kept in v2 — transport-independent authenticity).
-    crate::receipt::verify_receipt(&receipt).map_err(|_| Error::SignatureInner)?;
+    // v2: recipient pubkey is supplied as CONTEXT (from_z32) — not read from the receipt.
+    crate::receipt::verify_receipt(&receipt, from_z32).map_err(|_| Error::SignatureInner)?;
     // Defense-in-depth: the receipt's own share_ref must match the one we derived.
     if receipt.share_ref != share_ref {
         return Err(Error::ShareRefMismatch);
@@ -1206,45 +1200,26 @@ pub fn run_receipts(
     Ok(())
 }
 
-/// D-OUT-01 multi-row table OR D-OUT-02 single-row audit-detail view.
+/// Single-receipt audit-detail view. v2 run_receipts fetches exactly one receipt
+/// by share_ref, so there is no multi-row/enumeration form. The recipient pubkey
+/// is the `--from` argument (context), not a receipt field; `purpose` is not
+/// published (bound via cleartext_hash); no `nonce` (v2 slim schema).
 fn render_receipts_table(
     receipts: &[crate::receipt::Receipt],
-    audit_detail: bool,
+    _audit_detail: bool,
 ) -> Result<(), Error> {
-    if audit_detail {
-        let r = &receipts[0];
-        println!("share_ref:          {}", r.share_ref);
-        println!("sender_pubkey:      {}", r.sender_pubkey);
-        println!("recipient_pubkey:   {}", r.recipient_pubkey);
-        // format_unix_as_iso_utc already appends " UTC"; no extra suffix needed.
-        println!(
-            "accepted_at:        {} ({} local)",
-            format_unix_as_iso_utc(r.accepted_at),
-            format_unix_as_iso_local(r.accepted_at),
-        );
-        // No `purpose` — it is not published in the receipt (privacy; see
-        // receipt.rs). The sender can recover it by matching `cleartext_hash`
-        // against the envelope they sent.
-        println!("ciphertext_hash:    {}", r.ciphertext_hash);
-        println!("cleartext_hash:     {}", r.cleartext_hash);
-        println!("nonce:              {}", r.nonce);
-        println!("protocol_version:   {}", r.protocol_version);
-        println!("signature:          {}", r.signature);
-        return Ok(());
-    }
-
-    // Multi-row table (D-OUT-01 columns). No `purpose` column — it is not
-    // published in the receipt (privacy; see receipt.rs).
+    let r = &receipts[0];
+    println!("share_ref:          {}", r.share_ref);
+    // format_unix_as_iso_utc already appends " UTC"; no extra suffix needed.
     println!(
-        "{:<16}  {:<20}  recipient_fp",
-        "share_ref", "accepted_at (UTC)"
+        "accepted_at:        {} ({} local)",
+        format_unix_as_iso_utc(r.accepted_at),
+        format_unix_as_iso_local(r.accepted_at),
     );
-    for r in receipts {
-        let (fp, _) = sender_openssh_fingerprint_and_z32(&r.recipient_pubkey)?;
-        let utc = format_unix_as_iso_utc(r.accepted_at);
-        let share_ref_short: String = r.share_ref.chars().take(16).collect();
-        println!("{share_ref_short:<16}  {utc:<20}  {fp}");
-    }
+    println!("ciphertext_hash:    {}", r.ciphertext_hash);
+    println!("cleartext_hash:     {}", r.cleartext_hash);
+    println!("protocol_version:   {}", r.protocol_version);
+    println!("signature:          {}", r.signature);
     Ok(())
 }
 

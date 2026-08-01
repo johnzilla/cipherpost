@@ -118,30 +118,17 @@ fn a_sends_to_b_receipt_published_and_verifiable() {
             .expect("receipt must exist at its derived key after accept")
     };
 
-    // 4. Parse + verify the receipt.
+    // 4. Parse + verify the receipt. v2: recipient pubkey (B) is verify CONTEXT.
     let receipt: Receipt = serde_json::from_str(&receipt_json).expect("receipt JSON must parse");
-    verify_receipt(&receipt).expect("verify_receipt must succeed on freshly-published receipt");
+    verify_receipt(&receipt, &b_z32)
+        .expect("verify_receipt must succeed on freshly-published receipt");
 
-    // 5. Assert receipt field values.
-    assert_eq!(
-        receipt.sender_pubkey, a_z32,
-        "receipt.sender_pubkey must be A"
-    );
-    assert_eq!(
-        receipt.recipient_pubkey, b_z32,
-        "receipt.recipient_pubkey must be B"
-    );
+    // 5. Assert receipt field values. v2 slim schema: no sender/recipient pubkey,
+    //    no nonce, no purpose (those are context/derived/bound-not-exposed).
     assert_eq!(
         receipt.share_ref, uri.share_ref_hex,
         "receipt.share_ref must match URI"
     );
-    // No receipt.purpose — the purpose is intentionally NOT published (privacy);
-    // it is bound (not exposed) via cleartext_hash, verified below.
-    assert_eq!(receipt.nonce.len(), 32);
-    assert!(receipt
-        .nonce
-        .chars()
-        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
 
     // 6. Assert ciphertext_hash matches sha256 of what B actually resolved.
     //    Pull the outer record from A's derived share key and hash its decoded blob.

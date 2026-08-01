@@ -35,7 +35,7 @@ pub(crate) fn is_false(b: &bool) -> bool {
 
 /// Wire protocol version. Written into every signed OuterRecordSignable and Envelope.
 /// Bumping this invalidates every previously issued share.
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 
 /// HKDF info namespace prefix (D-08). Every HKDF call-site must use an info string of the
 /// form `<HKDF_INFO_PREFIX><context>` e.g. `{HKDF_INFO_PREFIX}identity-kek`.

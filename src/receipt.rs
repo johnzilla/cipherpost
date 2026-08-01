@@ -1,51 +1,40 @@
-//! Receipt — the cipherpost delta from cclink. Published to the *recipient's*
-//! PKARR key at DNS label `_cprcpt-<share_ref_hex>` after run_receive step 13
-//! (post-sentinel, post-ledger; D-SEQ-01). Signed by the recipient's Ed25519
-//! key; verifiable by any party using only the recipient's public z-base-32.
+//! Receipt — the cipherpost delta from cclink. In v2 (derived-key addressing) it
+//! is published at DNS label `_cprcpt` under the derived key
+//! `derive(recipient_pub, share_ref)` (run_receive step 13). Inner-signed by the
+//! recipient's Ed25519 identity key; `verify_receipt` takes the recipient's public
+//! z-base-32 as CONTEXT (the caller already holds it — it derived the receipt key
+//! from it), so the pubkey no longer travels inside the receipt.
 //!
-//! Struct schema locked by D-RS-01..07 (Phase 3 CONTEXT.md). Mirrors
-//! src/record.rs line-for-line: alphabetical fields, From<&Signed> for Signable,
+//! Provenance is the composition: **receipt found at `derive(recipient_pub,
+//! share_ref)` + outer BEP44 sig valid under that derived key (transport) + inner
+//! Ed25519 sig valid under `recipient_pub` (here)**. Only the recipient's master
+//! secret can satisfy all three.
+//!
 //! JCS-serialized signing bytes, 5-step verify with round-trip-reserialize guard
 //! (T-01-03-02). All signature-verification failures return Error::SignatureInner
-//! or Error::SignatureCanonicalMismatch — both share the D-16 unified
-//! Display "signature verification failed".
+//! or Error::SignatureCanonicalMismatch — both share the D-16 unified Display
+//! "signature verification failed".
 //!
-//! No new HKDF call-sites (receipts sign with the Ed25519 identity key directly).
-//! No new Error variants (D-RS-07 mandates reuse of existing sig-fail variants).
+//! **v2 schema slim (protocol_version 2).** `nonce`, `recipient_pubkey`, and
+//! `sender_pubkey` were dropped: under derived addressing the derived location +
+//! two signatures make them redundant (nonce's anti-synthesis job is subsumed by
+//! the per-share derived-key signature; the pubkeys are the derivation
+//! inputs/context), and dropping them shrinks the cleartext receipt + its
+//! handoff-graph exposure.
 
 use crate::error::Error;
 use base64::Engine;
 use ed25519_dalek::{Signature, VerifyingKey};
-use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-/// Signed form — what goes in a DNS TXT record under label
-/// `_cprcpt-<share_ref_hex>`. Fields are in alphabetical order (belt-and-
-/// suspenders for JCS stability — mirrors record::OuterRecord).
+/// Signed form — the TXT record at label `_cprcpt` under the derived key. Fields
+/// in alphabetical order (belt-and-suspenders for JCS stability).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Receipt {
     pub accepted_at: i64,
     pub ciphertext_hash: String,
     pub cleartext_hash: String,
-    pub nonce: String,
     pub protocol_version: u16,
-    // NOTE: no `purpose` field. Receipts are published in CLEARTEXT on the public
-    // DHT, so a descriptive purpose here would leak a signed, timestamped social
-    // graph of secret handoffs ("recipient accepted an 'emergency CA rotation'
-    // from sender") — contradicting the envelope's encrypted-metadata guarantee.
-    // The receipt still BINDS the purpose without exposing it: `cleartext_hash` is
-    // SHA-256(JCS(Envelope)) and the Envelope contains `purpose`, so a sender
-    // holding the original envelope can verify the receipt matches their exact
-    // purpose. (Removed in 1.2.0-alpha; receipts are ephemeral.)
-    pub recipient_pubkey: String,
-    /// Recipient's attestation of who they received from. NOT signed by the
-    /// sender — only the recipient signs the receipt. Provenance comes from
-    /// the receipt being found under `recipient_pubkey`'s DHT packet AND the
-    /// signature verifying with that pubkey (D-RS-07). An attacker controlling
-    /// their own z32 can publish a receipt claiming any `sender_pubkey` value;
-    /// only the composition "receipt found under z32 X + signed by X + claimed
-    /// sender = Y" provides provenance.
-    pub sender_pubkey: String,
     pub share_ref: String,
     pub signature: String, // alphabetical insertion after share_ref
 }
@@ -56,13 +45,7 @@ pub struct ReceiptSignable {
     pub accepted_at: i64,
     pub ciphertext_hash: String,
     pub cleartext_hash: String,
-    pub nonce: String,
     pub protocol_version: u16,
-    // No `purpose` — see the note on `Receipt`. Its absence here changes the
-    // signed JCS bytes vs v1.1, so `tests/fixtures/receipt_signable.bin` and the
-    // SPEC §8 RECEIPT_SIG_B64 vector were regenerated.
-    pub recipient_pubkey: String,
-    pub sender_pubkey: String,
     pub share_ref: String,
 }
 
@@ -72,28 +55,10 @@ impl From<&Receipt> for ReceiptSignable {
             accepted_at: r.accepted_at,
             ciphertext_hash: r.ciphertext_hash.clone(),
             cleartext_hash: r.cleartext_hash.clone(),
-            nonce: r.nonce.clone(),
             protocol_version: r.protocol_version,
-            recipient_pubkey: r.recipient_pubkey.clone(),
-            sender_pubkey: r.sender_pubkey.clone(),
             share_ref: r.share_ref.clone(),
         }
     }
-}
-
-/// Generate a 128-bit random nonce encoded as 32 lowercase hex chars (D-RS-03).
-///
-/// Source: `rand::rngs::OsRng` reads /dev/urandom via getrandom. Purpose: defense
-/// against attacker-synthesized receipt-like data, not replay (RECV-06 handles replay).
-pub fn nonce_hex() -> String {
-    let mut bytes = [0u8; 16];
-    OsRng.fill_bytes(&mut bytes);
-    let mut out = String::with_capacity(32);
-    for b in &bytes {
-        out.push_str(&format!("{b:02x}"));
-    }
-    debug_assert_eq!(out.len(), 32);
-    out
 }
 
 /// Sign a `ReceiptSignable` with the recipient's PKARR keypair.
@@ -104,18 +69,19 @@ pub fn sign_receipt(signable: &ReceiptSignable, keypair: &pkarr::Keypair) -> Res
     Ok(base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()))
 }
 
-/// Verify a Receipt's inner Ed25519 signature (D-RS-07).
+/// Verify a Receipt's inner Ed25519 signature under `recipient_pub_z32` (D-RS-07).
+/// In v2 the pubkey is supplied as CONTEXT (the caller derived the receipt key from
+/// it) rather than read from the receipt.
 ///
 /// Steps (mirror record::verify_record):
-///   1. Parse recipient_pubkey z-base-32 → VerifyingKey.
+///   1. Parse `recipient_pub_z32` → VerifyingKey.
 ///   2. Decode base64 signature.
 ///   3. Rebuild ReceiptSignable via From, JCS-serialize.
 ///   4. verify_strict (no legacy relaxed Ed25519).
 ///   5. Round-trip-reserialize + byte-compare (T-01-03-02 canonicalization-bypass defense).
-pub fn verify_receipt(receipt: &Receipt) -> Result<(), Error> {
-    // 1. Parse recipient_pubkey z-base-32 → VerifyingKey
-    let pk = pkarr::PublicKey::try_from(receipt.recipient_pubkey.as_str())
-        .map_err(|_| Error::SignatureInner)?;
+pub fn verify_receipt(receipt: &Receipt, recipient_pub_z32: &str) -> Result<(), Error> {
+    // 1. Parse recipient pubkey (context) z-base-32 → VerifyingKey
+    let pk = pkarr::PublicKey::try_from(recipient_pub_z32).map_err(|_| Error::SignatureInner)?;
     let vk = VerifyingKey::from_bytes(pk.as_bytes()).map_err(|_| Error::SignatureInner)?;
 
     // 2. Decode base64 signature
