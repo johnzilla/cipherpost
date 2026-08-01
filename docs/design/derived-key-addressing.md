@@ -1,13 +1,15 @@
 # Design: Derived-key packet addressing (lift the one-record-per-key ceiling)
 
-> **Status: DESIGN / pre-implementation — FEASIBILITY SPIKE PASSED + COMMITTED.**
-> Not shipped. The spike (§14) is committed as two `#[ignore]`'d tests in
-> `tests/derived_key_spike.rs` (reproducible via `cargo test --test
-> derived_key_spike -- --ignored`), carrying **byte-exact golden vectors**. Its
-> crypto deps (`ed25519-dalek` `hazmat`+`digest`, `curve25519-dalek`, `bytes`)
-> are **test-only dev-deps**, so the shipped binary stays hazmat-free until Phase 1
-> wires derivation into `src/`. Nothing lands in production until the schema (§8)
-> is signed off and Phase 1 begins. Touches signed bytes and key derivation.
+> **Status: IMPLEMENTED — shipped through Phase 3c (`PROTOCOL_VERSION = 2`, crate
+> `1.2.0-alpha.1`); the v1.1 parent-key transport surface was removed in commit
+> `8be2567`.** All phases in §13 are DONE. This doc is the design reference for the
+> v2 wire format, but where it and the repo could drift, **code + tests are the
+> source of truth** — `src/derive.rs`, `src/transport.rs::build_derived_signed_packet`,
+> SPEC.md §3.8 / §3.4 / §8.4. The crypto deps (`ed25519-dalek` `hazmat`+`digest`,
+> `curve25519-dalek`, `bytes`) are now **main dependencies**; the shipped binary uses
+> `hazmat::raw_sign` only in `transport::build_derived_signed_packet` (self-verified
+> before use). The spike (§14) remains committed in `tests/derived_key_spike.rs` with
+> its byte-exact golden vectors.
 
 ## 1. Problem
 
@@ -261,10 +263,17 @@ behind a feature/flag during rollout so v1.1 stays buildable for comparison.
    `build_derived_signed_packet`, self-verified before use). No flow wiring yet.
 3. **Flow wiring** — shares publish under `derive(sender_pub, share_ref)`;
    receipts under `derive(recipient_pub, share_ref)`; lift the one-per-key limits
-   (re-enable self-receipts, multi-receipt). PROTOCOL_VERSION → 2.
-4. **Receipt schema** — apply §8 once; regenerate fixtures + SPEC §8 vector.
+   (re-enable self-receipts, multi-receipt). PROTOCOL_VERSION → 2. **DONE** —
+   `src/flow.rs` run_send/run_receive/run_receipts on derived keys; parent-binding
+   check; self-receipts re-enabled (D-SEQ-06); `receipts` requires `--share-ref`.
+4. **Receipt schema** — apply §8 once; regenerate fixtures + SPEC §8 vector. **DONE**
+   (Phase 3c) — slim receipt `{accepted_at, ciphertext_hash, cleartext_hash,
+   protocol_version, share_ref, signature}`; `verify_receipt` takes `recipient_pub`
+   as context; `receipt_signable.bin` (263 B) + SPEC §8.2 regenerated.
 5. **Docs + real-DHT validation** — SPEC/THREAT-MODEL/README/CLAUDE.md; extend the
-   manual `real_dht_e2e` harness with a derived-key round trip.
+   manual `real_dht_e2e` harness with a derived-key round trip. **DONE** — SPEC (incl.
+   §3.8 + §8.4 vector), THREAT-MODEL, README, FAQ, CLAUDE.md aligned to v2;
+   `tests/real_dht_e2e.rs` ported to a derived-key round trip (commit `8be2567`).
 
 ## 14. Feasibility spike spec (do first)
 

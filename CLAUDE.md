@@ -11,7 +11,7 @@ Build / test / lint commands:
 ```bash
 cargo build --release                  # release binary: ./target/release/cipherpost
 cargo test                             # unit + doc tests (no DHT-touching tests)
-cargo test --features mock             # + MockTransport integration tests (335 tests; 347 with --all-features)
+cargo test --features mock             # + MockTransport integration tests (--all-features adds feature-gated suites)
 cargo nextest run --all-features       # CI's runner (nextest); doctests run separately via `cargo test --doc`
 cargo fmt --check                      # CI-enforced
 cargo clippy -- -D warnings            # CI-enforced
@@ -20,6 +20,8 @@ cargo deny check                       # CI-enforced supply-chain policy
 ```
 
 CI runs all of the above plus `lychee` link-check across `SPEC.md`, `THREAT-MODEL.md`, `SECURITY.md`, and `README.md`. The binary is a plain `fn main()` — there is no `tokio` dependency at the cipherpost layer (uses `pkarr::ClientBlocking`).
+
+**Do not hardcode test counts in prose** (CLAUDE.md, FAQ, READMEs). They rot within days of every change and have been wrong three times; run the command for the current number instead of writing it down.
 
 **MSRV: rust 1.88** (matched by `rust-toolchain.toml` and `.github/workflows/ci.yml`). Bumped from 1.85 at v1.1 close to resolve RUSTSEC-2026-0009 (`time 0.3.41` → `0.3.47` DoS-via-stack-exhaustion fix), which required rustc 1.88. Cipherpost is a binary CLI — MSRV constraints from downstream library consumers do not apply.
 

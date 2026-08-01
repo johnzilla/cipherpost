@@ -1197,7 +1197,7 @@ pub fn run_receipts(
             .map_err(|e| Error::Config(format!("json encode: {e}")))?;
         println!("{out}");
     } else {
-        render_receipts_table(&valid, true)?; // single-receipt audit-detail view
+        render_receipts_table(&valid)?; // single-receipt audit-detail view
     }
     Ok(())
 }
@@ -1206,10 +1206,7 @@ pub fn run_receipts(
 /// by share_ref, so there is no multi-row/enumeration form. The recipient pubkey
 /// is the `--from` argument (context), not a receipt field; `purpose` is not
 /// published (bound via cleartext_hash); no `nonce` (v2 slim schema).
-fn render_receipts_table(
-    receipts: &[crate::receipt::Receipt],
-    _audit_detail: bool,
-) -> Result<(), Error> {
+fn render_receipts_table(receipts: &[crate::receipt::Receipt]) -> Result<(), Error> {
     let r = &receipts[0];
     println!("share_ref:          {}", r.share_ref);
     // format_unix_as_iso_utc already appends " UTC"; no extra suffix needed.
