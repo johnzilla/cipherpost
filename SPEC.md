@@ -665,6 +665,90 @@ destruction, and the emit-before-mark atomicity invariant.
 `.planning/research/PITFALLS.md` #26 carries the SUPERSEDED-by-D-P8-12
 header preserving the rejected mark-then-emit alternative.
 
+### 3.8 Derived-Key Addressing (v2)
+
+v2 publishes each share and each receipt under its **own** per-record key derived from the
+parent's public key and the `share_ref`, rather than under a shared label (`_cipherpost` /
+`_cprcpt-<ref>`) on the parent identity key (as v1.1 did). A PKARR SignedPacket is per-key and
+capped at ~1000 bytes (BEP44), and any two real cipherpost records exceed that budget — so on
+the parent key a key held effectively one record (one outstanding share per sender, one receipt
+per identity). Giving each record its own **derived key** gives it its own packet and lifts that
+ceiling. The counterparty derives the same key from **public** inputs it already holds, so no
+discovery index is published (PRD constraint: no servers, no operator).
+
+**This is a frozen v2 wire contract.** A re-implementation MUST reproduce the derivation
+byte-for-byte or it will publish/resolve at the wrong key. `PROTOCOL_VERSION` is `2`.
+Source of truth: `src/derive.rs` (`derive_public`, `derive_signer`) and `src/transport.rs`
+(`build_derived_signed_packet`, `bep44_signable`); golden vector in §8.4.
+
+**Derivation — single-hop stealth blinding (Monero-subaddress shape).** Given the parent
+Ed25519 public key `A` (= `a·G`, where `a` is the parent's clamped identity scalar) and a
+128-bit `share_ref`:
+
+```
+t   = reduce_mod_ℓ( SHA-512( DERIVE_DOMAIN ‖ A_bytes ‖ raw16(share_ref) ) )   // public tweak
+A'  = A + t·G                                                                  // derived public key (public derivation)
+a'  = a + t   (mod ℓ)                                                          // derived scalar (secret side only)
+```
+
+- `DERIVE_DOMAIN` = the ASCII bytes `cipherpost/v2/derive-addr` (domain separation; distinct
+  from the HKDF `cipherpost/v1/` info-string namespace, which is unrelated and unchanged).
+- **`raw16(share_ref)` is the RAW 16 bytes** decoded from the 32-char lowercase-hex `share_ref`
+  — **NOT** the 32 ASCII-hex bytes. The `derive` API takes the hex string and decodes it
+  internally, so callers cannot accidentally hash the ASCII form (which would produce a
+  valid-signing but unresolvable address — a silent `NotFound`). Hashing the raw 16 bytes is
+  the frozen contract; a re-implementation that hashes the hex string is non-conformant.
+- `t` is reduced mod ℓ via `Scalar::from_bytes_mod_order_wide` over the 64-byte SHA-512 output
+  (a reduction, not a clamp). `t` and `A'` are public — anyone with `(A, share_ref)` computes
+  `A'` (the no-index property). `a'` is computable only by the parent-secret holder (needs `a`,
+  from the master seed via `SigningKey::to_scalar()`) and is **never** published — only
+  signatures are.
+- **Signing nonce prefix** (secret): `prefix' = SHA-512( DERIVE_PREFIX_DOMAIN ‖ master_hash_prefix
+  ‖ raw16(share_ref) )[..32]`, where `DERIVE_PREFIX_DOMAIN` = `cipherpost/v2/derive-prefix` and
+  `master_hash_prefix` is the second half of `SHA-512(seed)` (via `ExpandedSecretKey`). Deriving
+  the nonce prefix from a secret keeps per-key signing nonces unpredictable.
+
+**Signing seam (pkarr cannot sign under a blinded key).** `pkarr::Keypair` is seed-only with no
+raw-scalar constructor, so the derived-key packet is hand-signed:
+
+1. Build the DNS packet (single TXT record) with names normalized to the **derived** origin
+   `A'.to_z32()`; encode with pkarr's compressed encoder.
+2. Compute the BEP44 signable bytes exactly as pkarr does:
+   `signable(ts, v) = b"3:seqi" ‖ ascii(ts) ‖ b"e1:v" ‖ ascii(v.len()) ‖ b":" ‖ v`.
+3. `sig = ed25519_dalek::hazmat::raw_sign::<Sha512>(&esk, &signable, &A')` with
+   `esk = { scalar: a', hash_prefix: prefix' }`; **self-verify** `A'.verify_strict(&signable, &sig)`
+   before use (mandatory — `raw_sign` leaks the scalar if the passed public key ≠ `a'·G`).
+4. Assemble `payload = sig(64) ‖ ts_be(8) ‖ encoded_packet` and construct the packet via the
+   public `SignedPacket::from_relay_payload(&A', &payload)`, which re-verifies the BEP44
+   signature under `A'` — so successful assembly is itself a correctness gate.
+
+**Verification path (fetch side, public derivation).** The counterparty derives `A'` from the
+parent pubkey + `share_ref` (no secret), resolves the packet at `A'`, verifies the BEP44
+signature under `A'`, then applies the existing dual-signature discipline over the record body
+(inner Ed25519 by the parent **identity** key — the derived key is used only for the outer
+packet). Because `A'` is a deterministic function of `(parent_pub, share_ref)`, a valid packet
+at `A'` cryptographically binds the record to that parent and that `share_ref` (defense-in-depth
+alongside the `share_ref` field check).
+
+**Security properties.**
+- **Unclamped `a'` is safe.** `a'` is not a cofactor multiple, but Ed25519 verification checks
+  `S·G = R + H(R,A',M)·A'`, which holds for `A' = a'·G` regardless of clamping. `A' = a'·G` is
+  always in the prime-order subgroup, so it is canonical and passes `verify_strict` — no
+  small-subgroup exposure via the public key.
+- **No secret leak.** `t`/`A'` are public; recovering `a = a' − t` needs `a'`, never published.
+  Standard additive-blinding / stealth-address security for a single hop with a hashed,
+  per-record tweak.
+- **Unlinkability (privacy win).** A passive DHT observer who does not know `share_ref` cannot
+  link `A'` back to `A` — a recipient's receipt keys are no longer enumerable from their public
+  identity (contrast v1.1's `_cprcpt-*` records all under one key). Only a party holding
+  `share_ref` (the counterparty, or anyone with the URI) can derive `A'`.
+
+**Migration (v1.1 → v2).** This changes **addressing only**: v1.1 and v2 records live at
+different keys and do **not** interoperate — a clean break, `PROTOCOL_VERSION` 1→2. There is no
+in-place migration; v1.1 records are ephemeral (TTL hours/day) and age out. The legacy
+`_cprcpt-<share_ref>` parent-key receipt label and the `publish_receipt` / `resolve_all_cprcpt`
+Transport methods are retained in code but unused by the v2 flow.
+
 ## 4. Share URI
 
 A share URI is a single copy-paste token that identifies where to resolve a share and what
@@ -1408,6 +1492,45 @@ A reference Rust test for regenerating both vectors is committed at
 cargo test --features mock gen_spec_test_vectors -- --ignored --nocapture
 ```
 Output MUST match the base64 signatures above byte-for-byte.
+
+### 8.4 Derived-Key Address Vector (v2, §3.8)
+
+Byte-exact golden vector for the v2 derivation. A re-implementation MUST reproduce `A'` (and,
+with the seed, `a'` / `prefix'`) or it will address the wrong key. Pinned in code by
+`src/derive.rs::golden_vector_seed7_ref11` and `tests/derived_key_spike.rs`.
+
+**Domain constants:**
+```
+DERIVE_DOMAIN         = "cipherpost/v2/derive-addr"     (ASCII, 25 bytes)
+DERIVE_PREFIX_DOMAIN  = "cipherpost/v2/derive-prefix"   (ASCII, 27 bytes)
+```
+
+**Inputs:**
+```
+parent seed   = [0x07; 32]                                                       (TEST VECTOR ONLY)
+parent_pub A  = ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c  (hex)
+              = 7jfgaa9nutjyixzikb7tgmsf9gkwq7iqz498zr1nd5ig1fng4esy              (z-base-32)
+share_ref     = 11111111111111111111111111111111                                 (32-char hex)
+              → raw16 = [0x11; 16]                                                (hashed as RAW bytes, not ASCII hex — §3.8)
+```
+
+**Public derivation (needs only `parent_pub` + `share_ref`):**
+```
+t   = reduce_mod_ℓ( SHA-512( DERIVE_DOMAIN ‖ A ‖ raw16(share_ref) ) )             (intermediate; compute per §3.8)
+A'  = A + t·G
+    = 5af3abc0070698cedb92d1c16da7d2c1bdcbe9ea5bbfce9fba32d4d9d72155f5            (hex)
+    = mm34zoy8y4cc7sh148ys5j61ag6hz4xkmq9h7874gmkpui3bkz4o                        (z-base-32; the DHT origin)
+```
+
+**Secret side (needs the parent seed; `a'·G` MUST equal `A'` above):**
+```
+a'       (derived scalar, mod ℓ)   = ce663dca22ba636800f6c2377163db7591602ad123715f362fa1c364ed44b80d
+prefix'  (derived nonce prefix)    = 5d365967bde2f0f03a762a726326ccd84f1aa43ecd5890f090d66849f9a45b1b
+```
+
+The share for this `share_ref` is published under `_cipherpost` at origin `A'`; a receipt from a
+recipient whose identity is this key would be published under `_cprcpt` at `derive(recipient_pub,
+share_ref)` (same math, recipient's key as parent).
 
 ## 9. Lineage
 
