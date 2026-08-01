@@ -447,7 +447,8 @@ fn read_material(src: MaterialSource) -> Result<Zeroizing<Vec<u8>>, Error> {
 /// 12. wire-budget pre-check: build a real `SignedPacket`, compare
 ///     `encoded_packet().len()` against `WIRE_BUDGET_BYTES`; if over → return
 ///     `Error::WireBudgetExceeded { encoded, budget, plaintext }`
-/// 13. `transport.publish(&keypair, &record)`
+/// 13. publish under the derived key: `transport.publish_derived(&derive_signer(sender_seed,
+///     share_ref), "_cipherpost", &rdata)`
 /// 14. return `ShareUri::format(sender_z32, &share_ref)`
 #[allow(clippy::too_many_arguments)]
 pub fn run_send(
@@ -718,8 +719,9 @@ fn check_wire_budget(
 /// **Concurrency (Quick 260427-axn).** The resolve→sentinel→ledger sequence
 /// (STEPS 1–12) is serialized per `share_ref_hex` via an advisory file lock
 /// at `{state_dir}/locks/<share_ref>.lock` (`acquire_share_lock`). STEP 13
-/// (`publish_receipt`) runs OUTSIDE the lock and uses its own CAS retry
-/// contract (`tests/cas_racer.rs`). Burn-flow emit-before-mark ordering
+/// (receipt publish) runs OUTSIDE the lock; in v2 the receipt goes to its OWN
+/// derived key `derive(recipient_pub, share_ref)` — single-writer, single-record,
+/// no CAS. Burn-flow emit-before-mark ordering
 /// (D-P8-12) is unchanged — the lock serializes the window; the ordering
 /// invariant inside it is identical to v1.1.
 #[allow(clippy::too_many_arguments)]
@@ -734,9 +736,9 @@ pub fn run_receive(
 ) -> Result<(), Error> {
     // Per-share_ref receive lock (Quick 260427-axn): closes the v1.0/v1.1
     // TOCTOU window between STEP 1's idempotency check and STEP 12's
-    // sentinel write. Held until the end of STEP 12; STEP 13
-    // (publish_receipt) runs OUTSIDE the lock — receipt publication is
-    // best-effort and has its own CAS-retry contract (tests/cas_racer.rs).
+    // sentinel write. Held until the end of STEP 12; STEP 13 (receipt publish)
+    // runs OUTSIDE the lock — receipt publication is best-effort and, in v2, goes
+    // to its own single-writer derived key (no CAS).
     //
     // Bound the guard's lifetime explicitly so it drops at the close of
     // the STEP-12 block; the explicit `drop(_share_lock)` after the burn /
@@ -1058,11 +1060,11 @@ pub fn run_receive(
 
     // Lock window ends here (Quick 260427-axn): idempotency state is now
     // durable (sentinel + ledger row both fsynced via OpenOptions::append
-    // + write_all). STEP 13 publish_receipt runs without the lock — see
-    // acquire_share_lock's docstring for the CAS-orthogonality rationale.
+    // + write_all). STEP 13 receipt publish runs without the lock — see
+    // acquire_share_lock's docstring (v2: single-writer derived key, no CAS).
     drop(_share_lock);
 
-    // STEP 13: publish_receipt — best-effort, warn+degrade on failure (D-SEQ-01, D-SEQ-02).
+    // STEP 13: receipt publish — best-effort, warn+degrade on failure (D-SEQ-01, D-SEQ-02).
     //
     // Pitfall #4: the Receipt reuses the SAME `ciphertext_hash` / `cleartext_hash`
     // computed once above and written by step 12's ledger row — one source of
@@ -1491,7 +1493,7 @@ fn append_ledger_entry_with_state(
 }
 
 /// D-SEQ-05: append a second ledger row with `receipt_published_at: Some(iso)`
-/// after a successful Plan-03 step-13 publish_receipt. Append-only; the earlier
+/// after a successful step-13 receipt publish (publish_derived). Append-only; the earlier
 /// row (from step 12) stays in the file. This row carries `state: None`;
 /// `check_already_consumed` scans ALL matching rows with "burned" dominating, so
 /// this later Accepted-flavored row never downgrades a burned share (it does NOT

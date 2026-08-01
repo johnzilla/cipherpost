@@ -161,10 +161,19 @@ fn pin_plus_burn_compose_outer_record_carries_pin_required() {
     // run_send call-site without regressing the pin-side wire-budget
     // contract.
     match outcome {
-        Ok(_uri_str) => {
-            let record = transport
-                .resolve(&id.z32_pubkey())
-                .expect("resolve published record");
+        Ok(uri_str) => {
+            // v2: the share is at its derived key derive(sender_pub, share_ref).
+            let uri = cipherpost::ShareUri::parse(&uri_str).unwrap();
+            let sender_pub = pkarr::PublicKey::try_from(uri.sender_z32.as_str())
+                .unwrap()
+                .to_bytes();
+            let derived =
+                cipherpost::derive::derive_public(&sender_pub, &uri.share_ref_hex).unwrap();
+            let rdata = transport
+                .resolve_derived(&derived, cipherpost::DHT_LABEL_OUTER)
+                .unwrap()
+                .expect("resolve derived share");
+            let record: cipherpost::record::OuterRecord = serde_json::from_str(&rdata).unwrap();
             assert!(
                 record.pin_required,
                 "compose: OuterRecord must carry pin_required=true when --pin is supplied alongside --burn"

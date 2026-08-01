@@ -44,12 +44,13 @@
 #![cfg(feature = "real-dht-e2e")]
 
 use cipherpost::cli::MaterialVariant;
+use cipherpost::derive::derive_public;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{
     run_receive, run_send, MaterialSource, OutputSink, Prompter, SendMode, DEFAULT_TTL_SECONDS,
 };
 use cipherpost::transport::{DhtTransport, Transport};
-use cipherpost::ShareUri;
+use cipherpost::{ShareUri, DHT_LABEL_OUTER, DHT_LABEL_RECEIPT};
 use secrecy::SecretBox;
 use serial_test::serial;
 use std::net::{ToSocketAddrs, UdpSocket};
@@ -118,7 +119,6 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
     let bob_transport = DhtTransport::new(Duration::from_secs(120)).expect("DhtTransport::new bob");
 
     let bob_z32 = bob_id.z32_pubkey();
-    let alice_z32 = alice_id.z32_pubkey();
 
     // 3. Alice sends a share to Bob (cross-identity = SendMode::Share).
     //    Re-set CIPHERPOST_HOME to alice's dir so sealed-identity reads
@@ -141,6 +141,13 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
     )
     .expect("alice run_send");
 
+    // v2 derived-key addressing: the share lives at derive(alice_pub, share_ref),
+    // both derivable from PUBLIC data in the URI. Bob (and Alice) resolve there.
+    let share_uri = ShareUri::parse(&share_uri_str).expect("parse share URI");
+    let share_ref = share_uri.share_ref_hex.clone();
+    let alice_pub = alice_kp.public_key().to_bytes();
+    let alice_share_key = derive_public(&alice_pub, &share_ref).expect("derive alice share key");
+
     // 4. Bob resolves Alice's published share with 7-step exp-backoff
     //    (D-P9-D3 + 09-RESEARCH.md OQ-2 — curve 1s,2s,4s,8s,16s,32s,64s
     //    clipped to remaining-budget). Re-set CIPHERPOST_HOME to bob's
@@ -156,17 +163,17 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
 
     let deadline = Instant::now() + Duration::from_secs(900);
     let backoff_curve = [1u64, 2, 4, 8, 16, 32, 64];
-    let mut resolved = None;
+    let mut resolved = false;
     for delay_secs in backoff_curve {
         if Instant::now() >= deadline {
             panic!("real-dht-e2e: 900s deadline reached without successful resolve");
         }
-        match alice_transport.resolve(&alice_z32) {
-            Ok(record) => {
-                resolved = Some(record);
+        match alice_transport.resolve_derived(&alice_share_key, DHT_LABEL_OUTER) {
+            Ok(Some(_rdata)) => {
+                resolved = true;
                 break;
             }
-            Err(_) => {
+            _ => {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 let sleep_for = Duration::from_secs(delay_secs).min(remaining);
                 if sleep_for.is_zero() {
@@ -176,7 +183,10 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
             }
         }
     }
-    let _resolved = resolved.expect("real-dht-e2e: resolve never succeeded within 120s budget");
+    assert!(
+        resolved,
+        "real-dht-e2e: derived-key resolve never succeeded within budget"
+    );
 
     // NOTE: the typed-z32 acceptance gate is intentionally bypassed by this
     //       network-round-trip test. AutoConfirmPrompter is a bare unit
@@ -199,7 +209,7 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
     // 5. Bob runs the full receive flow against alice's share URI.
     //    Receipt publishes to bob's own PKARR key (BURN-04 / TRANS-03 —
     //    receipt always published on success).
-    let share_uri = ShareUri::parse(&share_uri_str).expect("parse share URI");
+    // share_uri parsed above (derived-key section).
     let prompter: Box<dyn Prompter> = Box::new(AutoConfirmPrompter); // unit struct — see NOTE above
     let recovered = {
         let mut sink = OutputSink::InMemory(Vec::new());
@@ -226,14 +236,19 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
     // 6. Alice fetches receipts under bob's z32 and asserts count == 1
     //    (BURN-04 invariant). Same backoff for receipt propagation.
     std::env::set_var("CIPHERPOST_HOME", alice_dir.path());
-    let mut receipts: Option<Vec<String>> = None;
+    // v2: the receipt lives at Bob's derived key derive(bob_pub, share_ref) under
+    // label _cprcpt — a single-record packet, so its mere presence IS the
+    // one-receipt invariant (BURN-04).
+    let bob_pub = bob_kp.public_key().to_bytes();
+    let bob_receipt_key = derive_public(&bob_pub, &share_ref).expect("derive bob receipt key");
+    let mut receipt: Option<String> = None;
     for delay_secs in backoff_curve {
         if Instant::now() >= deadline {
             break;
         }
-        match alice_transport.resolve_all_cprcpt(&bob_z32) {
-            Ok(rs) if !rs.is_empty() => {
-                receipts = Some(rs);
+        match alice_transport.resolve_derived(&bob_receipt_key, DHT_LABEL_RECEIPT) {
+            Ok(Some(r)) => {
+                receipt = Some(r);
                 break;
             }
             _ => {
@@ -246,13 +261,8 @@ fn real_dht_cross_identity_round_trip_with_receipt() {
             }
         }
     }
-    let receipts =
-        receipts.expect("real-dht-e2e: alice never observed a receipt under bob's z32 within 900s");
-    assert_eq!(
-        receipts.len(),
-        1,
-        "exactly one receipt expected (BURN-04 receipt-count == 1 invariant); got {}",
-        receipts.len()
+    let _receipt = receipt.expect(
+        "real-dht-e2e: alice never observed bob's receipt at its derived key within budget",
     );
 
     // 7. Cleanup; tempdirs auto-drop.

@@ -46,10 +46,10 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
     .unwrap();
     let uri = ShareUri::parse(&uri_str).unwrap();
 
-    // Tamper: resolve, flip a byte in the signature, re-publish via
-    // MockTransport::publish (which does NOT verify — only resolve does, per
-    // src/transport.rs). The bad record lands in the store; the next
-    // run_receive's transport.resolve() call will fail inner-sig verify.
+    // Tamper: resolve the good record at its derived key, flip a byte in the
+    // signature, and re-inject via inject_derived_record_for_test (which does NOT
+    // verify). The bad record lands at the same derived key; the next run_receive's
+    // resolve_derived + verify_record will fail inner-sig verify.
     // v2: the share is at its derived key derive(sender_pub, share_ref).
     let derived =
         cipherpost::derive::derive_public(&kp.public_key().to_bytes(), &uri.share_ref_hex).unwrap();
@@ -70,7 +70,7 @@ fn tampered_signature_aborts_before_decrypt_and_does_not_leak_purpose() {
     let bad_rdata = serde_json::to_string(&bad).unwrap();
     transport.inject_derived_record_for_test(&derived, cipherpost::DHT_LABEL_OUTER, &bad_rdata);
 
-    // Now run_receive; the corrupt signature must fail verify inside resolve()
+    // Now run_receive; the corrupt signature must fail verify after resolve_derived
     let mut sink = OutputSink::InMemory(Vec::new());
     let err = run_receive(
         &id,

@@ -145,8 +145,8 @@ merged under one parent packet) cannot arise. *(Historical: v1.1 published recei
 recipient's parent key at `_cprcpt-<share_ref>` and required implementations to
 single-retry-then-fail on `pkarr::errors::ConcurrencyError` inside the `Transport` method,
 collapsing final conflicts into `Error::Transport` with no public `Error::CasConflict`
-variant per Pitfall #16. The legacy `publish_receipt` / `resolve_all_cprcpt` trait methods
-are retained but unused by the v2 flow.)*
+variant per Pitfall #16. The v1.1 parent-key `publish_receipt` / `resolve_all_cprcpt` trait
+methods and their merge/CAS machinery were removed at v2.)*
 
 ### 3.1 Envelope
 
@@ -746,8 +746,8 @@ alongside the `share_ref` field check).
 **Migration (v1.1 → v2).** This changes **addressing only**: v1.1 and v2 records live at
 different keys and do **not** interoperate — a clean break, `PROTOCOL_VERSION` 1→2. There is no
 in-place migration; v1.1 records are ephemeral (TTL hours/day) and age out. The legacy
-`_cprcpt-<share_ref>` parent-key receipt label and the `publish_receipt` / `resolve_all_cprcpt`
-Transport methods are retained in code but unused by the v2 flow.
+`_cprcpt-<share_ref>` parent-key receipt label remains documented as legacy, but the v1.1
+`publish_receipt` / `resolve_all_cprcpt` Transport methods were removed at v2.
 
 ## 4. Share URI
 
@@ -917,8 +917,8 @@ Strict order (D-RECV-01 + D-SEQ-01 combined — 13 steps):
    derived key `derive(recipient_pub, share_ref)` (§3.8), a single-writer single-record packet
    with **no CAS** — so concurrent receives of *different* shares never contend on the receipt
    path, and a repeat receive of the *same* share short-circuits at step 2. (The v1.1 CAS
-   contract — `tests/cas_racer.rs`, D-P9-A1 — guarded the old shared-parent-packet receipt
-   writes and is legacy under v2; see §3 preamble.) The
+   contract (D-P9-A1) guarded the old shared-parent-packet receipt writes and was removed at v2;
+   see §3 preamble.) The
    lock closes the same-host TOCTOU window where two concurrent `cipherpost receive`
    invocations on the same `share_ref` could both pass step 2's `check_already_consumed`,
    both decrypt + emit, and both append ledger rows. Lock granularity is per-`share_ref`,

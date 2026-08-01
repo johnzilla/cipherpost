@@ -1,23 +1,24 @@
 //! Phase 3 Plan 03-04 — ROADMAP SC1 invariant: tampering with the ciphertext
 //! between outer-verify and acceptance causes zero receipts to be published
-//! on the DHT. Verified via MockTransport inspection — B's key should have
-//! zero _cprcpt-* entries after a failed receive.
+//! on the DHT. Verified via MockTransport inspection — B's derived receipt key
+//! `derive(b_pub, share_ref)` must hold no record after a failed receive.
 //!
 //! Approach: construct a hand-built OuterRecord whose `blob` does NOT decrypt
-//! cleanly (pre-inject a mutated age ciphertext), manually publish it under
-//! A's key via MockTransport, then have B run_receive. The run_receive step
-//! sequence aborts at step 6 (age-decrypt failure) — step 13 (publish_receipt)
-//! is never reached.
+//! cleanly, inject it at A's DERIVED share key `derive(a_pub, share_ref)` (the
+//! key run_receive resolves from), then have B run_receive. The step sequence
+//! aborts at the age-decrypt step — the receipt publish (step 13) is never
+//! reached.
 
 #![cfg(feature = "mock")]
 
 use cipherpost::crypto;
+use cipherpost::derive::derive_public;
 use cipherpost::flow::test_helpers::AutoConfirmPrompter;
 use cipherpost::flow::{run_receive, OutputSink};
 use cipherpost::identity::Identity;
 use cipherpost::record::{share_ref_from_bytes, sign_record, OuterRecord, OuterRecordSignable};
 use cipherpost::transport::{MockTransport, Transport};
-use cipherpost::{Error, ShareUri, PROTOCOL_VERSION};
+use cipherpost::{ShareUri, DHT_LABEL_OUTER, DHT_LABEL_RECEIPT, PROTOCOL_VERSION};
 use secrecy::SecretBox;
 use serial_test::serial;
 use std::fs;
@@ -64,9 +65,9 @@ fn tampered_ciphertext_produces_zero_receipts() {
     // 1. Build an INVALID OuterRecord whose inner signature is valid over the Signable
     //    but whose `blob` is garbage that won't age-decrypt. The inner
     //    OuterRecordSignable sig verifies (it's over the blob string including
-    //    the garbage); MockTransport's publish() accepts it (no outer crypto check
-    //    in mock mode). run_receive will fail at step 6 (age-decrypt) with
-    //    Error::DecryptFailed.
+    //    the garbage); inject_derived_record_for_test places it at A's derived key
+    //    (no outer crypto check). run_receive will fail at the age-decrypt step
+    //    with Error::DecryptFailed.
     use base64::Engine;
     let created_at: i64 = 1_700_000_000;
     let garbage_ciphertext: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03];
@@ -94,9 +95,14 @@ fn tampered_ciphertext_produces_zero_receipts() {
         signature: sig,
         ttl_seconds: signable.ttl_seconds,
     };
-    transport
-        .publish(&kp_a, &tampered_record)
-        .expect("publish tampered record");
+    // v2: inject the tampered record at A's DERIVED key derive(a_pub, share_ref) —
+    // the exact key run_receive resolves from — so the flow resolves it and aborts
+    // at age-decrypt (step 7), the SC1 path. inject_* bypasses the budget/sign path
+    // (the record is deliberately un-decryptable, not budget-relevant).
+    let a_pub = kp_a.public_key().to_bytes();
+    let a_share_key = derive_public(&a_pub, &share_ref).expect("derive A share key");
+    let rdata = serde_json::to_string(&tampered_record).expect("serialize tampered record");
+    transport.inject_derived_record_for_test(&a_share_key, DHT_LABEL_OUTER, &rdata);
 
     // 2. Construct the share URI so B's run_receive can look it up.
     let uri_str = ShareUri::format(&a_z32, &share_ref);
@@ -119,23 +125,15 @@ fn tampered_ciphertext_produces_zero_receipts() {
     // Accept any non-success error — the important invariant is ZERO-RECEIPTS below.
     let _err_str = format!("{err:?}");
 
-    // 4. SC1 invariant: B's key has ZERO _cprcpt-* entries.
-    let b_entries = transport.resolve_all_txt(&b_z32);
-    let receipt_count = b_entries
-        .iter()
-        .filter(|(l, _)| l.starts_with(cipherpost::DHT_LABEL_RECEIPT_PREFIX))
-        .count();
-    assert_eq!(
-        receipt_count, 0,
-        "ROADMAP SC1 invariant violated: tampered ciphertext produced {receipt_count} receipt(s); expected 0"
-    );
-
-    // 5. resolve_all_cprcpt under B's key must return NotFound (nothing to list).
-    let lookup_err = transport
-        .resolve_all_cprcpt(&b_z32)
-        .expect_err("must be NotFound when no receipts");
+    // 4. SC1 invariant: ZERO receipts. In v2 a receipt would live at B's derived
+    //    key derive(b_pub, share_ref) under label _cprcpt; there must be none.
+    let b_pub = kp_b.public_key().to_bytes();
+    let b_receipt_key = derive_public(&b_pub, &share_ref).expect("derive B receipt key");
+    let receipt = transport
+        .resolve_derived(&b_receipt_key, DHT_LABEL_RECEIPT)
+        .expect("resolve_derived must not error");
     assert!(
-        matches!(lookup_err, Error::NotFound),
-        "expected NotFound, got {lookup_err:?}"
+        receipt.is_none(),
+        "ROADMAP SC1 invariant violated: tampered ciphertext produced a receipt; expected none"
     );
 }

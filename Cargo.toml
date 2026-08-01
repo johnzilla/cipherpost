@@ -114,11 +114,6 @@ ureq = { version = "3", default-features = false, features = ["native-tls"], opt
 tar = { version = "0.4", optional = true }
 
 [[test]]
-name = "mock_transport_roundtrip"
-path = "tests/mock_transport_roundtrip.rs"
-required-features = ["mock"]
-
-[[test]]
 name = "signed_packet_budget"
 path = "tests/signed_packet_budget.rs"
 
@@ -201,11 +196,6 @@ path = "tests/phase3_receipt_sign_verify.rs"
 [[test]]
 name = "phase3_receipt_canonical_form"
 path = "tests/phase3_receipt_canonical_form.rs"
-
-[[test]]
-name = "phase3_mock_publish_receipt_coexistence"
-path = "tests/phase3_mock_publish_receipt_coexistence.rs"
-required-features = ["mock"]
 
 [[test]]
 name = "phase3_end_to_end_a_sends_b_receipt"
@@ -398,7 +388,7 @@ required-features = ["mock"]
 
 # Quick 260427-axn: per-share_ref receive lock regression. Two Barrier-synced
 # threads both invoke run_receive on the same share_ref; only one observes the
-# fresh path. Mirrors tests/cas_racer.rs structure verbatim.
+# fresh path. True Barrier-synced threads, never sleep-based simulation.
 [[test]]
 name = "state_ledger_concurrency"
 path = "tests/state_ledger_concurrency.rs"
@@ -422,15 +412,6 @@ required-features = ["mock"]
 [[test]]
 name = "pin_burn_compose"
 path = "tests/pin_burn_compose.rs"
-required-features = ["mock"]
-
-# Phase 9 Plan 01 (DHT-01 + DHT-02): MockTransport CAS racer — two threads
-# Barrier-synced both call publish_receipt; both receipts persist after the
-# trait-internal single-retry resolves the conflict. PITFALLS.md #28
-# mandated pattern — true Barrier-synced threads, NEVER sleep simulation.
-[[test]]
-name = "cas_racer"
-path = "tests/cas_racer.rs"
 required-features = ["mock"]
 
 # Phase 9 Plan 01 (DHT-07): pin + burn + 2KB GenericSecret payload wire-budget
