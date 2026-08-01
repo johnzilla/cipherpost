@@ -85,7 +85,7 @@ out-of-scope list):
 - Quantum cryptanalysis — cipherpost is pre-quantum; post-quantum migration is a future
   consideration
 - Third-party key stores (OS keychains, HSMs) — not integrated through v1.1
-- Destruction attestation — deferred to v1.2+ per [`PROJECT.md`](./.planning/PROJECT.md)
+- Destruction attestation — deferred to a future release per [`PROJECT.md`](./.planning/PROJECT.md)
   (originally PRD v1.1, shifted because v1.1 filled with PRD-closure scope);
   cipherpost has no such mechanism, so there is nothing to attack yet
 

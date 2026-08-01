@@ -76,7 +76,7 @@ A narrow, well-crafted tool for secure cryptographic handoff — with no servers
 - Destruction attestation workflow (v1.1)
 - SSO / IdP federation (commercial tier, later)
 - SIEM export (commercial tier, later)
-- Multi-recipient broadcast shares (v1.2)
+- Multi-recipient broadcast shares (future release)
 - HSM integration for sender-side generation (v1.3)
 - Protocol governance structure (after real adoption)
 

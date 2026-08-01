@@ -238,7 +238,8 @@ and asserts Display contains none of {`X509Error`, `parse error at`, `nom::`, `I
 exceed the 1000-byte BEP44 SignedPacket ceiling. Cipherpost surfaces this as a clean
 `Error::WireBudgetExceeded { encoded, budget: 1000, plaintext }` at send time. See
 §Pitfall #22 (consolidated below) for the cross-variant what-works-today matrix and
-the v1.2 two-tier-storage architectural fix.
+the two-tier-storage architectural fix (shipped experimentally as the v2-alpha
+`large-payload` feature).
 
 **`pgp_key` wire form (cipherpost/v1.1, Phase 7):**
 ```json
@@ -870,7 +871,7 @@ The receiver is prompted at receive time (single-shot — wrong PIN funnels thro
 `Error::DecryptFailed` exit 4, the user's notification). Both the receiver's
 identity passphrase AND the PIN are required to decrypt PIN-protected shares.
 Non-interactive PIN sources (`--pin-file`, `--pin-fd`, `CIPHERPOST_PIN` env)
-are deferred to v1.2 — v1.1 keeps PIN as an intentionally human-in-the-loop
+are deferred to a future release — v1.x keeps PIN as an intentionally human-in-the-loop
 second factor. PIN entropy validation runs at send time and rejects with
 exit 1 / generic `"PIN does not meet entropy requirements"` Display (oracle
 hygiene per PIN-07; specific reason is NEVER named). See §3.6 for the full
@@ -1291,9 +1292,11 @@ opportunity at the canonical-re-encode layer.
 
 **Honest messaging discipline (D-P7-03):** Phase 7 ships with `#[ignore]`'d
 round-trip tests + active `WireBudgetExceeded` tests for X.509 + PGP + SSH.
-The `#[ignore]`'d tests are the regression suite for the v1.2 two-tier-storage
-fix — do NOT remove them. Each carries a `wire-budget: …` `#[ignore]` reason
-that points at this section + the v1.2 milestone.
+The `#[ignore]`'d tests are the regression suite for a future fix that routes
+oversized typed-material `send`s through two-tier storage automatically (the
+two-tier mechanism shipped experimentally as the v2-alpha `large-payload`
+feature; transparent `send` integration is still future) — do NOT remove them.
+Each carries a `wire-budget: …` `#[ignore]` reason that points at this section.
 
 **Phase 8 wire-budget continuation (pin × burn × typed-material compose):**
 PIN-required shares add ~165 B per nested-age layer + 32 B salt prefix; the
@@ -1309,8 +1312,9 @@ mode is a CLEAN `WireBudgetExceeded` (NOT a panic, NOT a Transport-internal
 error, NOT a partial publish). The pre-flight test
 `tests/pin_burn_compose.rs::pin_plus_burn_plus_pgp_wire_budget_surfaces_cleanly_or_succeeds`
 pins this contract explicitly. Phase 9 (DHT-07) measures the wire-budget
-distribution empirically against the real DHT; v1.2 ships the wire-budget
-escape hatch (chunking / two-tier storage / out-of-band).
+distribution empirically against the real DHT; a future release ships the
+transparent wire-budget escape hatch (chunking / auto two-tier storage /
+out-of-band; the two-tier mechanism shipped experimentally in v2-alpha).
 
 **Phase 9 composite measurement (DHT-07):** `pin_required=true` +
 `burn_after_read=true` + `Material::GenericSecret { bytes: vec![0u8; 2048] }`
@@ -1320,7 +1324,7 @@ send time — encoded = 5123 bytes vs budget = 1000 bytes (overflow = 4123
 bytes, expansion factor ≈ 2.5× over the 2048 B plaintext). Test:
 `tests/wire_budget_compose_pin_burn_pgp.rs::pin_burn_realistic_payload_surfaces_wire_budget_exceeded`.
 Recorded for the regression-guard byte-count table in `RELEASE-CHECKLIST.md`
-when v1.2's two-tier-storage fix lands.
+when the transparent two-tier-storage `send` fix lands.
 
 ## 7. Passphrase Contract
 
