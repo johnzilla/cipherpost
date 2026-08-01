@@ -373,21 +373,28 @@ where `ciphertext_blob_bytes` = raw bytes obtained by base64-STANDARD-decoding `
 
 ### 3.4 Receipt
 
-Published by the recipient under their own PKARR key at DNS label `_cprcpt-<share_ref_hex>`
-(D-06). Signed with the recipient's Ed25519 identity key. Receipts are **public by design**:
-no field is secret. Senders verify receipts using only public information.
+Published by the recipient under the derived key `derive(recipient_pub, share_ref)` at the
+fixed DNS label `_cprcpt` (D-06; v2 derived-key addressing — the KEY encodes the `share_ref`,
+so the label no longer carries a suffix). Signed with the recipient's Ed25519 identity key.
+Receipts are **public by design**: no field is secret. Senders verify receipts using only
+public information (the recipient pubkey is supplied as verify context, see §3.4 signable).
 
 | Field | Type | Wire encoding | Description | Source decision |
 |-------|------|---------------|-------------|-----------------|
 | `accepted_at` | i64 | JSON integer | Unix seconds when acceptance completed | D-RS-02 |
 | `ciphertext_hash` | String | lowercase hex, 64 chars | `SHA-256(blob_base64_decoded_bytes)` | D-RS-04 |
 | `cleartext_hash` | String | lowercase hex, 64 chars | `SHA-256(JCS(Envelope))` — the decrypted canonical bytes | D-RS-04 |
-| `nonce` | String | 32 lowercase hex chars | 128-bit random (OsRng) | D-RS-03 |
-| `protocol_version` | u16 | JSON integer | Always `1` | D-07 |
-| `recipient_pubkey` | String | z-base-32, 52 chars | Recipient Ed25519/PKARR public key | D-RS-01, D-RS-07 |
-| `sender_pubkey` | String | z-base-32, 52 chars | Sender's PKARR public key (from `OuterRecord.pubkey`) | D-RS-01 |
+| `protocol_version` | u16 | JSON integer | Always `2` | D-07 |
 | `share_ref` | String | 32 lowercase hex chars | Same `share_ref` as the originating OuterRecord | D-RS-01, D-06 |
 | `signature` | String | base64-STANDARD | Ed25519 by recipient over JCS(`ReceiptSignable`) | D-RS-05, D-RS-07 |
+
+**Slim v2 schema — no `nonce`, `recipient_pubkey`, or `sender_pubkey`.** Under v2
+derived-key addressing the receipt lives under its own key `derive(recipient_pub,
+share_ref)`, so the recipient pubkey is verify/addressing CONTEXT — passed to
+`verify_receipt(receipt, recipient_pub_z32)` — not a wire field. The sender pubkey
+and the per-record `nonce` are dropped too (the derived key already makes each
+receipt's DHT address unique). This slim schema and the `PROTOCOL_VERSION` 1→2 bump
+ship together in v2.
 
 **No `purpose` field (changed 1.2.0-alpha).** Earlier receipts carried a verbatim
 copy of `Envelope.purpose`. Because the receipt is published in **cleartext** on the
@@ -395,25 +402,28 @@ public DHT, that leaked a signed, timestamped, descriptive social graph of secre
 handoffs — contradicting the envelope's encrypted-metadata guarantee. `purpose` is
 removed; it remains **bound but not exposed** via `cleartext_hash` = SHA-256(JCS(Envelope)),
 so a sender holding the original envelope can still verify a receipt corresponds to their
-exact purpose. **Residual exposure (unavoidable for a public signed receipt):** a receipt
-still reveals `sender_pubkey`, `recipient_pubkey`, `share_ref`, and `accepted_at` in
-cleartext — i.e. *that* a handoff occurred, between whom, and when (see THREAT-MODEL §Receipt privacy).
+exact purpose. **Residual exposure (unavoidable for a public signed receipt):** the receipt
+JSON reveals `share_ref`, `accepted_at`, and the two hashes in cleartext. Neither pubkey is a
+field anymore, but the receipt is *addressed* at `derive(recipient_pub, share_ref)` — so a
+party that already holds both the recipient pubkey and the `share_ref` (e.g. the sender) can
+locate and read it, learning *that* a handoff was accepted and *when*. A party lacking the
+`share_ref` cannot enumerate a recipient's receipts under the derived key (an improvement over
+v1's per-recipient `_cprcpt-*` enumeration). See THREAT-MODEL §Receipt privacy.
 
 **Signable projection:** `ReceiptSignable` = `Receipt` minus `signature`. Same sign/verify
 discipline as `OuterRecordSignable` (D-RS-07).
 
-**Receipt publication (TRANS-03, D-MRG-01..06):** Receipts are published via resolve-merge-
-republish under the recipient's PKARR key. The recipient resolves their existing SignedPacket,
-re-builds a new SignedPacket preserving all existing TXT records (including `_cipherpost`
-outgoing shares and any prior `_cprcpt-*` receipts), adds or replaces the TXT under label
-`_cprcpt-<this_share_ref_hex>` with the new receipt's JSON bytes, and re-signs. DNS TTL on
-receipt TXT records = 300 seconds. The wire budget (~1000 bytes total SignedPacket) applies
-to the merged packet; overflow surfaces `Error::PacketBudgetExceeded { encoded, budget }`
-(accumulated-records overflow, distinct from the payload-too-big `WireBudgetExceeded` and
-carrying no `plaintext` field) — D-MRG-06. Because any two real records (share ~650 B,
-receipt ~570 B) exceed the budget, a key holds at most one; on the share-publish path this
-error is routed through the send retry loop, and on the receipt-publish path it is
-warn+degraded (D-SEQ-02).
+**Receipt publication (v2 derived-key addressing):** The receipt is published under the
+blinded key `derive(recipient_pub, share_ref)` at label `_cprcpt`. Because each derived key is
+written by a single writer and holds exactly one record, there is **no resolve-merge-republish
+and no CAS** on this path — the receipt is signed (BEP44 hand-signed under the blinded key,
+which pkarr cannot sign directly from a seed-only keypair) and published as a single record.
+This lifts v1's packet-budget ceiling, where receipts shared the recipient's parent PKARR
+packet with outgoing shares and prior `_cprcpt-*` receipts and any two real records exceeded
+the ~1000-byte budget (the old `Error::PacketBudgetExceeded` merge path — D-MRG-01..06). DNS
+TTL on the receipt record = 300 seconds. (The parent-key merge-republish machinery still
+governs the legacy v1 `_cprcpt-<share_ref>` label; the v1↔v2 addressing migration across §3.5
+and §5.3 is finalized in the pending full SPEC pass.)
 
 **Publish sequencing (D-SEQ-01):** The recipient publishes the receipt only AFTER local state
 commits (sentinel file + ledger line). Publish failure is degraded to a stderr warning with
@@ -1263,7 +1273,7 @@ this repository.
 {
   "blob": "AAAA",
   "created_at": 1700000000,
-  "protocol_version": 1,
+  "protocol_version": 2,
   "pubkey": "pk-placeholder-z32",
   "recipient": "rcpt-placeholder-z32",
   "share_ref": "0123456789abcdef0123456789abcdef",
@@ -1274,7 +1284,7 @@ this repository.
 **Canonical bytes (RFC 8785 JCS, 192 bytes):**
 
 ```
-7b22626c6f62223a2241414141222c22637265617465645f6174223a313730303030303030302c2270726f746f636f6c5f76657273696f6e223a312c227075626b6579223a22706b2d706c616365686f6c6465722d7a3332222c22726563697069656e74223a22726370742d706c616365686f6c6465722d7a3332222c2273686172655f726566223a223031323334353637383961626364656630313233343536373839616263646566222c2274746c5f7365636f6e6473223a38363430307d
+7b22626c6f62223a2241414141222c22637265617465645f6174223a313730303030303030302c2270726f746f636f6c5f76657273696f6e223a322c227075626b6579223a22706b2d706c616365686f6c6465722d7a3332222c22726563697069656e74223a22726370742d706c616365686f6c6465722d7a3332222c2273686172655f726566223a223031323334353637383961626364656630313233343536373839616263646566222c2274746c5f7365636f6e6473223a38363430307d
 ```
 
 **Fixture file:** `tests/fixtures/outer_record_signable.bin` (byte-compare to verify).
@@ -1287,7 +1297,7 @@ this repository.
 
 **Signature (base64-STANDARD):**
 ```
-B1KQKUwXEHBLlXNekjU23LM+hkwz2w1XGjYg/X27tZSbX9opQozRgxKoVaAFbxmvfP2+HbOssOJ4DblpgcPdDw==
+ZDOIAeAdUdH3kom7W33HEwwe0crFJRk0YCQXUzFIj9qHazFPy+ywWquEIaKHiH/J/q+BJBxMP+5C5l9qfycLBg==
 ```
 
 ### 8.2 ReceiptSignable Test Vector
@@ -1301,40 +1311,42 @@ B1KQKUwXEHBLlXNekjU23LM+hkwz2w1XGjYg/X27tZSbX9opQozRgxKoVaAFbxmvfP2+HbOssOJ4Dblp
   "accepted_at": 1700000000,
   "ciphertext_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "cleartext_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "nonce": "0123456789abcdef0123456789abcdef",
-  "protocol_version": 1,
-  "recipient_pubkey": "rcpt-placeholder-z32",
-  "sender_pubkey": "sender-placeholder-z32",
+  "protocol_version": 2,
   "share_ref": "0123456789abcdef0123456789abcdef"
 }
 ```
 
-> **No `purpose` field (changed in 1.2.0-alpha).** A receipt is published in
-> cleartext on the public DHT; a descriptive `purpose` would leak a signed,
-> timestamped social graph of secret handoffs, contradicting the envelope's
-> encrypted-metadata guarantee. The purpose is still *bound* — `cleartext_hash`
-> is SHA-256(JCS(Envelope)) and the Envelope carries `purpose` — so a sender who
-> holds the original envelope can verify the receipt matches. Receipts are
-> ephemeral (TTL-bounded), so this is not a `PROTOCOL_VERSION` bump; the envelope
-> and outer-record wire formats are unchanged.
+> **Slim v2 schema — no `nonce`, `recipient_pubkey`, or `sender_pubkey`.** Under
+> v2 derived-key addressing a receipt is published under its OWN key
+> `derive(recipient_pub, share_ref)`, so the recipient pubkey is verify/addressing
+> CONTEXT — an argument to `verify_receipt(receipt, recipient_pub_z32)` — not a wire
+> field. The sender pubkey and the per-record `nonce` are likewise dropped (the
+> derived key already makes each receipt's DHT address unique). `purpose` remains
+> absent (removed 1.2.0-alpha): a receipt is published in cleartext on the public
+> DHT, and a descriptive `purpose` would leak a signed, timestamped social graph of
+> secret handoffs. The purpose is still *bound* — `cleartext_hash` is
+> SHA-256(JCS(Envelope)) and the Envelope carries `purpose` — so a sender who holds
+> the original envelope can verify the receipt matches. This slim schema and the
+> `PROTOCOL_VERSION` 1→2 bump ship together in v2 (crate 1.2.0-alpha): every
+> previously issued share and receipt is invalidated.
 
-**Canonical bytes (RFC 8785 JCS, 389 bytes):**
+**Canonical bytes (RFC 8785 JCS, 263 bytes):**
 
 ```
-7b2261636365707465645f6174223a313730303030303030302c22636970686572746578745f68617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22636c656172746578745f68617368223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226e6f6e6365223a223031323334353637383961626364656630313233343536373839616263646566222c2270726f746f636f6c5f76657273696f6e223a312c22726563697069656e745f7075626b6579223a22726370742d706c616365686f6c6465722d7a3332222c2273656e6465725f7075626b6579223a2273656e6465722d706c616365686f6c6465722d7a3332222c2273686172655f726566223a223031323334353637383961626364656630313233343536373839616263646566227d
+7b2261636365707465645f6174223a313730303030303030302c22636970686572746578745f68617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22636c656172746578745f68617368223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c2270726f746f636f6c5f76657273696f6e223a322c2273686172655f726566223a223031323334353637383961626364656630313233343536373839616263646566227d
 ```
 
 **Fixture file:** `tests/fixtures/receipt_signable.bin` (byte-compare to verify).
 
 **To reproduce:**
 1. Serialize the pretty-printed JSON above through any RFC 8785 JCS implementation.
-   The resulting bytes MUST equal the hex above (389 bytes).
+   The resulting bytes MUST equal the hex above (263 bytes).
 2. Ed25519-sign those bytes with the same `[0u8; 32]` seed.
 3. The signature MUST match the base64 below.
 
 **Signature (base64-STANDARD):**
 ```
-9IZz05Q7TOTeKFF72g7KD1S6DReVK7R4GbFJ6UGUSioo2QtjiarMIcrSttghzr2KAdYYniyAo0o1vG3ATtYuCQ==
+Gv6xEyj1sYKfcnvk+kUta9mhy/d7JfEV2sHzcCd2h5qcOZX8O2dtrl6Nyv57IhLqRPQ2/6oGlvWCxQVGJNt6Ag==
 ```
 
 ### 8.3 Sanity check (implementer script)
