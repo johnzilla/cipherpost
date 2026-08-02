@@ -81,6 +81,6 @@
 
 **Reference / proof:** `docs/design/derived-key-addressing.md` (status IMPLEMENTED, all phases DONE) with byte-exact golden vectors pinned in `src/derive.rs::golden_vector_seed7_ref11` and `tests/derived_key_spike.rs`; SPEC.md §3.8 / §8.4.
 
-**Pending at close:** the manual real-DHT v2 evidence run (`RELEASE-EVIDENCE-v2.0.0-alpha.1.md`) has NOT been produced yet — the `real_dht_e2e` harness is ported, compiling, and triple-gated, but the against-Mainline execution is a release-tag-time gate (see RELEASE-CHECKLIST.md §Manual real-DHT gate), and no `v2.0.0-alpha.1` tag has been cut. No `v2-MILESTONE-AUDIT.md` exists (GSD retired; this entry + the design doc are the close record).
+**Real-DHT evidence (produced 2026-08-02):** the `v2.0.0-alpha.1` tag push triggered `.github/workflows/release-acceptance.yml`, which ran the cross-identity round trip against **live Mainline DHT — PASS in 739s** (share published + resolved under `derive(alice_pub, share_ref)`, receipt under `derive(bob_pub, share_ref)`; no mock, well within the 900s deadline). Full record: `RELEASE-EVIDENCE-v2.0.0-alpha.1.md` + CI artifact `real-dht-evidence-v2.0.0-alpha.1` (run 30725213381). No `v2-MILESTONE-AUDIT.md` exists (GSD retired; this entry + the design doc + the evidence file are the close record).
 
 ---
