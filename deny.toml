@@ -25,10 +25,21 @@ version = 2
 # requires rustc 1.93.1 > MSRV 1.88. Re-added after the advisory range was extended
 # retroactively to cover scc 2.x (previously "no crate matched"). Remove when MSRV
 # reaches 1.93.1 and serial_test can bump to 4.
+#
+# RUSTSEC-2026-0253 (lru unsound): `LruCache::pop()` can use-after-free only IF a
+# value's `Drop` panics mid-pop (the pop lacks panic safety). `lru` is a TRANSITIVE
+# dep of the DHT layer (pkarr 5.0.3 -> mainline 6.1.1 -> lru 0.16.4), used as an
+# internal routing/query cache; cipherpost never constructs or calls LruCache and
+# stores no Drop-panicking value types in it. Patched in lru >= 0.18.2, but
+# mainline 6.1.1 pins lru ^0.16.2 (<0.17) and cipherpost's pkarr 5.0.3/5.0.4 pin is
+# load-bearing (ed25519-dalek =3.0.0-pre.5), so no in-range fix exists — this is
+# upstream drift we cannot resolve locally. Remove when pkarr/mainline bump lru to
+# >= 0.18.2.
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2026-0173",
     "RUSTSEC-2026-0205",
+    "RUSTSEC-2026-0253",
 ]
 # yanked = "deny" is default in v2
 # Note: pkarr 5.0.3 transitively pulls ed25519-dalek 3.0.0-pre.5 (pre-release).
